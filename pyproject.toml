@@ -1,0 +1,31 @@
+[project]
+name = "lingo-core"
+version = "0.1.0"
+description = "Core API for Open Lingo — user management, progress tracking, course library."
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "pydantic-settings>=2.7",
+    "python-jose[cryptography]>=3.3",
+    "httpx>=0.28",
+    "aiosqlite>=0.20",
+    "aioboto3>=13",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.9",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
