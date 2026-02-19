@@ -40,3 +40,30 @@ class UserRepository(Protocol):
     async def update_settings(self, auth0_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         """Merge *patch* into the user's settings and return the full result."""
         ...
+
+
+class SRSRepository(Protocol):
+    """Per-card SRS state. One global map per user, keyed by card ID."""
+
+    async def get_all(self, auth0_id: str) -> dict[str, dict[str, Any]]:
+        """Return the full SRS map: {cardId: SRSCardState}."""
+        ...
+
+    async def get_card(self, auth0_id: str, card_id: str) -> dict[str, Any] | None:
+        """Return SRS state for a single card, or None."""
+        ...
+
+    async def upsert_cards(
+        self, auth0_id: str, cards: dict[str, dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        """Upsert multiple card states. Last-write-wins by lastReviewDate.
+        Returns the merged state for all affected cards."""
+        ...
+
+    async def delete_cards(self, auth0_id: str, card_ids: list[str]) -> int:
+        """Remove SRS state for specific cards. Returns count deleted."""
+        ...
+
+    async def clear_all(self, auth0_id: str) -> int:
+        """Remove all SRS state for a user. Returns count deleted."""
+        ...

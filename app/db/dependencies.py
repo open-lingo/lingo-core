@@ -11,15 +11,16 @@ until SqliteCommunityRepository / DynamoCommunityRepository are implemented.
 from typing import Any
 
 from app.config import settings
-from app.db.protocols import UserRepository
+from app.db.protocols import SRSRepository, UserRepository
 
 _user_repo: UserRepository | None = None
 _community_repo: Any = None
+_srs_repo: SRSRepository | None = None
 
 
 async def init_repositories() -> None:
     """Create and connect the repository singletons based on config."""
-    global _user_repo
+    global _user_repo, _srs_repo
 
     if settings.DB_BACKEND == "sqlite":
         from app.db.sqlite import SqliteUserRepository
@@ -28,6 +29,12 @@ async def init_repositories() -> None:
         await repo.connect()
         _user_repo = repo
 
+        from app.db.srs_sqlite import SqliteSRSRepository
+
+        srs = SqliteSRSRepository(settings.SQLITE_PATH)
+        await srs.connect()
+        _srs_repo = srs
+
     elif settings.DB_BACKEND == "dynamodb":
         from app.db.dynamo import DynamoUserRepository
 
@@ -35,6 +42,9 @@ async def init_repositories() -> None:
         repo = DynamoUserRepository(table, settings.AWS_REGION)
         await repo.connect()
         _user_repo = repo
+
+        # TODO: DynamoSRSRepository once implemented
+        raise NotImplementedError("DynamoDB SRS repository not yet implemented")
 
     else:
         raise ValueError(f"Unknown DB_BACKEND: {settings.DB_BACKEND!r}")
@@ -50,12 +60,20 @@ async def shutdown_repositories() -> None:
     """Gracefully close all repository connections."""
     if _user_repo and hasattr(_user_repo, "close"):
         await _user_repo.close()  # type: ignore[union-attr]
+    if _srs_repo and hasattr(_srs_repo, "close"):
+        await _srs_repo.close()  # type: ignore[union-attr]
 
 
 def get_user_repo() -> UserRepository:
     """FastAPI dependency — returns the active UserRepository instance."""
     assert _user_repo is not None, "repositories not initialised (call init_repositories first)"
     return _user_repo
+
+
+def get_srs_repo() -> SRSRepository:
+    """FastAPI dependency — returns the active SRSRepository instance."""
+    assert _srs_repo is not None, "repositories not initialised (call init_repositories first)"
+    return _srs_repo
 
 
 def get_community_repo() -> Any:

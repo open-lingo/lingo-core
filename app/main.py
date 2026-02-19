@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.community.router import router as community_router
 from app.config import settings
 from app.db.dependencies import init_repositories, shutdown_repositories
+from app.srs.router import router as srs_router
 from app.users.router import router as users_router
 
 logger = logging.getLogger("lingo.access")
@@ -68,6 +69,7 @@ app.add_middleware(
 )
 
 app.include_router(users_router)
+app.include_router(srs_router)
 app.include_router(community_router)
 
 
