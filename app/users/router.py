@@ -1,18 +1,23 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import TokenPayload
-from app.db.dependencies import get_user_repo
-from app.db.protocols import UserRepository
+from app.db.dependencies import get_deck_repo, get_subscription_repo, get_user_repo
+from app.db.protocols import SubscriptionRepository, UserRepository
 from app.users.schemas import (
+    SubscriptionCreate,
+    SubscriptionItem,
+    SubscriptionSettingsPatch,
     UserCreate,
     UserResponse,
     UserSettings,
     UserSettingsPatch,
     UserUpdate,
 )
+from app.users.subscriptions.content_types.registry import get_content_type_handler
+from app.users.subscriptions.types import ContentType
 
 router = APIRouter(prefix="/api/core/users/v1", tags=["users"])
 
@@ -103,3 +108,123 @@ async def patch_settings(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty patch body")
     updated = await repo.update_settings(user.sub, patch)
     return updated
+
+
+# ── Subscriptions ────────────────────────────────────────────
+
+
+def _require_subscription_repo(
+    repo: SubscriptionRepository | None,
+) -> SubscriptionRepository:
+    if repo is None:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Subscription storage not configured",
+        )
+    return repo
+
+
+@router.get("/me/subscriptions", response_model=list[SubscriptionItem])
+async def list_subscriptions(
+    user: CurrentUser,
+    repo: Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)],
+    content_type: str | None = Query(None, description="Filter by type: deck, addon, story"),
+) -> Any:
+    """List the current user's subscriptions."""
+    r = _require_subscription_repo(repo)
+    items = await r.list(user.sub, content_type=content_type)
+    return [SubscriptionItem(**x) for x in items]
+
+
+@router.post(
+    "/me/subscriptions", response_model=SubscriptionItem, status_code=status.HTTP_201_CREATED
+)
+async def add_subscription(
+    body: SubscriptionCreate,
+    user: CurrentUser,
+    repo: Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)],
+    deck_repo: Annotated[Any, Depends(get_deck_repo)],
+) -> Any:
+    """Add a subscription. Validates content exists for known types."""
+    if body.contentType not in [c.value for c in ContentType]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"contentType must be one of: {[c.value for c in ContentType]}",
+        )
+    r = _require_subscription_repo(repo)
+    handler = get_content_type_handler(body.contentType, context={"deck_repo": deck_repo})
+    if not await handler.validate_subscription(body.contentId):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{body.contentType} not found: {body.contentId}",
+        )
+    await r.add(user.sub, body.contentType, body.contentId)
+    items = await r.list(user.sub, content_type=body.contentType)
+    added = next((i for i in items if i["contentId"] == body.contentId), None)
+    if not added:
+        raise HTTPException(status_code=500, detail="Subscription add failed")
+    return SubscriptionItem(**added)
+
+
+@router.patch(
+    "/me/subscriptions/{content_type}/{content_id}",
+    response_model=SubscriptionItem,
+)
+async def update_subscription(
+    content_type: str,
+    content_id: str,
+    body: SubscriptionSettingsPatch,
+    user: CurrentUser,
+    repo: Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)],
+) -> Any:
+    """Update subscription settings (enabled, newCardsPerDay, newCardOrder)."""
+    if content_type not in [c.value for c in ContentType]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"contentType must be one of: {[c.value for c in ContentType]}",
+        )
+    r = _require_subscription_repo(repo)
+    patch = body.model_dump(exclude_none=True)
+    if not patch:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty patch body")
+    # Normalize for DB: enabled -> 0/1, newCardOrder validate
+    if "newCardOrder" in patch and patch["newCardOrder"] not in ("ordered", "shuffled"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="newCardOrder must be 'ordered' or 'shuffled'",
+        )
+    db_patch = {}
+    if "enabled" in patch:
+        db_patch["enabled"] = patch["enabled"]
+    if "newCardsPerDay" in patch:
+        db_patch["newCardsPerDay"] = patch["newCardsPerDay"]
+    if "newCardOrder" in patch:
+        db_patch["newCardOrder"] = patch["newCardOrder"]
+    updated = await r.update_settings(user.sub, content_type, content_id, db_patch)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+    items = await r.list(user.sub, content_type=content_type)
+    item = next((i for i in items if i["contentId"] == content_id), None)
+    if not item:
+        raise HTTPException(status_code=500, detail="Subscription not found after update")
+    return SubscriptionItem(**item)
+
+
+@router.delete(
+    "/me/subscriptions/{content_type}/{content_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_subscription(
+    content_type: str,
+    content_id: str,
+    user: CurrentUser,
+    repo: Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)],
+) -> None:
+    """Remove a subscription."""
+    if content_type not in [c.value for c in ContentType]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"contentType must be one of: {[c.value for c in ContentType]}",
+        )
+    r = _require_subscription_repo(repo)
+    await r.remove(user.sub, content_type, content_id)

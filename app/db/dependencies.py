@@ -11,16 +11,23 @@ until SqliteCommunityRepository / DynamoCommunityRepository are implemented.
 from typing import Any
 
 from app.config import settings
-from app.db.protocols import SRSRepository, UserRepository
+from app.db.protocols import (
+    DeckRepository,
+    SRSRepository,
+    SubscriptionRepository,
+    UserRepository,
+)
 
 _user_repo: UserRepository | None = None
 _community_repo: Any = None
 _srs_repo: SRSRepository | None = None
+_deck_repo: DeckRepository | None = None
+_subscription_repo: SubscriptionRepository | None = None
 
 
 async def init_repositories() -> None:
     """Create and connect the repository singletons based on config."""
-    global _user_repo, _srs_repo
+    global _user_repo, _srs_repo, _deck_repo, _subscription_repo
 
     if settings.DB_BACKEND == "sqlite":
         from app.db.sqlite import SqliteUserRepository
@@ -34,6 +41,18 @@ async def init_repositories() -> None:
         srs = SqliteSRSRepository(settings.SQLITE_PATH)
         await srs.connect()
         _srs_repo = srs
+
+        from app.db.deck_sqlite import SqliteDeckRepository
+
+        deck = SqliteDeckRepository(settings.SQLITE_PATH)
+        await deck.connect()
+        _deck_repo = deck
+
+        from app.db.subscription_sqlite import SqliteSubscriptionRepository
+
+        sub = SqliteSubscriptionRepository(settings.SQLITE_PATH)
+        await sub.connect()
+        _subscription_repo = sub
 
     elif settings.DB_BACKEND == "dynamodb":
         from app.db.dynamo import DynamoUserRepository
@@ -49,6 +68,11 @@ async def init_repositories() -> None:
     else:
         raise ValueError(f"Unknown DB_BACKEND: {settings.DB_BACKEND!r}")
 
+    # Deck + Community: deck uses Sqlite when sqlite; community always mock
+    if settings.DB_BACKEND != "sqlite":
+        _deck_repo = None
+        _subscription_repo = None
+
     # Community: always use mock until SQLite/Dynamo implementations are ready
     global _community_repo
     from app.db.mock_community import MockCommunityRepository
@@ -62,6 +86,10 @@ async def shutdown_repositories() -> None:
         await _user_repo.close()  # type: ignore[union-attr]
     if _srs_repo and hasattr(_srs_repo, "close"):
         await _srs_repo.close()  # type: ignore[union-attr]
+    if _deck_repo and hasattr(_deck_repo, "close"):
+        await _deck_repo.close()
+    if _subscription_repo and hasattr(_subscription_repo, "close"):
+        await _subscription_repo.close()  # type: ignore[union-attr]
 
 
 def get_user_repo() -> UserRepository:
@@ -80,3 +108,13 @@ def get_community_repo() -> Any:
     """FastAPI dep — CommunityRepository (currently MockCommunityRepository)."""
     assert _community_repo is not None, "repos not initialised"
     return _community_repo
+
+
+def get_deck_repo() -> DeckRepository | None:
+    """FastAPI dep — DeckRepository (Sqlite when DB_BACKEND=sqlite, else None)."""
+    return _deck_repo
+
+
+def get_subscription_repo() -> SubscriptionRepository | None:
+    """FastAPI dep — SubscriptionRepository (Sqlite when DB_BACKEND=sqlite, else None)."""
+    return _subscription_repo

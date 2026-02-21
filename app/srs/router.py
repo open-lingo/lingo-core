@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import TokenPayload
@@ -27,6 +27,17 @@ SRSRepo = Annotated[SRSRepository, Depends(get_srs_repo)]
 async def get_state(user: CurrentUser, repo: SRSRepo) -> Any:
     """Return the full SRS map for the current user."""
     cards = await repo.get_all(user.sub)
+    return {"cards": cards}
+
+
+@router.get("/due", response_model=SRSStateResponse)
+async def get_due_cards(
+    user: CurrentUser,
+    repo: SRSRepo,
+    on_or_before: str = Query(..., description="YYYY-MM-DD"),
+) -> Any:
+    """Return cards with dueDate <= on_or_before (YYYY-MM-DD)."""
+    cards = await repo.get_due_cards(user.sub, on_or_before)
     return {"cards": cards}
 
 

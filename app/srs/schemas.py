@@ -10,6 +10,7 @@ class SRSCardState(BaseModel):
     repetitions: int = Field(default=0, ge=0)
     lastReviewDate: str
     lastSyncedAt: str | None = None
+    buriedUntil: str | None = Field(default=None, description="YYYY-MM-DD; if set and > today, card excluded from queue")
 
 
 class SRSSyncRequest(BaseModel):

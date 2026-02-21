@@ -1,0 +1,254 @@
+"""Deck API for community content.
+
+Saves directly to the main deck database. Auth required for create/update.
+"""
+
+import uuid
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from app.auth.dependencies import get_current_user
+from app.auth.schemas import TokenPayload
+from app.db.dependencies import get_deck_repo
+from app.db.protocols import DeckRepository
+from app.decks.schemas import DeckCreate, DeckResponse, DeckUpdate
+
+router = APIRouter(prefix="/api/core/decks/v1", tags=["decks"])
+
+DeckRepo = Annotated[DeckRepository | None, Depends(get_deck_repo)]
+CurrentUser = Annotated[TokenPayload, Depends(get_current_user)]
+
+
+def _require_deck_repo(repo: DeckRepository | None) -> DeckRepository:
+    if repo is None:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Deck storage not configured",
+        )
+    return repo
+
+
+def _manifest_from_body(body: DeckCreate | DeckUpdate) -> dict[str, Any]:
+    data = body.model_dump(exclude_unset=True)
+    return {
+        "languageId": data.get("languageId", ""),
+        "name": data.get("name", ""),
+        "description": data.get("description"),
+        "courseId": data.get("courseId"),
+        "status": data.get("status", "draft"),
+        "version": data.get("version", "1.0"),
+        "image": data.get("image"),
+        "defaultEase": data.get("defaultEase"),
+        "locale": data.get("locale"),
+    }
+
+
+def _to_response(manifest: dict[str, Any], cards: list[dict[str, Any]]) -> DeckResponse:
+    return DeckResponse(
+        id=manifest["id"],
+        languageId=manifest.get("languageId", ""),
+        name=manifest.get("name", ""),
+        description=manifest.get("description"),
+        courseId=manifest.get("courseId"),
+        authorId=manifest.get("authorId"),
+        status=manifest.get("status", "draft"),
+        version=manifest.get("version", "1.0"),
+        cardCount=manifest.get("cardCount", 0),
+        image=manifest.get("image"),
+        defaultEase=manifest.get("defaultEase"),
+        locale=manifest.get("locale"),
+        createdAt=manifest.get("createdAt"),
+        updatedAt=manifest.get("updatedAt"),
+        cards=cards,
+    )
+
+
+@router.get("/decks", response_model=list[DeckResponse])
+async def list_my_decks(
+    repo: DeckRepo,
+    user: CurrentUser,
+    language_id: str | None = None,
+    deck_status: str | None = None,
+) -> Any:
+    """List decks owned by the current user (for My Content)."""
+    r = _require_deck_repo(repo)
+    manifests = await r.list_manifests(
+        language_id=language_id,
+        author_id=user.sub,
+        status=deck_status,
+    )
+    result = []
+    for m in manifests:
+        deck = await r.get_deck(m["id"])
+        if deck:
+            result.append(_to_response(deck, deck.get("cards", [])))
+    return result
+
+
+@router.post("/decks", response_model=DeckResponse, status_code=status.HTTP_201_CREATED)
+async def create_deck(
+    body: DeckCreate,
+    repo: DeckRepo,
+    user: CurrentUser,
+) -> Any:
+    """Create a new community deck (draft by default)."""
+    r = _require_deck_repo(repo)
+    deck_id = f"comm-{uuid.uuid4().hex[:12]}"
+    manifest = _manifest_from_body(body)
+    manifest["authorId"] = user.sub
+    manifest["id"] = deck_id
+    manifest["status"] = body.status if hasattr(body, "status") else "draft"
+    await r.upsert_deck(deck_id, manifest, body.cards)
+    deck = await r.get_deck(deck_id)
+    if not deck:
+        raise HTTPException(status_code=500, detail="Deck creation failed")
+    return _to_response(deck, deck.get("cards", []))
+
+
+@router.get("/decks/batch", response_model=list[DeckResponse])
+async def get_decks_batch(
+    repo: DeckRepo,
+    user: CurrentUser,
+    ids: str = Query(..., description="Comma-separated deck IDs"),
+) -> Any:
+    """Fetch multiple decks by ID. Returns only decks the user can access (published or owned)."""
+    if not ids.strip():
+        return []
+    deck_ids = [s.strip() for s in ids.split(",") if s.strip()]
+    if not deck_ids:
+        return []
+    r = _require_deck_repo(repo)
+    result = []
+    for deck_id in deck_ids:
+        deck = await r.get_deck(deck_id)
+        if not deck:
+            continue
+        author = deck.get("authorId")
+        deck_status = deck.get("status", "published")
+        if author and author != user.sub and deck_status == "draft":
+            continue
+        result.append(_to_response(deck, deck.get("cards", [])))
+    return result
+
+
+@router.get("/decks/admin", response_model=list[DeckResponse])
+async def list_admin_decks(
+    repo: DeckRepo,
+    user: CurrentUser,
+    status: str | None = Query(None, description="Filter by status: draft, published"),
+    language_id: str | None = Query(None, description="Filter by language"),
+) -> Any:
+    """List all decks for admin approval. No RBAC for now — all users have access."""
+    r = _require_deck_repo(repo)
+    manifests = await r.list_manifests(
+        language_id=language_id,
+        author_id=None,
+        status=status,
+    )
+    result = []
+    for m in manifests:
+        deck = await r.get_deck(m["id"])
+        if deck:
+            result.append(_to_response(deck, deck.get("cards", [])))
+    return result
+
+
+@router.patch("/decks/admin/{deck_id}/status", response_model=DeckResponse)
+async def admin_update_deck_status(
+    deck_id: str,
+    repo: DeckRepo,
+    user: CurrentUser,
+    status: str = Query(..., description="draft | published"),
+) -> Any:
+    """Approve (published) or reject (draft) a deck. No RBAC for now — all users have access."""
+    if status not in ("draft", "published"):
+        raise HTTPException(status_code=400, detail="status must be draft or published")
+    r = _require_deck_repo(repo)
+    existing = await r.get_deck(deck_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    manifest = {**existing, "status": status, "authorId": existing.get("authorId")}
+    await r.upsert_deck(deck_id, manifest, existing.get("cards", []))
+    deck = await r.get_deck(deck_id)
+    if not deck:
+        raise HTTPException(status_code=500, detail="Deck update failed")
+    return _to_response(deck, deck.get("cards", []))
+
+
+@router.get("/decks/{deck_id}", response_model=DeckResponse)
+async def get_deck(
+    deck_id: str,
+    repo: DeckRepo,
+    user: CurrentUser,
+) -> Any:
+    """Get a deck by id. User must own it (for drafts) or it must be published."""
+    r = _require_deck_repo(repo)
+    deck = await r.get_deck(deck_id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    author = deck.get("authorId")
+    deck_status = deck.get("status", "published")
+    if author and author != user.sub and deck_status == "draft":
+        raise HTTPException(status_code=404, detail="Deck not found")
+    return _to_response(deck, deck.get("cards", []))
+
+
+@router.put("/decks/{deck_id}", response_model=DeckResponse)
+async def update_deck(
+    deck_id: str,
+    body: DeckUpdate,
+    repo: DeckRepo,
+    user: CurrentUser,
+) -> Any:
+    """Update a deck. User must be the author."""
+    r = _require_deck_repo(repo)
+    existing = await r.get_deck(deck_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    author = existing.get("authorId")
+    if author and author != user.sub:
+        raise HTTPException(status_code=403, detail="Only the author can update this deck")
+    patch = body.model_dump(exclude_unset=True)
+    manifest = dict(existing)
+    manifest["languageId"] = patch.get("languageId", manifest.get("languageId", ""))
+    manifest["name"] = patch.get("name", manifest.get("name", ""))
+    manifest["description"] = patch.get("description", manifest.get("description"))
+    if "image" in patch:
+        manifest["image"] = patch["image"] or None
+    if "defaultEase" in patch:
+        manifest["defaultEase"] = patch["defaultEase"]
+    manifest["status"] = patch.get("status", manifest.get("status", "draft"))
+    manifest["authorId"] = author or user.sub
+    manifest["id"] = deck_id
+    cards = patch["cards"] if "cards" in patch else existing.get("cards", [])
+    await r.upsert_deck(deck_id, manifest, cards)
+    deck = await r.get_deck(deck_id)
+    if not deck:
+        raise HTTPException(status_code=500, detail="Deck update failed")
+    return _to_response(deck, deck.get("cards", []))
+
+
+@router.patch("/decks/{deck_id}/status", response_model=DeckResponse)
+async def update_deck_status(
+    deck_id: str,
+    repo: DeckRepo,
+    user: CurrentUser,
+    status: str = Query(..., description="draft | published"),
+) -> Any:
+    """Change deck status (draft | published). User must be the author."""
+    if status not in ("draft", "published"):
+        raise HTTPException(status_code=400, detail="status must be draft or published")
+    r = _require_deck_repo(repo)
+    existing = await r.get_deck(deck_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    author = existing.get("authorId")
+    if author and author != user.sub:
+        raise HTTPException(status_code=403, detail="Only the author can update this deck")
+    manifest = {**existing, "status": status, "authorId": author or user.sub}
+    await r.upsert_deck(deck_id, manifest, existing.get("cards", []))
+    deck = await r.get_deck(deck_id)
+    if not deck:
+        raise HTTPException(status_code=500, detail="Deck update failed")
+    return _to_response(deck, deck.get("cards", []))

@@ -43,10 +43,16 @@ class UserRepository(Protocol):
 
 
 class SRSRepository(Protocol):
-    """Per-card SRS state. One global map per user, keyed by card ID."""
+    """Per-card SRS state. One row/item per (user, card). Supports efficient due-date queries."""
 
     async def get_all(self, auth0_id: str) -> dict[str, dict[str, Any]]:
         """Return the full SRS map: {cardId: SRSCardState}."""
+        ...
+
+    async def get_due_cards(
+        self, auth0_id: str, on_or_before: str
+    ) -> dict[str, dict[str, Any]]:
+        """Return cards with dueDate <= on_or_before (YYYY-MM-DD). Efficient index-backed query."""
         ...
 
     async def get_card(self, auth0_id: str, card_id: str) -> dict[str, Any] | None:
@@ -66,4 +72,75 @@ class SRSRepository(Protocol):
 
     async def clear_all(self, auth0_id: str) -> int:
         """Remove all SRS state for a user. Returns count deleted."""
+        ...
+
+
+class DeckRepository(Protocol):
+    """Deck manifest + content. Manifest = metadata; content = cards. Both keyed by deck id."""
+
+    async def list_manifests(
+        self,
+        language_id: str | None = None,
+        author_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return deck manifests, optionally filtered by language_id, author_id, status."""
+        ...
+
+    async def get_manifest(self, deck_id: str) -> dict[str, Any] | None:
+        """Return manifest for a deck, or None."""
+        ...
+
+    async def get_deck(self, deck_id: str) -> dict[str, Any] | None:
+        """Return full deck (manifest + cards). None if not found."""
+        ...
+
+    async def get_versions(self, deck_ids: list[str]) -> dict[str, str]:
+        """Return {deck_id: version} for the given deck ids."""
+        ...
+
+    async def upsert_deck(
+        self, deck_id: str, manifest: dict[str, Any], cards: list[dict[str, Any]]
+    ) -> None:
+        """Insert or update a deck (manifest + content)."""
+        ...
+
+
+class SubscriptionRepository(Protocol):
+    """User subscriptions to content (decks, addons, stories). Separate table from settings.
+    Query by auth0_id; sort/filter by content_type. Implementation can be SQLite or DynamoDB."""
+
+    async def add(
+        self, auth0_id: str, content_type: str, content_id: str
+    ) -> None:
+        """Add a subscription. Idempotent if already exists."""
+        ...
+
+    async def remove(
+        self, auth0_id: str, content_type: str, content_id: str
+    ) -> None:
+        """Remove a subscription. No-op if not subscribed."""
+        ...
+
+    async def list(
+        self, auth0_id: str, content_type: str | None = None
+    ) -> list[dict[str, Any]]:
+        """List subscriptions, optionally filtered by content_type.
+        Returns list of {contentType, contentId, createdAt, enabled, newCardsPerDay, newCardOrder}."""
+        ...
+
+    async def update_settings(
+        self,
+        auth0_id: str,
+        content_type: str,
+        content_id: str,
+        patch: dict[str, Any],
+    ) -> bool:
+        """Update subscription settings. Returns True if updated, False if not found."""
+        ...
+
+    async def has(
+        self, auth0_id: str, content_type: str, content_id: str
+    ) -> bool:
+        """Check if user has this subscription."""
         ...

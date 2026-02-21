@@ -343,7 +343,7 @@ class MockCommunityRepository:
             "author_id": addon["author_id"],
             "upvote_count": 0,
             "item_count": addon.get("item_count"),
-            "status": addon.get("status", "published"),
+            "status": addon.get("status", "draft"),
             "created_at": _now(),
             "updated_at": _now(),
         }
@@ -359,6 +359,8 @@ class MockCommunityRepository:
         *,
         kind: str | None = None,
         language_id: str | None = None,
+        status: str | None = None,
+        author_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
@@ -367,6 +369,10 @@ class MockCommunityRepository:
             items = [a for a in items if a.get("kind") == kind]
         if language_id:
             items = [a for a in items if a.get("language_id") == language_id]
+        if status:
+            items = [a for a in items if a.get("status") == status]
+        if author_id:
+            items = [a for a in items if a.get("author_id") == author_id]
         return [deepcopy(a) for a in items[offset : offset + limit]]
 
     async def update_addon(self, addon_id: str, patch: dict[str, Any]) -> dict[str, Any]:

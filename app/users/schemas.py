@@ -62,3 +62,32 @@ class UserSettingsPatch(BaseModel):
     theme: str | None = None
     learningLanguage: str | None = None
     uiLocale: str | None = None
+
+
+# -- Subscriptions (content user has added) --
+
+
+class SubscriptionItem(BaseModel):
+    """A single subscription."""
+
+    contentType: str
+    contentId: str
+    createdAt: str | None = None
+    enabled: bool = True
+    newCardsPerDay: int = 5
+    newCardOrder: str = Field(default="ordered", description="ordered | shuffled")
+
+
+class SubscriptionCreate(BaseModel):
+    """Add a subscription."""
+
+    contentType: str = Field(description="deck, addon, story")
+    contentId: str = Field(min_length=1)
+
+
+class SubscriptionSettingsPatch(BaseModel):
+    """Update subscription settings (enabled, new card limits, etc)."""
+
+    enabled: bool | None = None
+    newCardsPerDay: int | None = Field(default=None, ge=0, le=100)
+    newCardOrder: str | None = Field(default=None, description="ordered | shuffled")

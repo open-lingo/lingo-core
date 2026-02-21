@@ -4,6 +4,7 @@ Prefix: /api/core/community/v1
 Uses CommunityRepository (mock for now). Markdown stored as text; React markdown editor compatible.
 """
 
+import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -12,7 +13,9 @@ from app.auth.dependencies import get_current_user_optional
 from app.auth.schemas import TokenPayload
 from app.community.schemas import (
     AddonCreate,
+    AddonPatch,
     AddonResponse,
+    DeckContentStore,
     CategoryResponse,
     ContentLinkResponse,
     MarkdownResponse,
@@ -336,11 +339,23 @@ async def list_addons(
     repo: CommunityRepo,
     kind: str | None = None,
     language_id: str | None = None,
+    addon_status: str | None = None,
+    author_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> Any:
-    """List community addons with optional filters."""
-    items = await repo.list_addons(kind=kind, language_id=language_id, limit=limit, offset=offset)
+    """List community addons with optional filters.
+    status: filter by draft|published (omit = all).
+    author_id: filter by author (for 'My Content').
+    """
+    items = await repo.list_addons(
+        kind=kind,
+        language_id=language_id,
+        status=addon_status,
+        author_id=author_id,
+        limit=limit,
+        offset=offset,
+    )
     return items
 
 
@@ -369,6 +384,73 @@ async def get_addon(addon_id: str, repo: CommunityRepo) -> Any:
     if not addon:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Addon not found")
     return addon
+
+
+@router.patch("/addons/{addon_id}", response_model=AddonResponse)
+async def update_addon(
+    addon_id: str,
+    body: AddonPatch,
+    repo: CommunityRepo,
+    user: CurrentUser,
+) -> Any:
+    """Update addon metadata. Auth required; only author can update."""
+    if not user:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
+    addon = await repo.get_addon_by_id(addon_id)
+    if not addon:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Addon not found")
+    if addon.get("author_id") != user.sub:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the author can update this addon")
+    patch = body.model_dump(exclude_unset=True)
+    updated = await repo.update_addon(addon_id, patch)
+    return updated
+
+
+@router.put("/addons/{addon_id}/deck", response_model=dict)
+async def put_addon_deck(
+    addon_id: str,
+    body: DeckContentStore,
+    repo: CommunityRepo,
+    user: CurrentUser,
+) -> Any:
+    """Store deck content (cards) for a flashcard_pack addon. Auth required."""
+    if not user:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
+    addon = await repo.get_addon_by_id(addon_id)
+    if not addon:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Addon not found")
+    if addon.get("author_id") != user.sub:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the author can edit this deck")
+    if addon.get("kind") != "flashcard_pack":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Deck content is only for flashcard_pack addons",
+        )
+    key = f"addons/{addon_id}/deck"
+    content = json.dumps({"cards": body.cards})
+    await repo.store_markdown(key, content, content_type="application/json")
+    await repo.update_addon(addon_id, {"item_count": len(body.cards)})
+    return {"ok": True, "card_count": len(body.cards)}
+
+
+@router.get("/addons/{addon_id}/deck")
+async def get_addon_deck(
+    addon_id: str,
+    repo: CommunityRepo,
+) -> Any:
+    """Get deck content (cards) for a flashcard_pack addon."""
+    addon = await repo.get_addon_by_id(addon_id)
+    if not addon:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Addon not found")
+    key = f"addons/{addon_id}/deck"
+    stored = await repo.get_markdown(key)
+    if not stored:
+        return {"cards": []}
+    try:
+        data = json.loads(stored["content"])
+        return {"cards": data.get("cards", [])}
+    except json.JSONDecodeError:
+        return {"cards": []}
 
 
 # ── Markdown storage (for rich content, React markdown editor compatibility) ──

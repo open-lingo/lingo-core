@@ -63,6 +63,19 @@ class SqliteSRSRepository:
         rows = await cur.fetchall()
         return {row["card_id"]: _row_to_state(row) for row in rows}
 
+    async def get_due_cards(
+        self, auth0_id: str, on_or_before: str
+    ) -> dict[str, dict[str, Any]]:
+        """Return cards with due_date <= on_or_before. Uses idx_srs_due."""
+        cur = await self._conn().execute(
+            """SELECT * FROM srs_cards
+               WHERE auth0_id = ? AND due_date <= ?
+               ORDER BY due_date""",
+            (auth0_id, on_or_before),
+        )
+        rows = await cur.fetchall()
+        return {row["card_id"]: _row_to_state(row) for row in rows}
+
     async def get_card(self, auth0_id: str, card_id: str) -> dict[str, Any] | None:
         cur = await self._conn().execute(
             "SELECT * FROM srs_cards WHERE auth0_id = ? AND card_id = ?",
@@ -79,10 +92,21 @@ class SqliteSRSRepository:
         for card_id, incoming in cards.items():
             existing = await self.get_card(auth0_id, card_id)
 
-            # Last-write-wins by lastReviewDate
-            if existing and existing.get("lastReviewDate", "") >= incoming.get("lastReviewDate", ""):
+            # Last-write-wins by lastReviewDate for core SRS fields
+            core_win = existing and existing.get("lastReviewDate", "") >= incoming.get("lastReviewDate", "")
+            # Always accept buriedUntil changes (bury/unbury) even if core is older
+            bury_changed = (
+                existing
+                and "buriedUntil" in incoming
+                and incoming.get("buriedUntil") != existing.get("buriedUntil")
+            )
+            if core_win and not bury_changed:
                 result[card_id] = existing
                 continue
+
+            # If only bury changed, merge buriedUntil into existing for persist
+            if core_win and bury_changed and existing:
+                incoming = {**existing, "buriedUntil": incoming.get("buriedUntil")}
 
             extra_keys = {k: v for k, v in incoming.items()
                          if k not in ("easeFactor", "interval", "dueDate", "repetitions", "lastReviewDate")}

@@ -140,6 +140,7 @@ class VoteRequest(BaseModel):
 # ── Addons ──
 
 ADDON_KINDS = ("course", "flashcard_pack", "story", "grammar")
+ADDON_STATUSES = ("draft", "submitted", "review", "published", "changes_requested", "rejected")
 
 
 class AddonCreate(BaseModel):
@@ -149,6 +150,23 @@ class AddonCreate(BaseModel):
     description: str = Field(default="")
     source_url: str | None = None
     item_count: int | None = None
+    status: str = Field(default="draft", description="draft | submitted | published")
+
+
+class AddonPatch(BaseModel):
+    """Update addon metadata. Partial updates."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    source_url: str | None = None
+    item_count: int | None = None
+    status: str | None = Field(default=None, description="draft | submitted | published")
+
+
+class DeckContentStore(BaseModel):
+    """Store deck content (cards JSON) for flashcard_pack addons."""
+
+    cards: list[dict] = Field(default_factory=list, description="Array of card objects")
 
 
 class AddonResponse(BaseModel):
@@ -161,7 +179,7 @@ class AddonResponse(BaseModel):
     author_id: str
     upvote_count: int = 0
     item_count: int | None = None
-    status: str = "published"
+    status: str = "draft"
     created_at: str
     updated_at: str
 
