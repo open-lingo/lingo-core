@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.28",
     "aiosqlite>=0.20",
     "aioboto3>=13",
+    "mangum>=0.18",
 ]
 
 [project.optional-dependencies]

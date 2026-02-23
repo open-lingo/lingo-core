@@ -10,11 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import TokenPayload
-from app.db.dependencies import get_deck_repo
+from app.db.provider import get_deck_repo
 from app.db.protocols import DeckRepository
 from app.decks.schemas import DeckCreate, DeckResponse, DeckUpdate
 
-router = APIRouter(prefix="/api/core/decks/v1", tags=["decks"])
+router = APIRouter(tags=["decks"])
 
 DeckRepo = Annotated[DeckRepository | None, Depends(get_deck_repo)]
 CurrentUser = Annotated[TokenPayload, Depends(get_current_user)]
@@ -41,6 +41,7 @@ def _manifest_from_body(body: DeckCreate | DeckUpdate) -> dict[str, Any]:
         "image": data.get("image"),
         "defaultEase": data.get("defaultEase"),
         "locale": data.get("locale"),
+        "companionToStoryId": data.get("companionToStoryId"),
     }
 
 
@@ -60,23 +61,26 @@ def _to_response(manifest: dict[str, Any], cards: list[dict[str, Any]]) -> DeckR
         locale=manifest.get("locale"),
         createdAt=manifest.get("createdAt"),
         updatedAt=manifest.get("updatedAt"),
+        companionToStoryId=manifest.get("companionToStoryId"),
         cards=cards,
     )
 
 
-@router.get("/decks", response_model=list[DeckResponse])
+@router.get("", response_model=list[DeckResponse])
 async def list_my_decks(
     repo: DeckRepo,
     user: CurrentUser,
     language_id: str | None = None,
     deck_status: str | None = None,
+    exclude_companion_decks: bool = Query(False, description="Exclude companion decks (for community browse)"),
 ) -> Any:
-    """List decks owned by the current user (for My Content)."""
+    """List decks owned by the current user (for My Content or Link existing)."""
     r = _require_deck_repo(repo)
     manifests = await r.list_manifests(
         language_id=language_id,
-        author_id=user.sub,
+        author_id=user.id,
         status=deck_status,
+        exclude_companion=exclude_companion_decks,
     )
     result = []
     for m in manifests:
@@ -86,17 +90,17 @@ async def list_my_decks(
     return result
 
 
-@router.post("/decks", response_model=DeckResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=DeckResponse, status_code=status.HTTP_201_CREATED)
 async def create_deck(
     body: DeckCreate,
     repo: DeckRepo,
     user: CurrentUser,
 ) -> Any:
-    """Create a new community deck (draft by default)."""
+    """Create a new community deck (draft by default) or companion deck."""
     r = _require_deck_repo(repo)
     deck_id = f"comm-{uuid.uuid4().hex[:12]}"
     manifest = _manifest_from_body(body)
-    manifest["authorId"] = user.sub
+    manifest["authorId"] = user.id
     manifest["id"] = deck_id
     manifest["status"] = body.status if hasattr(body, "status") else "draft"
     await r.upsert_deck(deck_id, manifest, body.cards)
@@ -106,7 +110,7 @@ async def create_deck(
     return _to_response(deck, deck.get("cards", []))
 
 
-@router.get("/decks/batch", response_model=list[DeckResponse])
+@router.get("/batch", response_model=list[DeckResponse])
 async def get_decks_batch(
     repo: DeckRepo,
     user: CurrentUser,
@@ -119,32 +123,31 @@ async def get_decks_batch(
     if not deck_ids:
         return []
     r = _require_deck_repo(repo)
+    decks = await r.get_decks_batch(deck_ids)
     result = []
-    for deck_id in deck_ids:
-        deck = await r.get_deck(deck_id)
-        if not deck:
-            continue
+    for deck in decks:
         author = deck.get("authorId")
         deck_status = deck.get("status", "published")
-        if author and author != user.sub and deck_status == "draft":
+        if author and author != user.id and deck_status == "draft":
             continue
         result.append(_to_response(deck, deck.get("cards", [])))
     return result
 
 
-@router.get("/decks/admin", response_model=list[DeckResponse])
+@router.get("/admin", response_model=list[DeckResponse])
 async def list_admin_decks(
     repo: DeckRepo,
     user: CurrentUser,
     status: str | None = Query(None, description="Filter by status: draft, published"),
     language_id: str | None = Query(None, description="Filter by language"),
 ) -> Any:
-    """List all decks for admin approval. No RBAC for now — all users have access."""
+    """List all decks for admin approval. Excludes companion decks (tied to stories)."""
     r = _require_deck_repo(repo)
     manifests = await r.list_manifests(
         language_id=language_id,
         author_id=None,
         status=status,
+        exclude_companion=True,
     )
     result = []
     for m in manifests:
@@ -154,7 +157,7 @@ async def list_admin_decks(
     return result
 
 
-@router.patch("/decks/admin/{deck_id}/status", response_model=DeckResponse)
+@router.patch("/admin/{deck_id}/status", response_model=DeckResponse)
 async def admin_update_deck_status(
     deck_id: str,
     repo: DeckRepo,
@@ -176,7 +179,7 @@ async def admin_update_deck_status(
     return _to_response(deck, deck.get("cards", []))
 
 
-@router.get("/decks/{deck_id}", response_model=DeckResponse)
+@router.get("/{deck_id}", response_model=DeckResponse)
 async def get_deck(
     deck_id: str,
     repo: DeckRepo,
@@ -189,12 +192,12 @@ async def get_deck(
         raise HTTPException(status_code=404, detail="Deck not found")
     author = deck.get("authorId")
     deck_status = deck.get("status", "published")
-    if author and author != user.sub and deck_status == "draft":
+    if author and author != user.id and deck_status == "draft":
         raise HTTPException(status_code=404, detail="Deck not found")
     return _to_response(deck, deck.get("cards", []))
 
 
-@router.put("/decks/{deck_id}", response_model=DeckResponse)
+@router.put("/{deck_id}", response_model=DeckResponse)
 async def update_deck(
     deck_id: str,
     body: DeckUpdate,
@@ -207,7 +210,7 @@ async def update_deck(
     if not existing:
         raise HTTPException(status_code=404, detail="Deck not found")
     author = existing.get("authorId")
-    if author and author != user.sub:
+    if author and author != user.id:
         raise HTTPException(status_code=403, detail="Only the author can update this deck")
     patch = body.model_dump(exclude_unset=True)
     manifest = dict(existing)
@@ -219,7 +222,9 @@ async def update_deck(
     if "defaultEase" in patch:
         manifest["defaultEase"] = patch["defaultEase"]
     manifest["status"] = patch.get("status", manifest.get("status", "draft"))
-    manifest["authorId"] = author or user.sub
+    if "companionToStoryId" in patch:
+        manifest["companionToStoryId"] = patch["companionToStoryId"]
+    manifest["authorId"] = author or user.id
     manifest["id"] = deck_id
     cards = patch["cards"] if "cards" in patch else existing.get("cards", [])
     await r.upsert_deck(deck_id, manifest, cards)
@@ -229,7 +234,7 @@ async def update_deck(
     return _to_response(deck, deck.get("cards", []))
 
 
-@router.patch("/decks/{deck_id}/status", response_model=DeckResponse)
+@router.patch("/{deck_id}/status", response_model=DeckResponse)
 async def update_deck_status(
     deck_id: str,
     repo: DeckRepo,
@@ -244,9 +249,9 @@ async def update_deck_status(
     if not existing:
         raise HTTPException(status_code=404, detail="Deck not found")
     author = existing.get("authorId")
-    if author and author != user.sub:
+    if author and author != user.id:
         raise HTTPException(status_code=403, detail="Only the author can update this deck")
-    manifest = {**existing, "status": status, "authorId": author or user.sub}
+    manifest = {**existing, "status": status, "authorId": author or user.id}
     await r.upsert_deck(deck_id, manifest, existing.get("cards", []))
     deck = await r.get_deck(deck_id)
     if not deck:

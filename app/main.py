@@ -6,12 +6,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.community.router import router as community_router
-from app.decks.router import router as decks_router
 from app.config import settings
-from app.db.dependencies import init_repositories, shutdown_repositories
-from app.srs.router import router as srs_router
-from app.users.router import router as users_router
+from app.db.provider import init_repositories, shutdown_repositories
+from app.v1.router import v1_router
 
 logger = logging.getLogger("lingo.access")
 
@@ -22,6 +19,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         level=logging.DEBUG if settings.DEBUG else logging.INFO,
         format="%(asctime)s  %(name)s  %(message)s",
         datefmt="%H:%M:%S",
+        force=True,
     )
     startup = logging.getLogger("lingo.startup")
     startup.info(
@@ -69,10 +67,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(users_router)
-app.include_router(srs_router)
-app.include_router(community_router)
-app.include_router(decks_router)
+app.include_router(v1_router, prefix="/api/core/v1")
 
 
 @app.get("/health")

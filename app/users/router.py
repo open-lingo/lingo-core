@@ -2,9 +2,9 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, get_registered_user
 from app.auth.schemas import TokenPayload
-from app.db.dependencies import get_deck_repo, get_subscription_repo, get_user_repo
+from app.db.provider import get_deck_repo, get_subscription_repo, get_user_repo
 from app.db.protocols import SubscriptionRepository, UserRepository
 from app.users.schemas import (
     SubscriptionCreate,
@@ -19,9 +19,12 @@ from app.users.schemas import (
 from app.users.subscriptions.content_types.registry import get_content_type_handler
 from app.users.subscriptions.types import ContentType
 
-router = APIRouter(prefix="/api/core/users/v1", tags=["users"])
+router = APIRouter(tags=["users"])
 
-CurrentUser = Annotated[TokenPayload, Depends(get_current_user)]
+# Registration uses get_current_user — user.id is None before registration
+UnregisteredUser = Annotated[TokenPayload, Depends(get_current_user)]
+# All other endpoints require a fully registered user (user.id is set)
+CurrentUser = Annotated[TokenPayload, Depends(get_registered_user)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 
 
@@ -29,7 +32,7 @@ UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 
 
 @router.post("/me", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register_user(body: UserCreate, user: CurrentUser, repo: UserRepo) -> Any:
+async def register_user(body: UserCreate, user: UnregisteredUser, repo: UserRepo) -> Any:
     """First-time registration: creates the user record linked to their Auth0 identity."""
     existing = await repo.get_user_by_auth0_id(user.sub)
     if existing is not None:
@@ -51,29 +54,27 @@ async def register_user(body: UserCreate, user: CurrentUser, repo: UserRepo) -> 
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(user: CurrentUser, repo: UserRepo) -> Any:
-    """Return the current user's record. 404 if not yet registered."""
-    record = await repo.get_user_by_auth0_id(user.sub)
+    record = await repo.get_user_by_id(user.id)
     if record is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not registered")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     return record
 
 
 @router.patch("/me", response_model=UserResponse)
 async def update_me(body: UserUpdate, user: CurrentUser, repo: UserRepo) -> Any:
-    """Update the current user's profile fields."""
     patch = body.model_dump(exclude_none=True)
     if not patch:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty patch body")
 
     if "username" in patch:
         taken = await repo.get_user_by_username(patch["username"])
-        if taken is not None and taken["auth0_id"] != user.sub:
+        if taken is not None and taken["id"] != user.id:
             raise HTTPException(status.HTTP_409_CONFLICT, "Username already taken")
 
     try:
-        updated = await repo.update_user(user.sub, patch)
+        updated = await repo.update_user(user.id, patch)
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not registered")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     return updated
 
 
@@ -91,7 +92,7 @@ async def get_user_by_username(username: str, repo: UserRepo) -> Any:
 
 @router.get("/me/settings", response_model=UserSettings)
 async def get_settings(user: CurrentUser, repo: UserRepo) -> Any:
-    data = await repo.get_settings(user.sub)
+    data = await repo.get_settings(user.id)
     if data is None:
         return UserSettings()
     return data
@@ -106,7 +107,7 @@ async def patch_settings(
     patch = body.model_dump(exclude_none=True)
     if not patch:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty patch body")
-    updated = await repo.update_settings(user.sub, patch)
+    updated = await repo.update_settings(user.id, patch)
     return updated
 
 
@@ -130,9 +131,8 @@ async def list_subscriptions(
     repo: Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)],
     content_type: str | None = Query(None, description="Filter by type: deck, addon, story"),
 ) -> Any:
-    """List the current user's subscriptions."""
     r = _require_subscription_repo(repo)
-    items = await r.list(user.sub, content_type=content_type)
+    items = await r.list(user.id, content_type=content_type)
     return [SubscriptionItem(**x) for x in items]
 
 
@@ -145,7 +145,6 @@ async def add_subscription(
     repo: Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)],
     deck_repo: Annotated[Any, Depends(get_deck_repo)],
 ) -> Any:
-    """Add a subscription. Validates content exists for known types."""
     if body.contentType not in [c.value for c in ContentType]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -158,8 +157,8 @@ async def add_subscription(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"{body.contentType} not found: {body.contentId}",
         )
-    await r.add(user.sub, body.contentType, body.contentId)
-    items = await r.list(user.sub, content_type=body.contentType)
+    await r.add(user.id, body.contentType, body.contentId)
+    items = await r.list(user.id, content_type=body.contentType)
     added = next((i for i in items if i["contentId"] == body.contentId), None)
     if not added:
         raise HTTPException(status_code=500, detail="Subscription add failed")
@@ -177,7 +176,6 @@ async def update_subscription(
     user: CurrentUser,
     repo: Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)],
 ) -> Any:
-    """Update subscription settings (enabled, newCardsPerDay, newCardOrder)."""
     if content_type not in [c.value for c in ContentType]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -187,7 +185,6 @@ async def update_subscription(
     patch = body.model_dump(exclude_none=True)
     if not patch:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty patch body")
-    # Normalize for DB: enabled -> 0/1, newCardOrder validate
     if "newCardOrder" in patch and patch["newCardOrder"] not in ("ordered", "shuffled"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -200,10 +197,10 @@ async def update_subscription(
         db_patch["newCardsPerDay"] = patch["newCardsPerDay"]
     if "newCardOrder" in patch:
         db_patch["newCardOrder"] = patch["newCardOrder"]
-    updated = await r.update_settings(user.sub, content_type, content_id, db_patch)
+    updated = await r.update_settings(user.id, content_type, content_id, db_patch)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
-    items = await r.list(user.sub, content_type=content_type)
+    items = await r.list(user.id, content_type=content_type)
     item = next((i for i in items if i["contentId"] == content_id), None)
     if not item:
         raise HTTPException(status_code=500, detail="Subscription not found after update")
@@ -220,11 +217,10 @@ async def remove_subscription(
     user: CurrentUser,
     repo: Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)],
 ) -> None:
-    """Remove a subscription."""
     if content_type not in [c.value for c in ContentType]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"contentType must be one of: {[c.value for c in ContentType]}",
         )
     r = _require_subscription_repo(repo)
-    await r.remove(user.sub, content_type, content_id)
+    await r.remove(user.id, content_type, content_id)

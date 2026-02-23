@@ -13,6 +13,8 @@ class DeckCreate(BaseModel):
     defaultEase: float | None = Field(default=None, ge=1.3, le=3.0, description="Initial ease for new cards (SM-2)")
     status: str = Field(default="draft", description="draft | published")
     cards: list[dict] = Field(default_factory=list)
+    """If set, deck is a companion deck (tied to a story). Excluded from community browse."""
+    companionToStoryId: str | None = Field(default=None, description="Story ID or 'pending' for draft companion")
 
 
 class DeckUpdate(BaseModel):
@@ -25,6 +27,7 @@ class DeckUpdate(BaseModel):
     defaultEase: float | None = Field(default=None, ge=1.3, le=3.0, description="Initial ease for new cards (SM-2)")
     status: str | None = Field(default=None, description="draft | published")
     cards: list[dict] | None = None  # None = keep existing cards
+    companionToStoryId: str | None = None
 
 
 class DeckResponse(BaseModel):
@@ -44,4 +47,5 @@ class DeckResponse(BaseModel):
     locale: str | None = None
     createdAt: str | None = None
     updatedAt: str | None = None
+    companionToStoryId: str | None = None
     cards: list[dict] = Field(default_factory=list)

@@ -1,6 +1,5 @@
 """Community/forum API endpoints.
 
-Prefix: /api/core/community/v1
 Uses CommunityRepository (mock for now). Markdown stored as text; React markdown editor compatible.
 """
 
@@ -30,10 +29,10 @@ from app.community.schemas import (
     ThreadResponse,
     VoteRequest,
 )
-from app.db.dependencies import get_community_repo
-from app.db.mock_community import MockCommunityRepository
+from app.db.mock.community import MockCommunityRepository
+from app.db.provider import get_community_repo
 
-router = APIRouter(prefix="/api/core/community/v1", tags=["community"])
+router = APIRouter(tags=["community"])
 
 CommunityRepo = Annotated[MockCommunityRepository, Depends(get_community_repo)]
 CurrentUser = Annotated[TokenPayload | None, Depends(get_current_user_optional)]

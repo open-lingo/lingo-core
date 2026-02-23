@@ -57,6 +57,9 @@ uvicorn app.main:app --reload
 python -m scripts.seed            # skip existing rows
 python -m scripts.seed --reset    # wipe and re-seed
 
+# For DynamoDB: use test_decks/ JSON files with the app's Upload deck feature
+# (Community → Contribute → Create → Upload deck) instead of seeding.
+
 # Lint
 ruff check .
 
@@ -193,15 +196,108 @@ Tables:
 |---|---|
 | `users` | User records (`auth0_id`, `username`, `email`, ...) |
 | `user_settings` | Per-user settings JSON blob |
-| `srs_cards` | Per-card SRS state (`auth0_id`, `card_id`, SM-2 fields, `buriedUntil`) |
+| `srs_cards` | Per-card SRS state (`user_id`, `card_id`, SM-2 fields, `buriedUntil`) |
 | `deck_manifests` | Deck metadata (`id`, `name`, `status`, `author`, ...) |
 | `deck_content` | Deck card content (JSON) |
-| `subscriptions` | User content subscriptions (`auth0_id`, `content_type`, `content_id`, settings) |
+| `subscriptions` | User content subscriptions (`user_id`, `content_type`, `content_id`, settings) |
 
 ### DynamoDB (production)
 
-`DB_BACKEND=dynamodb` — uses `aioboto3`. `DynamoUserRepository` is implemented. SRS and deck DynamoDB repos are not yet implemented (raise `NotImplementedError`).
+`DB_BACKEND=dynamodb` — uses `aioboto3`. All four repos are implemented.
+
+#### Key design
+
+All tables use `PK (S)` + `SK (S)` as the primary key. Keys use our internal user UUID (not Auth0 sub) so we can switch auth providers later. Single-table design: users + subscriptions share one table.
+
+| DynamoDB table | Key pattern | Notes |
+|---|---|---|
+| `lingo_users` | `PK=USER#<uuid>`, `SK=RECORD` / `SETTINGS` / `SUB#<type>#<id>` | Users, settings, subscriptions. GSI `Auth0-Index` for auth resolution (sub→UUID). GSI `Username-Index` for public profile lookup. |
+| `lingo_srs` | `PK=USER#<uuid>`, `SK=CARD#<card_id>` | One item per (user, card). GSI `DueDate-Index` on `user_id` + `dueDate` for due-card range queries. |
+| `lingo_decks` | `PK=DECK#<deck_id>`, `SK=META` | Manifest + cards in one item (cards as JSON string). GSI `StatusLanguage-Index` for efficient listing by status/language. |
+
+#### Provisioning (AWS CLI)
+
+```bash
+PREFIX=lingo_   # matches DYNAMODB_TABLE_PREFIX
+REGION=us-east-1
+
+# Users table (+ subscriptions) — Auth0-Index uses INCLUDE projection for cost savings
+aws dynamodb create-table \
+  --table-name ${PREFIX}users \
+  --attribute-definitions \
+      AttributeName=PK,AttributeType=S \
+      AttributeName=SK,AttributeType=S \
+      AttributeName=GSI1PK,AttributeType=S \
+      AttributeName=GSI1SK,AttributeType=S \
+      AttributeName=GSI2PK,AttributeType=S \
+      AttributeName=GSI2SK,AttributeType=S \
+  --key-schema AttributeName=PK,KeyType=HASH AttributeName=SK,KeyType=RANGE \
+  --global-secondary-indexes '[
+      {"IndexName":"Auth0-Index","KeySchema":[{"AttributeName":"GSI1PK","KeyType":"HASH"},{"AttributeName":"GSI1SK","KeyType":"RANGE"}],"Projection":{"ProjectionType":"INCLUDE","NonKeyAttributes":["id"]}},
+      {"IndexName":"Username-Index","KeySchema":[{"AttributeName":"GSI2PK","KeyType":"HASH"},{"AttributeName":"GSI2SK","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}
+  ]' \
+  --billing-mode PAY_PER_REQUEST
+
+# SRS table
+aws dynamodb create-table \
+  --table-name ${PREFIX}srs \
+  --attribute-definitions \
+      AttributeName=PK,AttributeType=S \
+      AttributeName=SK,AttributeType=S \
+      AttributeName=user_id,AttributeType=S \
+      AttributeName=dueDate,AttributeType=S \
+  --key-schema AttributeName=PK,KeyType=HASH AttributeName=SK,KeyType=RANGE \
+  --global-secondary-indexes '[{
+      "IndexName":"DueDate-Index",
+      "KeySchema":[{"AttributeName":"user_id","KeyType":"HASH"},{"AttributeName":"dueDate","KeyType":"RANGE"}],
+      "Projection":{"ProjectionType":"ALL"}
+  }]' \
+  --billing-mode PAY_PER_REQUEST
+
+# Decks table — StatusLanguage-Index for list_manifests queries (status + languageId)
+aws dynamodb create-table \
+  --table-name ${PREFIX}decks \
+  --attribute-definitions \
+      AttributeName=PK,AttributeType=S \
+      AttributeName=SK,AttributeType=S \
+      AttributeName=status,AttributeType=S \
+      AttributeName=languageId,AttributeType=S \
+  --key-schema AttributeName=PK,KeyType=HASH AttributeName=SK,KeyType=RANGE \
+  --global-secondary-indexes '[{
+      "IndexName":"StatusLanguage-Index",
+      "KeySchema":[{"AttributeName":"status","KeyType":"HASH"},{"AttributeName":"languageId","KeyType":"RANGE"}],
+      "Projection":{"ProjectionType":"ALL"}
+  }]' \
+  --billing-mode PAY_PER_REQUEST
+```
+
+**Cost optimizations:** `Auth0-Index` projects only `id` so auth resolution reads minimal data. Use provisioned capacity + auto-scaling once traffic is predictable (on-demand is ~6× more expensive per RCU).
+
+## Lambda deployment & performance
+
+The backend runs on AWS Lambda via Mangum (no uvicorn needed). Cold starts make the first request slow (2–5s). To reduce latency:
+
+### Keep Lambda warm
+
+Lambda shuts down after ~5–15 minutes idle. Each new request then pays a cold start. Options:
+
+1. **Scheduled warming** — Invoke the Lambda every 4–5 minutes with a GET `/health` request. Use EventBridge (CloudWatch Events) to trigger a small "warmer" Lambda that calls your Lambda Function URL, or invoke directly with an HTTP-shaped payload.
+2. **Provisioned concurrency** — Keeps 1+ instances always warm. Costs extra (~$15/mo for 1 instance at 1GB).
+3. **Traffic** — Regular user traffic keeps it warm; sporadic usage causes cold starts.
+
+### Build optimizations (included)
+
+- `scripts/build-zip.sh` excludes uvicorn (Mangum handles ASGI directly) — saves ~15MB.
+- Excludes `__pycache__`, `*.dist-info`, tests from the zip.
+
+### Lambda config recommendations
+
+| Setting | Recommendation |
+|---------|----------------|
+| Memory | 512 MB minimum; 1024 MB improves cold start (more CPU) |
+| Timeout | 30 s |
+| Env | `PYTHONNODEBUGRANGES=1` to reduce traceback overhead (Python 3.11+) |
 
 ### Community
 
-Always uses an **in-memory mock repository** regardless of `DB_BACKEND`. Persistent SQLite/DynamoDB implementations exist as stubs and are not yet wired up. Community data is reset on server restart.
+Always uses an **in-memory mock repository** regardless of `DB_BACKEND`. Community data is reset on server restart.

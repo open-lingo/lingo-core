@@ -377,14 +377,17 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at          TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS user_settings (
-    auth0_id TEXT PRIMARY KEY,
-    data     TEXT NOT NULL DEFAULT '{}'
+    user_id TEXT PRIMARY KEY REFERENCES users(id),
+    data    TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS deck_manifests (
     id          TEXT PRIMARY KEY,
     language_id TEXT NOT NULL,
     name        TEXT NOT NULL,
+    description TEXT,
     course_id   TEXT,
+    author_id   TEXT,
+    status      TEXT NOT NULL DEFAULT 'published',
     version     TEXT NOT NULL DEFAULT '1.0',
     card_count  INTEGER NOT NULL DEFAULT 0,
     image       TEXT,
@@ -394,13 +397,16 @@ CREATE TABLE IF NOT EXISTS deck_manifests (
 );
 CREATE INDEX IF NOT EXISTS idx_deck_manifests_language ON deck_manifests (language_id);
 CREATE TABLE IF NOT EXISTS subscriptions (
-    auth0_id     TEXT NOT NULL,
+    user_id      TEXT NOT NULL,
     content_type TEXT NOT NULL,
     content_id   TEXT NOT NULL,
     created_at   TEXT NOT NULL,
-    PRIMARY KEY (auth0_id, content_type, content_id)
+    enabled            INTEGER NOT NULL DEFAULT 1,
+    new_cards_per_day  INTEGER NOT NULL DEFAULT 5,
+    new_card_order     TEXT NOT NULL DEFAULT 'ordered',
+    PRIMARY KEY (user_id, content_type, content_id)
 );
-CREATE INDEX IF NOT EXISTS idx_subscriptions_auth0 ON subscriptions (auth0_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions (user_id);
 CREATE TABLE IF NOT EXISTS deck_content (
     deck_id TEXT PRIMARY KEY,
     cards   TEXT NOT NULL
@@ -427,22 +433,85 @@ async def seed(db_path: str, do_reset: bool) -> None:
 
     await db.executescript(INIT_SQL)
 
+    # Migration: user_settings and subscriptions from auth0_id -> user_id (app expects user_id)
+    cur = await db.execute("PRAGMA table_info(user_settings)")
+    cols = [r[1] for r in await cur.fetchall()]
+    if "auth0_id" in cols and "user_id" not in cols:
+        await db.execute("DROP TABLE IF EXISTS user_settings")
+        await db.execute(
+            "CREATE TABLE user_settings (user_id TEXT PRIMARY KEY REFERENCES users(id), data TEXT NOT NULL DEFAULT '{}')"
+        )
+        for auth0_id, prefs in SEED_SETTINGS.items():
+            ucur = await db.execute("SELECT id FROM users WHERE auth0_id = ?", (auth0_id,))
+            urow = await ucur.fetchone()
+            if urow:
+                await db.execute(
+                    "INSERT INTO user_settings (user_id, data) VALUES (?, ?)",
+                    (urow[0], json.dumps(prefs)),
+                )
+        await db.commit()
+    cur = await db.execute("PRAGMA table_info(subscriptions)")
+    sub_cols = [r[1] for r in await cur.fetchall()]
+    if "auth0_id" in sub_cols and "user_id" not in sub_cols:
+        await db.execute("DROP TABLE IF EXISTS subscriptions")
+        await db.execute("""
+            CREATE TABLE subscriptions (
+                user_id TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                content_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                new_cards_per_day INTEGER NOT NULL DEFAULT 5,
+                new_card_order TEXT NOT NULL DEFAULT 'ordered',
+                PRIMARY KEY (user_id, content_type, content_id)
+            )
+        """)
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions (user_id)")
+        await db.commit()
+
+    # Migration: ensure deck_manifests has status, description, author_id (for older DBs)
+    for col, col_def in [
+        ("description", "TEXT"),
+        ("author_id", "TEXT"),
+        ("status", "TEXT NOT NULL DEFAULT 'published'"),
+    ]:
+        try:
+            await db.execute(f"ALTER TABLE deck_manifests ADD COLUMN {col} {col_def}")
+            await db.commit()
+        except aiosqlite.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+    # Ensure seed decks are published (fix existing DBs where they were inserted as draft)
+    seed_ids = [d["id"] for d in SEED_DECKS]
+    placeholders = ",".join("?" * len(seed_ids))
+    await db.execute(
+        f"UPDATE deck_manifests SET status = 'published' WHERE id IN ({placeholders})",
+        seed_ids,
+    )
+    await db.commit()
+
     now = datetime.now(UTC).isoformat()
     created = 0
     skipped = 0
 
+    auth0_to_user_id: dict[str, str] = {}
     for u in SEED_USERS:
-        cur = await db.execute("SELECT 1 FROM users WHERE auth0_id = ?", (u["auth0_id"],))
-        if await cur.fetchone():
+        cur = await db.execute("SELECT id FROM users WHERE auth0_id = ?", (u["auth0_id"],))
+        row = await cur.fetchone()
+        if row:
+            auth0_to_user_id[u["auth0_id"]] = row[0]
             skipped += 1
             continue
 
+        user_id = str(uuid.uuid4())
+        auth0_to_user_id[u["auth0_id"]] = user_id
         await db.execute(
             """INSERT INTO users (id, auth0_id, username, display_name,
                                   profile_picture_key, status, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                str(uuid.uuid4()),
+                user_id,
                 u["auth0_id"],
                 u["username"],
                 u["display_name"],
@@ -456,12 +525,15 @@ async def seed(db_path: str, do_reset: bool) -> None:
 
     settings_created = 0
     for auth0_id, prefs in SEED_SETTINGS.items():
-        cur = await db.execute("SELECT 1 FROM user_settings WHERE auth0_id = ?", (auth0_id,))
+        user_id = auth0_to_user_id.get(auth0_id)
+        if not user_id:
+            continue
+        cur = await db.execute("SELECT 1 FROM user_settings WHERE user_id = ?", (user_id,))
         if await cur.fetchone():
             continue
         await db.execute(
-            "INSERT INTO user_settings (auth0_id, data) VALUES (?, ?)",
-            (auth0_id, json.dumps(prefs)),
+            "INSERT INTO user_settings (user_id, data) VALUES (?, ?)",
+            (user_id, json.dumps(prefs)),
         )
         settings_created += 1
 
@@ -472,15 +544,19 @@ async def seed(db_path: str, do_reset: bool) -> None:
             continue
         manifest = deck["manifest"]
         cards = deck["cards"]
+        # Use status='published' so decks appear in community browse (listAdminDecks filters by published)
         await db.execute(
             """INSERT INTO deck_manifests
-                   (id, language_id, name, course_id, version, card_count, image, locale, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (id, language_id, name, description, course_id, author_id, status, version, card_count, image, locale, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 deck["id"],
                 manifest["languageId"],
                 manifest["name"],
+                manifest.get("description"),
                 manifest.get("courseId"),
+                manifest.get("authorId"),
+                "published",
                 manifest.get("version", "1.0"),
                 len(cards),
                 manifest.get("image"),
