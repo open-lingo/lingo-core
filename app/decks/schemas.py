@@ -30,6 +30,12 @@ class DeckUpdate(BaseModel):
     companionToStoryId: str | None = None
 
 
+class AddCardsRequest(BaseModel):
+    """Append cards to a deck. Deduped by front+back."""
+
+    cards: list[dict] = Field(..., min_length=1, description="Cards to add")
+
+
 class DeckResponse(BaseModel):
     """Deck with manifest + cards."""
 

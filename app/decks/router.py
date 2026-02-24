@@ -8,16 +8,18 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, get_registered_user
 from app.auth.schemas import TokenPayload
-from app.db.provider import get_deck_repo
-from app.db.protocols import DeckRepository
-from app.decks.schemas import DeckCreate, DeckResponse, DeckUpdate
+from app.db.provider import get_deck_repo, get_subscription_repo
+from app.db.protocols import DeckRepository, SubscriptionRepository
+from app.decks.schemas import AddCardsRequest, DeckCreate, DeckResponse, DeckUpdate
 
 router = APIRouter(tags=["decks"])
 
 DeckRepo = Annotated[DeckRepository | None, Depends(get_deck_repo)]
+SubRepo = Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)]
 CurrentUser = Annotated[TokenPayload, Depends(get_current_user)]
+RegisteredUser = Annotated[TokenPayload, Depends(get_registered_user)]
 
 
 def _require_deck_repo(repo: DeckRepository | None) -> DeckRepository:
@@ -141,7 +143,7 @@ async def list_admin_decks(
     status: str | None = Query(None, description="Filter by status: draft, published"),
     language_id: str | None = Query(None, description="Filter by language"),
 ) -> Any:
-    """List all decks for admin approval. Excludes companion decks (tied to stories)."""
+    """List all decks for admin approval. Excludes companion decks (tied to stories) and personal vocab decks."""
     r = _require_deck_repo(repo)
     manifests = await r.list_manifests(
         language_id=language_id,
@@ -151,7 +153,10 @@ async def list_admin_decks(
     )
     result = []
     for m in manifests:
-        deck = await r.get_deck(m["id"])
+        deck_id = m.get("id", "")
+        if deck_id.startswith("vocab-"):
+            continue
+        deck = await r.get_deck(deck_id)
         if deck:
             result.append(_to_response(deck, deck.get("cards", [])))
     return result
@@ -173,6 +178,96 @@ async def admin_update_deck_status(
         raise HTTPException(status_code=404, detail="Deck not found")
     manifest = {**existing, "status": status, "authorId": existing.get("authorId")}
     await r.upsert_deck(deck_id, manifest, existing.get("cards", []))
+    deck = await r.get_deck(deck_id)
+    if not deck:
+        raise HTTPException(status_code=500, detail="Deck update failed")
+    return _to_response(deck, deck.get("cards", []))
+
+
+def _dedupe_cards(existing: list[dict], new_cards: list[dict]) -> list[dict]:
+    """Merge new cards into existing, deduping by front+back. Assigns new ids to added cards."""
+    existing_ids = {c.get("id") for c in existing if c.get("id")}
+    seen: set[tuple[str, str]] = {
+        (str(c.get("front", "")).strip(), str(c.get("back", "")).strip())
+        for c in existing
+    }
+    merged = list(existing)
+    for c in new_cards:
+        key = (str(c.get("front", "")).strip(), str(c.get("back", "")).strip())
+        if key not in seen:
+            seen.add(key)
+            card = dict(c)
+            if card.get("id") in existing_ids or not card.get("id"):
+                card["id"] = f"card-{uuid.uuid4().hex[:12]}"
+            existing_ids.add(card["id"])
+            merged.append(card)
+    return merged
+
+
+@router.get("/my-vocab", response_model=DeckResponse)
+async def get_my_vocab_deck(
+    repo: DeckRepo,
+    sub_repo: SubRepo,
+    user: RegisteredUser,
+    language_id: str = Query(..., description="Language ID for the vocab deck"),
+) -> Any:
+    """Get or create the user's 'My Vocab' deck for a language. Used for add-to-vocab from stories.
+    Auto-subscribes the user so the deck appears in SRS and deck manager."""
+    r = _require_deck_repo(repo)
+    manifests = await r.list_manifests(
+        language_id=language_id,
+        author_id=user.id,
+        status=None,
+        exclude_companion=True,
+    )
+    lang_names = {"ko": "Korean", "ja": "Japanese", "zh": "Chinese", "es": "Spanish"}
+    vocab_name = f"My Vocab ({lang_names.get(language_id, language_id)})"
+    for m in manifests:
+        if "my vocab" in (m.get("name") or "").lower():
+            deck = await r.get_deck(m["id"])
+            if deck:
+                deck_id = deck.get("id")
+                if deck_id and sub_repo:
+                    await sub_repo.add(user.id, "deck", deck_id)
+                return _to_response(deck, deck.get("cards", []))
+    deck_id = f"vocab-{user.id[:8]}-{language_id}-{uuid.uuid4().hex[:6]}"
+    manifest = {
+        "id": deck_id,
+        "languageId": language_id,
+        "name": vocab_name,
+        "description": "Words and phrases saved from reading.",
+        "authorId": user.id,
+        "status": "published",
+    }
+    await r.upsert_deck(deck_id, manifest, [])
+    if sub_repo:
+        await sub_repo.add(user.id, "deck", deck_id)
+    deck = await r.get_deck(deck_id)
+    if not deck:
+        raise HTTPException(status_code=500, detail="Vocab deck creation failed")
+    return _to_response(deck, deck.get("cards", []))
+
+
+@router.post("/{deck_id}/cards", response_model=DeckResponse)
+async def add_cards_to_deck(
+    deck_id: str,
+    body: AddCardsRequest,
+    repo: DeckRepo,
+    user: CurrentUser,
+) -> Any:
+    """Append cards to a deck. User must own the deck. Dedupes by front+back."""
+    r = _require_deck_repo(repo)
+    existing = await r.get_deck(deck_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    if existing.get("authorId") != user.id:
+        raise HTTPException(status_code=403, detail="Only the deck author can add cards")
+    current_cards = existing.get("cards", [])
+    merged = _dedupe_cards(current_cards, body.cards)
+    manifest = dict(existing)
+    manifest["id"] = deck_id
+    manifest["authorId"] = existing.get("authorId") or user.id
+    await r.upsert_deck(deck_id, manifest, merged)
     deck = await r.get_deck(deck_id)
     if not deck:
         raise HTTPException(status_code=500, detail="Deck update failed")
