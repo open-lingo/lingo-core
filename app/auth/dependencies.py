@@ -182,22 +182,79 @@ async def get_current_user_optional(
     return await _resolve_user_id(token)
 
 
-def get_registered_user(user: Annotated[TokenPayload, Depends(get_current_user)]) -> TokenPayload:
+async def get_registered_user(
+    user: Annotated[TokenPayload, Depends(get_current_user)],
+) -> TokenPayload:
     """Like get_current_user but 404s if the user hasn't completed registration.
-
-    Use this on any endpoint that requires a fully-registered user (i.e. has
-    an internal UUID). The registration endpoint itself uses get_current_user
-    directly since the UUID doesn't exist yet.
+    Also blocks banned users with 403 USER_BANNED.
     """
     if user.id is None:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
             "User not registered — complete registration first",
         )
+    from app.auth.ban import raise_if_user_banned
+    from app.db.provider import get_user_repo
+
+    repo = get_user_repo()
+    if repo:
+        record = await repo.get_user_by_id(user.id)
+        if record:
+            raise_if_user_banned(record)
     return user
 
 
-def require_admin(user: Annotated[TokenPayload, Depends(get_registered_user)]) -> TokenPayload:
-    """Require admin role. For now defaults to True — RBAC will be added later."""
-    # Future: check user.permissions or DB role — e.g. "admin" in user.permissions
+async def require_admin(
+    user: Annotated[TokenPayload, Depends(get_registered_user)],
+) -> TokenPayload:
+    """Require admin or super_admin role. Fetches user record to check role."""
+    from app.auth.roles import has_admin_access
+    from app.db.provider import get_user_repo
+
+    repo = get_user_repo()
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="User storage not configured",
+        )
+    record = await repo.get_user_by_id(user.id)
+    if not record:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if not has_admin_access(record.get("role") or "user"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return user
+
+
+async def get_community_user(
+    user: Annotated[TokenPayload, Depends(get_registered_user)],
+) -> TokenPayload:
+    """Like get_registered_user but also blocks community-banned users with 403 COMMUNITY_BANNED."""
+    from app.auth.ban import raise_if_community_banned
+    from app.db.provider import get_user_repo
+
+    repo = get_user_repo()
+    if repo:
+        record = await repo.get_user_by_id(user.id)
+        if record:
+            raise_if_community_banned(record)
+    return user
+
+
+async def get_community_user_optional(
+    user: Annotated[TokenPayload | None, Depends(get_current_user_optional)],
+) -> TokenPayload | None:
+    """Like get_current_user_optional but raises 403 COMMUNITY_BANNED if user is community-banned."""
+    if user is None or user.id is None:
+        return user
+    from app.auth.ban import raise_if_community_banned
+    from app.db.provider import get_user_repo
+
+    repo = get_user_repo()
+    if repo:
+        record = await repo.get_user_by_id(user.id)
+        if record:
+            raise_if_community_banned(record)
     return user

@@ -24,6 +24,7 @@ SEED_USERS = [
         "display_name": "Trevor",
         "profile_picture_key": None,
         "status": "active",
+        "role": "admin",
     },
     {
         "auth0_id": "dev|user-2",
@@ -31,6 +32,7 @@ SEED_USERS = [
         "display_name": "Hana Kim",
         "profile_picture_key": None,
         "status": "active",
+        "role": "user",
     },
     {
         "auth0_id": "dev|user-3",
@@ -38,6 +40,7 @@ SEED_USERS = [
         "display_name": "Test User",
         "profile_picture_key": None,
         "status": "active",
+        "role": "user",
     },
 ]
 
@@ -469,6 +472,38 @@ async def seed(db_path: str, do_reset: bool) -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions (user_id)")
         await db.commit()
 
+    # Migration: user ban fields, bio, role
+    for col, col_def in [
+        ("status_expiration", "TEXT"),
+        ("community_status", "TEXT"),
+        ("community_status_expiration", "TEXT"),
+        ("bio", "TEXT"),
+        ("role", "TEXT NOT NULL DEFAULT 'user'"),
+    ]:
+        try:
+            await db.execute(f"ALTER TABLE users ADD COLUMN {col} {col_def}")
+            await db.commit()
+        except aiosqlite.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
+    # Migration: ensure trevor (dev user) has admin role
+    cur = await db.execute("PRAGMA table_info(users)")
+    cols = [r[1] for r in await cur.fetchall()]
+    if "role" in cols:
+        await db.execute("UPDATE users SET role = 'admin' WHERE username = 'trevor'")
+        await db.commit()
+
+    # Migration: copy legacy status (user bio) to bio, normalize status to active/banned
+    cur = await db.execute("PRAGMA table_info(users)")
+    cols = [r[1] for r in await cur.fetchall()]
+    if "bio" in cols:
+        await db.execute(
+            """UPDATE users SET bio = status, status = 'active'
+               WHERE status NOT IN ('active', 'banned') AND (bio IS NULL OR bio = '')"""
+        )
+        await db.commit()
+
     # Migration: ensure deck_manifests has status, description, author_id (for older DBs)
     for col, col_def in [
         ("description", "TEXT"),
@@ -508,8 +543,8 @@ async def seed(db_path: str, do_reset: bool) -> None:
         auth0_to_user_id[u["auth0_id"]] = user_id
         await db.execute(
             """INSERT INTO users (id, auth0_id, username, display_name,
-                                  profile_picture_key, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  profile_picture_key, status, role, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 user_id,
                 u["auth0_id"],
@@ -517,6 +552,7 @@ async def seed(db_path: str, do_reset: bool) -> None:
                 u["display_name"],
                 u["profile_picture_key"],
                 u["status"],
+                u.get("role", "user"),
                 now,
                 now,
             ),
