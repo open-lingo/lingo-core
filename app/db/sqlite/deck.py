@@ -269,3 +269,8 @@ class SqliteDeckRepository:
             (deck_id, cards_json),
         )
         await self._conn().commit()
+
+    async def delete_deck(self, deck_id: str) -> None:
+        await self._conn().execute("DELETE FROM deck_content WHERE deck_id = ?", (deck_id,))
+        await self._conn().execute("DELETE FROM deck_manifests WHERE id = ?", (deck_id,))
+        await self._conn().commit()

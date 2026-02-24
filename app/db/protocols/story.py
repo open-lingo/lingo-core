@@ -25,3 +25,7 @@ class StoryRepository(Protocol):
     async def update_story(self, story_id: str, data: dict[str, Any]) -> None:
         """Update a story."""
         ...
+
+    async def delete_story(self, story_id: str) -> None:
+        """Delete a story. No-op if not found."""
+        ...

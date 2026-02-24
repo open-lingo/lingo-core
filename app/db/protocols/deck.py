@@ -35,3 +35,7 @@ class DeckRepository(Protocol):
     ) -> None:
         """Insert or update a deck (manifest + content)."""
         ...
+
+    async def delete_deck(self, deck_id: str) -> None:
+        """Delete a deck and its content. No-op if not found."""
+        ...

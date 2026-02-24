@@ -116,6 +116,10 @@ class SqliteStoryRepository:
         )
         await self._conn().commit()
 
+    async def delete_story(self, story_id: str) -> None:
+        await self._conn().execute("DELETE FROM stories WHERE id = ?", (story_id,))
+        await self._conn().commit()
+
     async def update_story(
         self,
         story_id: str,

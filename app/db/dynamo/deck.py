@@ -244,3 +244,8 @@ class DynamoDeckRepository:
         item = {k: v for k, v in item.items() if v is not None}
 
         await self._table.put_item(Item=item)
+
+    async def delete_deck(self, deck_id: str) -> None:
+        await self._table.delete_item(
+            Key={"PK": self._pk(deck_id), "SK": _META_SK},
+        )
