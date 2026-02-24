@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_current_user, get_registered_user
 from app.auth.schemas import TokenPayload
-from app.db.provider import get_deck_repo, get_subscription_repo, get_user_repo
+from app.db.provider import get_deck_repo, get_story_repo, get_subscription_repo, get_user_repo
 from app.db.protocols import SubscriptionRepository, UserRepository
 from app.users.schemas import (
+    MeUpdate,
     SubscriptionCreate,
     SubscriptionItem,
     SubscriptionSettingsPatch,
@@ -14,7 +15,6 @@ from app.users.schemas import (
     UserResponse,
     UserSettings,
     UserSettingsPatch,
-    UserUpdate,
 )
 from app.users.subscriptions.content_types.registry import get_content_type_handler
 from app.users.subscriptions.types import ContentType
@@ -61,7 +61,7 @@ async def get_me(user: CurrentUser, repo: UserRepo) -> Any:
 
 
 @router.patch("/me", response_model=UserResponse)
-async def update_me(body: UserUpdate, user: CurrentUser, repo: UserRepo) -> Any:
+async def update_me(body: MeUpdate, user: CurrentUser, repo: UserRepo) -> Any:
     patch = body.model_dump(exclude_none=True)
     if not patch:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty patch body")
@@ -144,6 +144,7 @@ async def add_subscription(
     user: CurrentUser,
     repo: Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)],
     deck_repo: Annotated[Any, Depends(get_deck_repo)],
+    story_repo: Annotated[Any, Depends(get_story_repo)],
 ) -> Any:
     if body.contentType not in [c.value for c in ContentType]:
         raise HTTPException(
@@ -151,7 +152,10 @@ async def add_subscription(
             detail=f"contentType must be one of: {[c.value for c in ContentType]}",
         )
     r = _require_subscription_repo(repo)
-    handler = get_content_type_handler(body.contentType, context={"deck_repo": deck_repo})
+    handler = get_content_type_handler(
+        body.contentType,
+        context={"deck_repo": deck_repo, "story_repo": story_repo},
+    )
     if not await handler.validate_subscription(body.contentId):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

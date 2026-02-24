@@ -3,17 +3,19 @@
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
 from app.auth.dependencies import require_admin
 from app.auth.schemas import TokenPayload
-from app.db.provider import get_deck_repo, get_story_repo, get_subscription_repo, get_user_repo
-from app.db.protocols import DeckRepository, StoryRepository, SubscriptionRepository, UserRepository
+from app.db.provider import get_deck_repo, get_story_repo, get_subscription_repo, get_srs_repo, get_user_repo
+from app.db.protocols import DeckRepository, SRSRepository, StoryRepository, SubscriptionRepository, UserRepository
 from app.decks.router import _to_response
 from app.decks.schemas import DeckResponse
 from app.stories.schemas import StoryResponse
-from app.users.schemas import SubscriptionCreate, SubscriptionItem, UserResponse
+from app.users.schemas import SubscriptionCreate, SubscriptionItem, UserResponse, UserUpdate
 from app.users.subscriptions.content_types.registry import get_content_type_handler
 from app.users.subscriptions.types import ContentType
+from app.srs.schemas import SRSCardState, SRSStateResponse
 
 router = APIRouter(tags=["admin"])
 
@@ -22,6 +24,7 @@ UserRepo = Annotated[UserRepository | None, Depends(get_user_repo)]
 SubRepo = Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)]
 DeckRepo = Annotated[DeckRepository | None, Depends(get_deck_repo)]
 StoryRepo = Annotated[StoryRepository | None, Depends(get_story_repo)]
+SRSRepo = Annotated[SRSRepository, Depends(get_srs_repo)]
 
 
 def _require_user_repo(repo: UserRepository | None) -> UserRepository:
@@ -96,6 +99,48 @@ async def get_user(
     return UserResponse(**record)
 
 
+@router.patch("/users/{user_id}", response_model=UserResponse)
+async def admin_update_user(
+    user_id: str,
+    body: UserUpdate,
+    _admin: AdminUser,
+    repo: UserRepo,
+) -> Any:
+    """Update a user's profile (username, display_name, profile_picture_key, status)."""
+    r = _require_user_repo(repo)
+    record = await r.get_user_by_id(user_id)
+    if record is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+
+    patch = body.model_dump(exclude_none=True)
+    if not patch:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty patch body")
+
+    if "username" in patch:
+        taken = await r.get_user_by_username(patch["username"])
+        if taken is not None and taken["id"] != user_id:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Username already taken")
+
+    # Only admins can change roles; cannot demote self below admin
+    if "role" in patch:
+        from app.auth.roles import Role
+
+        new_role = patch["role"]
+        if new_role not in {r.value for r in Role}:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid role: {new_role}")
+        if _admin.id == user_id and new_role not in ("admin", "super_admin"):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Cannot demote your own admin role",
+            )
+
+    try:
+        updated = await r.update_user(user_id, patch)
+    except LookupError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    return UserResponse(**updated)
+
+
 @router.get("/users/{user_id}/subscriptions", response_model=list[SubscriptionItem])
 async def get_user_subscriptions(
     user_id: str,
@@ -118,16 +163,83 @@ async def get_user_content(
     repo: UserRepo,
     deck_repo: DeckRepo,
 ) -> Any:
-    """Get decks authored by this user (admin)."""
+    """Get decks authored by this user (admin). Excludes personal vocab decks."""
     _require_user_repo(repo)
     deck_r = _require_deck_repo(deck_repo)
     manifests = await deck_r.list_manifests(author_id=user_id)
     result = []
     for m in manifests:
-        deck = await deck_r.get_deck(m["id"])
+        deck_id = m.get("id", "")
+        if deck_id.startswith("vocab-"):
+            continue
+        deck = await deck_r.get_deck(deck_id)
         if deck:
             result.append(_to_response(deck, deck.get("cards", [])))
     return result
+
+
+@router.get("/users/{user_id}/srs", response_model=SRSStateResponse)
+async def admin_get_user_srs(
+    user_id: str,
+    _admin: AdminUser,
+    repo: UserRepo,
+    srs_repo: SRSRepo,
+) -> Any:
+    """Get SRS state for a user (admin)."""
+    _require_user_repo(repo)
+    existing = await repo.get_user_by_id(user_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    cards = await srs_repo.get_all(user_id)
+    return {"cards": cards}
+
+
+class AdminSRSPatchRequest(BaseModel):
+    """Admin update of SRS state. Keys are card IDs."""
+
+    cards: dict[str, SRSCardState]
+
+
+@router.patch("/users/{user_id}/srs", response_model=SRSStateResponse)
+async def admin_update_user_srs(
+    user_id: str,
+    body: AdminSRSPatchRequest,
+    _admin: AdminUser,
+    repo: UserRepo,
+    srs_repo: SRSRepo,
+) -> Any:
+    """Update SRS state for a user (admin). Merges provided cards into existing state."""
+    _require_user_repo(repo)
+    existing = await repo.get_user_by_id(user_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not body.cards:
+        cards = await srs_repo.get_all(user_id)
+        return {"cards": cards}
+    cards_dict = {cid: s.model_dump() for cid, s in body.cards.items()}
+    merged = await srs_repo.upsert_cards(user_id, cards_dict)
+    return {"cards": merged}
+
+
+class AdminSRSDeleteRequest(BaseModel):
+    cardIds: list[str]
+
+
+@router.delete("/users/{user_id}/srs/cards")
+async def admin_delete_user_srs_cards(
+    user_id: str,
+    body: AdminSRSDeleteRequest,
+    _admin: AdminUser,
+    repo: UserRepo,
+    srs_repo: SRSRepo,
+) -> dict:
+    """Delete SRS state for specific cards (admin)."""
+    _require_user_repo(repo)
+    existing = await repo.get_user_by_id(user_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    count = await srs_repo.delete_cards(user_id, body.cardIds)
+    return {"deleted": count}
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -164,6 +276,7 @@ async def admin_add_subscription(
     repo: UserRepo,
     sub_repo: SubRepo,
     deck_repo: DeckRepo,
+    story_repo: StoryRepo,
 ) -> Any:
     """Add a subscription for a user (admin)."""
     _require_user_repo(repo)
@@ -173,7 +286,10 @@ async def admin_add_subscription(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"contentType must be one of: {[c.value for c in ContentType]}",
         )
-    handler = get_content_type_handler(body.contentType, context={"deck_repo": deck_repo})
+    handler = get_content_type_handler(
+        body.contentType,
+        context={"deck_repo": deck_repo, "story_repo": story_repo},
+    )
     if not await handler.validate_subscription(body.contentId):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

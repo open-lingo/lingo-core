@@ -19,5 +19,5 @@ def get_content_type_handler(
     if content_type == ContentType.ADDON:
         return AddonContentType()
     if content_type == ContentType.STORY:
-        return StoryContentType()
+        return StoryContentType(story_repo=context.get("story_repo"))
     raise ValueError(f"Unknown content type: {content_type!r}")

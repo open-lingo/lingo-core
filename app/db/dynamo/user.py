@@ -60,6 +60,11 @@ class DynamoUserRepository:
             "display_name": user["display_name"],
             "profile_picture_key": user.get("profile_picture_key"),
             "status": user.get("status", "active"),
+            "status_expiration": user.get("status_expiration") or None,
+            "community_status": user.get("community_status") or None,
+            "community_status_expiration": user.get("community_status_expiration") or None,
+            "bio": user.get("bio") or None,
+            "role": user.get("role", "user"),
             "created_at": now,
             "updated_at": now,
         }

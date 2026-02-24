@@ -8,7 +8,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.auth.dependencies import get_current_user_optional
+from app.auth.dependencies import get_community_user_optional
 from app.auth.schemas import TokenPayload
 from app.community.schemas import (
     AddonCreate,
@@ -35,7 +35,7 @@ from app.db.provider import get_community_repo
 router = APIRouter(tags=["community"])
 
 CommunityRepo = Annotated[MockCommunityRepository, Depends(get_community_repo)]
-CurrentUser = Annotated[TokenPayload | None, Depends(get_current_user_optional)]
+CurrentUser = Annotated[TokenPayload | None, Depends(get_community_user_optional)]
 
 
 def _thread_to_response(

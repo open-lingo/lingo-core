@@ -41,6 +41,22 @@ def _to_response(story: dict) -> StoryResponse:
     )
 
 
+@router.get("/browse", response_model=list[StoryResponse])
+async def list_browse_stories(
+    repo: StoryRepo,
+    user: CurrentUser,
+    language_id: str | None = Query(None, description="Filter by language"),
+) -> list[StoryResponse]:
+    """List published stories for browsing. Any authenticated user."""
+    r = _require_story_repo(repo)
+    stories = await r.list_stories(
+        author_id=None,
+        language_id=language_id,
+        status="published",
+    )
+    return [_to_response(s) for s in stories]
+
+
 @router.get("", response_model=list[StoryResponse])
 async def list_my_stories(
     repo: StoryRepo,

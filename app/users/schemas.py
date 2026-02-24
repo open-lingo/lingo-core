@@ -1,6 +1,13 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
+from app.auth.roles import Role
+
 # -- User record --
+
+AccountStatus = Literal["active", "banned"]
+CommunityStatus = Literal["active", "banned"]
 
 
 class UserCreate(BaseModel):
@@ -11,14 +18,32 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    """Partial update for the user record (PATCH /me)."""
+    """Partial update for the user record (admin PATCH). Includes ban fields."""
 
     username: str | None = Field(
         default=None, min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_-]+$"
     )
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     profile_picture_key: str | None = None
-    status: str | None = None
+    status: AccountStatus | None = None
+    status_expiration: str | None = Field(default=None, description="ISO datetime when ban expires")
+    community_status: CommunityStatus | None = None
+    community_status_expiration: str | None = Field(
+        default=None, description="ISO datetime when community ban expires"
+    )
+    bio: str | None = Field(default=None, max_length=500, description="Profile bio/status text")
+    role: Role | None = Field(default=None, description="user | trusted_creator | moderator | admin | super_admin")
+
+
+class MeUpdate(BaseModel):
+    """Partial update for own profile (PATCH /me). No ban-related fields."""
+
+    username: str | None = Field(
+        default=None, min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_-]+$"
+    )
+    display_name: str | None = Field(default=None, min_length=1, max_length=100)
+    profile_picture_key: str | None = None
+    bio: str | None = Field(default=None, max_length=500, description="Profile bio/status text")
 
 
 class UserResponse(BaseModel):
@@ -29,7 +54,12 @@ class UserResponse(BaseModel):
     username: str
     display_name: str
     profile_picture_key: str | None = None
+    bio: str | None = None
     status: str = "active"
+    status_expiration: str | None = None
+    community_status: str | None = None
+    community_status_expiration: str | None = None
+    role: str = "user"
     created_at: str
     updated_at: str
 
