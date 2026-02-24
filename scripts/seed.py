@@ -430,6 +430,13 @@ async def seed(db_path: str, do_reset: bool) -> None:
 
     if do_reset:
         await reset(db)
+    else:
+        # Drop subscriptions if it has old schema (auth0_id) so INIT_SQL can create it with user_id
+        cur = await db.execute("PRAGMA table_info(subscriptions)")
+        sub_cols = [r[1] for r in await cur.fetchall()]
+        if sub_cols and "user_id" not in sub_cols:
+            await db.execute("DROP TABLE IF EXISTS subscriptions")
+            await db.commit()
 
     await db.executescript(INIT_SQL)
 

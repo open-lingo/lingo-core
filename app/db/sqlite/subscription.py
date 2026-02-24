@@ -45,6 +45,12 @@ class SqliteSubscriptionRepository:
     async def connect(self) -> None:
         self._db = await aiosqlite.connect(self._db_path)
         self._db.row_factory = aiosqlite.Row
+        # Migrate old schema: subscriptions used to have auth0_id; app expects user_id
+        cur = await self._db.execute("PRAGMA table_info(subscriptions)")
+        cols = [row[1] for row in await cur.fetchall()]
+        if cols and "user_id" not in cols:
+            await self._db.execute("DROP TABLE IF EXISTS subscriptions")
+            await self._db.commit()
         await self._db.executescript(_INIT_SQL)
 
     async def close(self) -> None:
