@@ -6,6 +6,7 @@ local.db
 build/
 dist/
 .venv/
+.venv-tts/
 .ruff_cache/
 .pytest_cache/
 lingo-core.zip
