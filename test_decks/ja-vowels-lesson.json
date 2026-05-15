@@ -1,0 +1,22 @@
+{
+  "name": "ja-vowels-lesson-tts",
+  "languageId": "ja",
+  "_note": "Sidecar deck so the TTS generator picks up phrases used by lingo/src/features/lesson/data/mock-ja-m1-l1.ts. Not loaded by the app — only by scripts/tts/generate.py via DECKS_DIR.",
+  "cards": [
+    { "id": "vowel-a", "front": "あ" },
+    { "id": "vowel-i", "front": "い" },
+    { "id": "vowel-u", "front": "う" },
+    { "id": "vowel-e", "front": "え" },
+    { "id": "vowel-o", "front": "お" },
+    { "id": "word-ai", "front": "あい" },
+    { "id": "word-ie", "front": "いえ" },
+    { "id": "word-ue", "front": "うえ" },
+    { "id": "word-aoi", "front": "あおい" },
+    { "id": "word-mizu", "front": "みず" },
+    { "id": "kana-mi", "front": "み" },
+    { "id": "kana-zu", "front": "ず" },
+    { "id": "kana-na", "front": "な" },
+    { "id": "kana-nu", "front": "ぬ" },
+    { "id": "kana-mu", "front": "む" }
+  ]
+}

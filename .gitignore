@@ -5,9 +5,13 @@ local.db
 *.egg-info/
 build/
 dist/
+build/
 .venv/
 .venv-tts/
 .ruff_cache/
 .pytest_cache/
 lingo-core.zip
 *.zip
+
+# Accidental SQLite ":memory:" string used as a path
+:memory:
