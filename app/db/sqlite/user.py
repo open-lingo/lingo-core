@@ -166,8 +166,15 @@ class SqliteUserRepository:
         return json.loads(row["data"]) if row else None
 
     async def update_settings(self, user_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+        def _deep_merge(base: dict[str, Any], update: dict[str, Any]) -> None:
+            for k, v in update.items():
+                if k in base and isinstance(base[k], dict) and isinstance(v, dict):
+                    _deep_merge(base[k], v)
+                else:
+                    base[k] = v
+
         current = await self.get_settings(user_id) or {}
-        current.update(patch)
+        _deep_merge(current, patch)
         blob = json.dumps(current)
         await self._conn().execute(
             """INSERT INTO user_settings (user_id, data) VALUES (?, ?)

@@ -162,6 +162,22 @@ class SqliteDeckRepository:
         rows = await cur.fetchall()
         return [_row_to_manifest(row) for row in rows]
 
+    async def list_owned_manifests(
+        self,
+        author_id: str,
+        *,
+        language_id: str | None = None,
+        status: str | None = None,
+        exclude_companion: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Decks authored by this user (My Content / editor). Indexed by ``author_id``."""
+        return await self.list_manifests(
+            language_id=language_id,
+            author_id=author_id,
+            status=status,
+            exclude_companion=exclude_companion,
+        )
+
     async def get_manifest(self, deck_id: str) -> dict[str, Any] | None:
         cur = await self._conn().execute(
             "SELECT * FROM deck_manifests WHERE id = ?", (deck_id,)

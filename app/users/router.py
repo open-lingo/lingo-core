@@ -60,6 +60,15 @@ async def get_me(user: CurrentUser, repo: UserRepo) -> Any:
     return record
 
 
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_me(user: CurrentUser, repo: UserRepo) -> None:
+    """Delete the current user's account record and stored settings."""
+    existing = await repo.get_user_by_id(user.id)
+    if existing is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    await repo.delete_user(user.id)
+
+
 @router.patch("/me", response_model=UserResponse)
 async def update_me(body: MeUpdate, user: CurrentUser, repo: UserRepo) -> Any:
     patch = body.model_dump(exclude_none=True)

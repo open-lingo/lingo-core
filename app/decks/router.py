@@ -78,9 +78,9 @@ async def list_my_decks(
 ) -> Any:
     """List decks owned by the current user (for My Content or Link existing)."""
     r = _require_deck_repo(repo)
-    manifests = await r.list_manifests(
+    manifests = await r.list_owned_manifests(
+        user.id,
         language_id=language_id,
-        author_id=user.id,
         status=deck_status,
         exclude_companion=exclude_companion_decks,
     )

@@ -14,6 +14,7 @@ per version as needed.
 from fastapi import APIRouter
 
 from app.admin.router import router as admin_router
+from app.finance.router import router as finance_router
 from app.community.router import router as community_router
 from app.decks.router import router as decks_router
 from app.srs.router import router as srs_router
@@ -28,3 +29,4 @@ v1_router.include_router(decks_router, prefix="/decks")
 v1_router.include_router(stories_router, prefix="/stories")
 v1_router.include_router(community_router, prefix="/community")
 v1_router.include_router(admin_router, prefix="/admin")
+v1_router.include_router(finance_router, prefix="/finance")

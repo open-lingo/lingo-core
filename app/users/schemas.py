@@ -70,10 +70,17 @@ class UserResponse(BaseModel):
 class UserSettings(BaseModel):
     """User preferences — intentionally flexible to match what the frontend stores.
 
-    Known keys (from the frontend ``settings/types.ts``):
-      - theme: "light" | "dark" | "system"
+    Flat keys (legacy):
+      - theme: theme id (e.g. "light" | "dark" | "sepia" | "amoled")
       - learningLanguage: language id string
       - uiLocale: locale code
+    Nested keys (from frontend shared/settings/types):
+      - appearance: { themeId, darkMode }
+      - accessibility: { reducedMotion, highContrast?, fontScale? }
+      - audio: { soundEnabled }
+      - notifications: { dailyReminderTime?, reminderEnabled }
+      - learning: { learningLanguageId, uiLocale }
+      - display: { dateLocale?, timezoneOverride? }
     Extra keys are preserved so the frontend can evolve without backend changes.
     """
 
@@ -82,16 +89,28 @@ class UserSettings(BaseModel):
     theme: str | None = None
     learningLanguage: str | None = None
     uiLocale: str | None = None
+    appearance: dict | None = None
+    accessibility: dict | None = None
+    audio: dict | None = None
+    notifications: dict | None = None
+    learning: dict | None = None
+    display: dict | None = None
 
 
 class UserSettingsPatch(BaseModel):
-    """Partial update — any subset of UserSettings fields."""
+    """Partial update — any subset of UserSettings fields. Nested objects are merged."""
 
     model_config = {"extra": "allow"}
 
     theme: str | None = None
     learningLanguage: str | None = None
     uiLocale: str | None = None
+    appearance: dict | None = None
+    accessibility: dict | None = None
+    audio: dict | None = None
+    notifications: dict | None = None
+    learning: dict | None = None
+    display: dict | None = None
 
 
 # -- Subscriptions (content user has added) --

@@ -213,7 +213,7 @@ All tables use `PK (S)` + `SK (S)` as the primary key. Keys use our internal use
 |---|---|---|
 | `lingo_users` | `PK=USER#<uuid>`, `SK=RECORD` / `SETTINGS` / `SUB#<type>#<id>` | Users, settings, subscriptions. GSI `Auth0-Index` for auth resolution (sub→UUID). GSI `Username-Index` for public profile lookup. |
 | `lingo_srs` | `PK=USER#<uuid>`, `SK=CARD#<card_id>` | One item per (user, card). GSI `DueDate-Index` on `user_id` + `dueDate` for due-card range queries. |
-| `lingo_decks` | `PK=DECK#<deck_id>`, `SK=META` | Manifest + cards in one item (cards as JSON string). GSI `StatusLanguage-Index` for efficient listing by status/language. |
+| `lingo_decks` | `PK=DECK#<deck_id>`, `SK=META` | Manifest + cards in one item (cards as JSON string). GSI `StatusLanguage-Index` for listing by status/language; GSI `AuthorUpdated-Index` on `authorId` + `authorUpdatedDeck` (`<updatedAt>#<deck_id>`) for **My decks** without table scans. |
 
 #### Provisioning (AWS CLI)
 
@@ -254,7 +254,7 @@ aws dynamodb create-table \
   }]' \
   --billing-mode PAY_PER_REQUEST
 
-# Decks table — StatusLanguage-Index for list_manifests queries (status + languageId)
+# Decks table — StatusLanguage-Index + AuthorUpdated-Index (My decks by author)
 aws dynamodb create-table \
   --table-name ${PREFIX}decks \
   --attribute-definitions \
@@ -262,14 +262,17 @@ aws dynamodb create-table \
       AttributeName=SK,AttributeType=S \
       AttributeName=status,AttributeType=S \
       AttributeName=languageId,AttributeType=S \
+      AttributeName=authorId,AttributeType=S \
+      AttributeName=authorUpdatedDeck,AttributeType=S \
   --key-schema AttributeName=PK,KeyType=HASH AttributeName=SK,KeyType=RANGE \
-  --global-secondary-indexes '[{
-      "IndexName":"StatusLanguage-Index",
-      "KeySchema":[{"AttributeName":"status","KeyType":"HASH"},{"AttributeName":"languageId","KeyType":"RANGE"}],
-      "Projection":{"ProjectionType":"ALL"}
-  }]' \
+  --global-secondary-indexes '[
+      {"IndexName":"StatusLanguage-Index","KeySchema":[{"AttributeName":"status","KeyType":"HASH"},{"AttributeName":"languageId","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}},
+      {"IndexName":"AuthorUpdated-Index","KeySchema":[{"AttributeName":"authorId","KeyType":"HASH"},{"AttributeName":"authorUpdatedDeck","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}
+  ]' \
   --billing-mode PAY_PER_REQUEST
 ```
+
+**Existing `lingo_*decks` tables:** add the index with `aws dynamodb update-table` (supply `AttributeDefinitions` for `authorId` and `authorUpdatedDeck`, then `GlobalSecondaryIndexUpdates` with `Create` for `AuthorUpdated-Index`). Terraform applies the same change in-place. Deck items written **before** this change lack `authorUpdatedDeck` and **do not appear** in `AuthorUpdated-Index` until the next `upsert_deck` (or a one-off backfill script).
 
 **Cost optimizations:** `Auth0-Index` projects only `id` so auth resolution reads minimal data. Use provisioned capacity + auto-scaling once traffic is predictable (on-demand is ~6× more expensive per RCU).
 

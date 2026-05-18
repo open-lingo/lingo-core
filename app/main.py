@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db.provider import init_repositories, shutdown_repositories
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.v1.router import v1_router
 
 logger = logging.getLogger("lingo.access")
@@ -28,6 +29,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     if settings.DEBUG:
         startup.info("Auth bypass ACTIVE — all requests authenticate as DEV_USER")
+        for origin in settings.CORS_ORIGINS:
+            if "localhost" not in origin and "127.0.0.1" not in origin:
+                startup.critical(
+                    "DEBUG=true with non-local CORS origin %s — disable DEBUG in production",
+                    origin,
+                )
     await init_repositories()
     yield
     await shutdown_repositories()
@@ -59,6 +66,7 @@ async def access_log(request: Request, call_next) -> Response:  # type: ignore[t
     return response
 
 
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,

@@ -29,7 +29,26 @@ class Settings(BaseSettings):
     # requests authenticate as this user automatically.
     DEV_USER: str = "dev|user-1"
 
+    # Funding transparency meter (public GET /finance/transparency)
+    FUNDING_AD_PERCENT: int = 40
+    FUNDING_PERIOD_LABEL: str = "Last 30 days"
+    # manual | estimated | live (live = future AdSense+Stripe snapshot job)
+    FUNDING_SOURCE: str = "estimated"
+
     model_config = {"env_file": str(_PROJECT_ROOT / ".env"), "env_file_encoding": "utf-8"}
+
+    @property
+    def funding_ad_percent(self) -> int:
+        return max(0, min(100, self.FUNDING_AD_PERCENT))
+
+    @property
+    def funding_period_label(self) -> str:
+        return self.FUNDING_PERIOD_LABEL
+
+    @property
+    def funding_source(self) -> str:
+        s = (self.FUNDING_SOURCE or "estimated").lower()
+        return s if s in ("manual", "estimated", "live") else "estimated"
 
 
 settings = Settings()

@@ -188,8 +188,15 @@ class DynamoUserRepository:
         return self._strip_keys(item) if item else None
 
     async def update_settings(self, user_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+        def _deep_merge(base: dict[str, Any], update: dict[str, Any]) -> None:
+            for k, v in update.items():
+                if k in base and isinstance(base[k], dict) and isinstance(v, dict):
+                    _deep_merge(base[k], v)
+                else:
+                    base[k] = v
+
         current = await self.get_settings(user_id) or {}
-        current.update(patch)
+        _deep_merge(current, patch)
         item = {"PK": self._pk(user_id), "SK": _SETTINGS_SK, **current}
         await self._table.put_item(Item=item)
         return current

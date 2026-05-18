@@ -4,6 +4,22 @@ from typing import Any, Protocol
 class DeckRepository(Protocol):
     """Deck manifest + content. Manifest = metadata; content = cards. Both keyed by deck id."""
 
+    async def list_owned_manifests(
+        self,
+        author_id: str,
+        *,
+        language_id: str | None = None,
+        status: str | None = None,
+        exclude_companion: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Manifests for decks authored by ``author_id`` (editor / My Content).
+
+        Prefer over generic ``list_manifests`` when the caller means “my decks” —
+        implementations may use an Author-indexed access pattern on DynamoDB.
+        """
+
+        ...
+
     async def list_manifests(
         self,
         language_id: str | None = None,

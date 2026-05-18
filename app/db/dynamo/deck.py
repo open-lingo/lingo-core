@@ -6,8 +6,13 @@ Single-table design:
 Cards are stored as a JSON string to avoid DynamoDB's 400 KB item limit
 surprises with deeply nested lists, and to simplify type handling.
 
-Listing uses Scan + FilterExpression.  At deck catalog scale this is
-acceptable; add a GSI on language_id or status if query volume grows.
+Listing:
+  - By ``author_id``: Query ``AuthorUpdated-Index`` (GSI on ``authorId`` +
+    ``authorUpdatedDeck`` = ``<ISO updatedAt>#<deck_id>``). Avoids full-table
+    scans for “My decks” / edit flows.
+  - By ``status`` (+ optional ``language_id``) without author: Query
+    ``StatusLanguage-Index``.
+  - Otherwise: Scan + FilterExpression (admin-style listings).
 """
 
 import asyncio
@@ -19,6 +24,7 @@ from typing import Any
 import aioboto3
 
 _META_SK = "META"
+AUTHOR_UPDATED_INDEX = "AuthorUpdated-Index"
 
 
 def _to_decimal(val: float | None) -> Decimal | None:
@@ -71,17 +77,10 @@ class DynamoDeckRepository:
     """DynamoDB-backed deck repository.
 
     Required table:
-      Table  PK (S) + SK (S)  — no GSIs required for basic operation
+      PK (S) + SK (S). GSIs: ``StatusLanguage-Index``, ``AuthorUpdated-Index``.
 
-    Create this table (AWS CLI example):
-
-      aws dynamodb create-table \\
-        --table-name lingo_decks \\
-        --attribute-definitions \\
-            AttributeName=PK,AttributeType=S \\
-            AttributeName=SK,AttributeType=S \\
-        --key-schema AttributeName=PK,KeyType=HASH AttributeName=SK,KeyType=RANGE \\
-        --billing-mode PAY_PER_REQUEST
+    Create / update this table — see ``lingo-infra/main.tf`` or README AWS CLI
+    snippet for attribute definitions and index specs.
     """
 
     def __init__(self, table_name: str, region: str) -> None:
@@ -114,11 +113,34 @@ class DynamoDeckRepository:
         status: str | None = None,
         exclude_companion: bool = False,
     ) -> list[dict[str, Any]]:
-        # When status is set and author_id is not, use StatusLanguage-Index (Query)
-        # When author_id is set, must Scan — no GSI on authorId
-        if status and not author_id:
+        # Author-scoped listings (My decks): Query AuthorUpdated-Index — O(decks by author).
+        if author_id:
+            values: dict[str, Any] = {":author": author_id}
+            filters: list[str] = []
+            names: dict[str, str] = {}
+            if language_id:
+                filters.append("languageId = :lang")
+                values[":lang"] = language_id
+            if status:
+                filters.append("#st = :status")
+                values[":status"] = status
+                names["#st"] = "status"
+            if exclude_companion:
+                filters.append("attribute_not_exists(companionToStoryId)")
+            q_kwargs: dict[str, Any] = {
+                "IndexName": AUTHOR_UPDATED_INDEX,
+                "KeyConditionExpression": "authorId = :author",
+                "ExpressionAttributeValues": values,
+                "ScanIndexForward": False,
+            }
+            if filters:
+                q_kwargs["FilterExpression"] = " AND ".join(filters)
+            if names:
+                q_kwargs["ExpressionAttributeNames"] = names
+            items = await _paginate_query(self._table, **q_kwargs)
+        elif status and not author_id:
             key_cond = "#st = :status"
-            values: dict[str, Any] = {":status": status}
+            values = {":status": status}
             names = {"#st": "status"}
             if language_id:
                 key_cond += " AND languageId = :lang"
@@ -136,9 +158,6 @@ class DynamoDeckRepository:
             if language_id:
                 conditions.append("languageId = :lang")
                 values[":lang"] = language_id
-            if author_id:
-                conditions.append("authorId = :author")
-                values[":author"] = author_id
             if status:
                 conditions.append("#st = :status")
                 values[":status"] = status
@@ -155,6 +174,22 @@ class DynamoDeckRepository:
         manifests.sort(key=lambda m: (m.get("updatedAt") or "", m.get("name") or ""), reverse=False)
         manifests.sort(key=lambda m: m.get("updatedAt") or "", reverse=True)
         return manifests
+
+    async def list_owned_manifests(
+        self,
+        author_id: str,
+        *,
+        language_id: str | None = None,
+        status: str | None = None,
+        exclude_companion: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Decks authored by this user — uses ``AuthorUpdated-Index`` via ``list_manifests``."""
+        return await self.list_manifests(
+            language_id=language_id,
+            author_id=author_id,
+            status=status,
+            exclude_companion=exclude_companion,
+        )
 
     async def get_manifest(self, deck_id: str) -> dict[str, Any] | None:
         resp = await self._table.get_item(
@@ -239,6 +274,11 @@ class DynamoDeckRepository:
             item["defaultEase"] = default_ease
         if manifest.get("companionToStoryId") is not None:
             item["companionToStoryId"] = manifest["companionToStoryId"]
+
+        # AuthorUpdated-Index: sort key groups decks per author, newest first on Query
+        # with ScanIndexForward=False (ISO timestamps sort lexicographically).
+        if author_id:
+            item["authorUpdatedDeck"] = f"{now}#{deck_id}"
 
         # Remove None values — DynamoDB rejects explicit None attributes
         item = {k: v for k, v in item.items() if v is not None}
