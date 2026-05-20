@@ -157,15 +157,82 @@ Not needed for MVP. Document as a known extension point.
 
 ---
 
-## Endpoint shape (initial)
+## Sync model — batch, not per-event (matches SRS)
+
+**Decision (revising the initial single-attempt-POST design):** lesson completions are
+buffered client-side and synced in batches, exactly like SRS card state today.
+No write per lesson completion. The user can finish 10 lessons in a session and
+that's still **one** API call when the SyncManager flushes the buffer.
+
+Why:
+
+- Per-event writes balloon Dynamo WCU spend at scale. A burst of completions
+  (a power user grinding through a module) shouldn't be a burst of writes.
+- The SRS sync UX already exists (`SRSPendingSync`, `useSRSSyncSource`,
+  `SyncManager` panel) and users know it. Lessons should join that menu.
+- Buffer survives page reload, so a lesson finished offline isn't lost when
+  the user closes the tab before reconnecting.
+
+Sync triggers (same as SRS):
+
+1. **Manual** — user clicks "Sync now" in the SyncManager panel
+2. **Periodic** — auto-flush every N minutes when the buffer is non-empty and
+   the user is online
+3. **On exit** — `beforeunload` handler attempts a `navigator.sendBeacon` flush
+4. **On login / session start** — push buffered attempts before fetching latest
+   server state
+
+### Trade-off: when does answer validation happen?
+
+Validating each step server-side requires per-step round-trips, which kills
+the batch benefit. The pragmatic answer:
+
+- **Phase 1 (MVP — ship this):** client validates against the client-side answer
+  key (current behavior — `correct` fields already ship in `mockLessons.ts`).
+  Buffered results include `stepResults` already-graded. Server stores them
+  verbatim, applies sanity / rate / prerequisite / idempotency checks but does
+  not re-validate answers. The threat model documented in this ADR remains
+  weak (no monetary stake), so this is acceptable.
+
+- **Phase 2 (later — when stakes appear):** answer keys move out of the client
+  bundle to a server-side store (`app/curriculum/answers/`). The sync endpoint
+  switches from "trust client-graded results" to "re-grade server-side from
+  user choices + stored answers." Same batch shape; just different validation.
+  Migration is one router change + one frontend change to send `choices`
+  instead of pre-graded `stepResults`.
+
+The ADR previously called for Phase 2 from day one; we're explicitly deferring
+it to keep Phase 1 cost-discipline + UX consistency with SRS.
+
+## Endpoint shape
 
 ```
 GET  /api/core/v1/curriculum/lessons/:lessonId
-  Returns lesson body sanitized (correct_choice fields stripped).
+  Returns lesson body. In Phase 1, ships with correct_choice fields (existing
+  behavior). In Phase 2, sanitized.
 
-POST /api/core/v1/progress/lessons/:lessonId/attempt
-  Body: { clientAttemptId, durationSec, answers: [{stepIdx, choice}] }
-  Response: { attemptId, passed, score, stepResults, conceptDeltas, xpEarned, streakAfter, dailyTotal }
+POST /api/core/v1/progress/lessons/batch
+  Body: { attempts: [
+    {
+      clientAttemptId, lessonId, attemptedAt, durationSec, passed, score,
+      stepResults: [{stepIdx, conceptIds, correct, durationMs}]
+    }, ...
+  ] }
+  Response: { results: [{
+    clientAttemptId, attemptId, accepted: bool, reason?: str,
+    xpEarned, streakAfter, lingotsEarned, dailyTotalLessons
+  }, ...] }
+
+  Server processes attempts in order. Each:
+    1. Idempotency check on clientAttemptId
+    2. Sanity (durationSec floor/ceiling)
+    3. Prerequisite check
+    4. Persist attempt + rollup updates (per the hybrid flow below)
+    5. Return per-attempt result
+
+POST /api/core/v1/progress/lessons/:lessonId/attempt  (single-attempt convenience)
+  Same shape as one entry of the batch endpoint. Kept for testing + direct
+  curl-against-the-server flows. Client code uses the batch endpoint.
 
 GET  /api/core/v1/progress/me
   Aggregate for page render. Includes lessons[], concepts[] (lazy-recomputed on this call if stale), last30days, user stats.
@@ -176,6 +243,21 @@ GET  /api/core/v1/progress/me/attempts?lessonId=&limit=20&cursor=
 POST /api/core/v1/progress/me/touch
   Lightweight endpoint hit on login or session-start. Returns user stats + triggers concept-rollup staleness check. Used by frontend right after Auth0 token acquisition.
 ```
+
+## Client buffer + sync source
+
+Mirrors `src/features/flashcards/engine/srsSync.ts`:
+
+- `src/features/lesson/engine/lessonSync.ts` — buffer in localStorage under
+  `lingo:lesson-attempts:v1`, dedupe by `clientAttemptId`, flush via `progress.batchAttempts(payload)`
+- `src/features/lesson/useLessonSyncSource.ts` — returns the `SyncSource`
+  config (id, label, lastSyncAt, nextSyncAt, dirtyCount, onSyncNow, visible)
+- `src/features/sync/SyncManagerTrigger.tsx` — register the new source
+  alongside `srsSource`
+- `src/shared/i18n/locales/{en,ko}.json` — add `syncManager.lessonsLabel`
+
+Result: the existing Sync Manager panel grows a "Lessons" row showing
+unsynced count + last sync + next sync, with the same Sync Now button.
 
 ---
 

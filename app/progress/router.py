@@ -22,6 +22,9 @@ from app.progress.schemas import (
     AttemptList,
     AttemptResponse,
     AttemptSubmission,
+    BatchAttemptResponse,
+    BatchAttemptResult,
+    BatchAttemptSubmission,
     ConceptDelta,
     ProgressSummary,
     StepResult,
@@ -53,6 +56,42 @@ ProgressRepo = Annotated[ProgressRepository, Depends(_get_progress_repo)]
 
 
 # ── Submission ──────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/lessons/batch",
+    response_model=BatchAttemptResponse,
+)
+async def submit_attempt_batch(
+    body: BatchAttemptSubmission,
+    user: CurrentUser,
+    progress: ProgressRepo,
+    users: UserRepo,
+) -> Any:
+    """Batch sync endpoint — the main client sync path.
+
+    The frontend buffers lesson completions in localStorage and flushes the
+    whole buffer here via the SyncManager (same UX as SRS sync). One write
+    transaction per attempt is fine because each item is small; cost is
+    dominated by the SyncManager flush cadence (manual + periodic + on exit)
+    rather than per-completion event.
+
+    See ADR-0001 § "Sync model — batch, not per-event" for rationale.
+
+    Each item is processed in order:
+      1. Idempotency on (userId, clientAttemptId) — re-pushing returns prior result
+      2. Sanity (durationSec floor/ceiling)
+      3. Prerequisite check (previous lesson in module has ≥1 attempt)
+      4. Persist attempt + rollup updates (per the hybrid flow)
+      5. Return per-attempt result (or rejection reason)
+
+    Phase 1: server trusts the client-graded `stepResults`. Phase 2: server
+    re-validates against its own answer store before persisting.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Batch progress sync pending repo wiring",
+    )
 
 
 @router.post(

@@ -12,14 +12,30 @@ from pydantic import BaseModel, Field
 
 
 class AttemptStepAnswer(BaseModel):
-    """User's answer for a single step in a lesson."""
+    """User's answer for a single step in a lesson (Phase 2 — server-validated)."""
 
     stepIdx: int = Field(ge=0)
     choice: str = Field(description="Choice id/value the user picked")
 
 
+class GradedStepResult(BaseModel):
+    """Client-graded step result, used in the Phase 1 batch sync.
+
+    The client knows correct answers (they ship in the lesson bundle today) and
+    grades each step as the user finishes it. The batch payload includes these
+    already-graded results so the server doesn't have to re-validate per step.
+    Phase 2 will move correct answers server-side and replace this with raw
+    choice submissions for server validation.
+    """
+
+    stepIdx: int = Field(ge=0)
+    conceptIds: list[str] = Field(default_factory=list)
+    correct: bool
+    durationMs: int | None = None
+
+
 class AttemptSubmission(BaseModel):
-    """Body of POST /progress/lessons/:lessonId/attempt."""
+    """Body of POST /progress/lessons/:lessonId/attempt (single, dev-convenience)."""
 
     clientAttemptId: str = Field(
         description="Client-generated UUID for idempotent retries"
@@ -29,7 +45,55 @@ class AttemptSubmission(BaseModel):
         le=3600,
         description="Total time the user spent on the lesson, clamped server-side",
     )
-    answers: list[AttemptStepAnswer]
+    answers: list[AttemptStepAnswer] | None = Field(
+        default=None,
+        description="Phase 2 — raw choices for server-side validation",
+    )
+    stepResults: list[GradedStepResult] | None = Field(
+        default=None,
+        description="Phase 1 — client-graded results (current production path)",
+    )
+
+
+class BatchAttempt(BaseModel):
+    """One entry in the batch sync payload. Mirrors AttemptSubmission but with
+    explicit lesson + timestamp fields (the batch endpoint takes many lessons)."""
+
+    clientAttemptId: str
+    lessonId: str
+    attemptedAt: str = Field(description="ISO timestamp from the client")
+    durationSec: int = Field(ge=1, le=3600)
+    passed: bool
+    score: float = Field(ge=0.0, le=1.0)
+    stepResults: list[GradedStepResult]
+
+
+class BatchAttemptSubmission(BaseModel):
+    """Body of POST /progress/lessons/batch — the main client sync path."""
+
+    attempts: list[BatchAttempt] = Field(min_length=1, max_length=100)
+
+
+class BatchAttemptResult(BaseModel):
+    """Per-attempt response in the batch endpoint."""
+
+    clientAttemptId: str
+    attemptId: str | None = None
+    accepted: bool
+    reason: str | None = Field(
+        default=None,
+        description="When not accepted: rate-limited / prerequisite-missing / duration-out-of-bounds / etc.",
+    )
+    xpEarned: int = Field(default=0, ge=0)
+    streakAfter: int = Field(default=0, ge=0)
+    lingotsEarned: int = Field(default=0, ge=0)
+    dailyTotalLessons: int = Field(default=0, ge=0)
+
+
+class BatchAttemptResponse(BaseModel):
+    """Response from POST /progress/lessons/batch."""
+
+    results: list[BatchAttemptResult]
 
 
 # ── Per-step result returned to client ──────────────────────────────────────
