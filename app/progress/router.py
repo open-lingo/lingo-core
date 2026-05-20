@@ -282,16 +282,57 @@ async def get_my_progress(
 ) -> Any:
     """One-shot aggregate for page render.
 
-    Reads (in parallel where the storage layer supports it):
+    Reads:
       - User row → UserStats
       - Lesson rollups via main-table query (SK begins_with LESSON#)
       - Concept rollups via main-table query (SK begins_with CONCEPT#)
-        Any with staleAt != None are recomputed lazily from the attempt log.
       - Last 30 days of DAY# rollups
+
+    Lazy concept recompute is on the to-do list; rollups with ``staleAt``
+    set today simply ship as-is (the data is still useful, just slightly
+    stale). When the recompute path lands it slots in here.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Progress read pipeline pending",
+    user_record = await users.get_user_by_id(user.id) or {}
+    lesson_rollups = await progress.get_lesson_rollups(user.id)
+    concept_rollups = await progress.get_concept_rollups(user.id)
+
+    today = date.today()
+    since = (today - timedelta(days=29)).isoformat()
+    until = today.isoformat()
+    day_rollups = await progress.get_day_rollups(user.id, since, until)
+
+    return ProgressSummary(
+        user=_user_stats_from_record(user_record),
+        lessons=[LessonRollup(**r) for r in lesson_rollups],
+        concepts=[
+            ConceptRollup(
+                conceptId=c["conceptId"],
+                encounters=c.get("encounters") or 0,
+                correctCount=c.get("correctCount") or 0,
+                incorrectCount=c.get("incorrectCount") or 0,
+                recentResults=c.get("recentResults") or [],
+                avgDurationMs=c.get("avgDurationMs"),
+                firstSeenAt=c.get("firstSeenAt") or "",
+                lastSeenAt=c.get("lastSeenAt") or "",
+                lastCorrectAt=c.get("lastCorrectAt"),
+            )
+            for c in concept_rollups
+        ],
+        last30days=[DayActivity(**d) for d in day_rollups],
+    )
+
+
+def _user_stats_from_record(record: dict[str, Any]) -> UserStats:
+    """Map a user-table row to the UserStats schema. Handles both snake_case
+    (sqlite) and camelCase (in-memory / mock) attribute keys."""
+    return UserStats(
+        streak=int(record.get("streak") or 0),
+        bestStreak=int(record.get("best_streak") or record.get("bestStreak") or 0),
+        lastActiveDate=record.get("last_active_date")
+        or record.get("lastActiveDate"),
+        xp=int(record.get("xp") or 0),
+        level=int(record.get("level") or 1),
+        lingots=int(record.get("lingots") or 0),
     )
 
 
@@ -336,16 +377,20 @@ async def touch_session(
     """Lightweight session-start hook.
 
     The frontend calls this once after Auth0 token acquisition to:
-      - Refresh the streak (today's first activity ticks the streak)
       - Surface which concept rollups went stale since last login (the
         client can prefetch them, or the next /me read does the recompute)
 
-    Cheap: single user-row update + a concept SK begins_with query that
-    only returns rows with staleAt != None.
+    Streak is NOT bumped here — streak updates happen exclusively via the
+    batch-attempt endpoint with checkStreak=true (per ADR-0001). This
+    endpoint is purely a read of "what does the user need to refresh".
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Touch endpoint pending repo wiring",
+    user_record = await users.get_user_by_id(user.id) or {}
+    concept_rollups = await progress.get_concept_rollups(user.id)
+    stale_ids = [c["conceptId"] for c in concept_rollups if c.get("staleAt")]
+    return TouchResponse(
+        user=_user_stats_from_record(user_record),
+        streakUpdated=False,
+        staleConceptIds=stale_ids,
     )
 
 
