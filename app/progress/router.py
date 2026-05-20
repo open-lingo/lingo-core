@@ -87,6 +87,15 @@ async def submit_attempt_batch(
 
     Phase 1: server trusts the client-graded `stepResults`. Phase 2: server
     re-validates against its own answer store before persisting.
+
+    Streak update:
+      The body's ``checkStreak`` flag is client-driven. When true (first sync
+      of a new local day), this handler runs the streak GetItem + conditional
+      UpdateItem on the user row exactly once for this batch. When false
+      (default, every subsequent same-day sync), the handler skips the streak
+      path entirely. The XP / lingots / day-rollup writes still happen per
+      attempt regardless. See ADR-0001 § "Streak check: client-driven, not
+      per-attempt" for the contract.
     """
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,

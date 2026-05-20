@@ -204,6 +204,40 @@ the batch benefit. The pragmatic answer:
 The ADR previously called for Phase 2 from day one; we're explicitly deferring
 it to keep Phase 1 cost-discipline + UX consistency with SRS.
 
+### Streak check: client-driven, not per-attempt
+
+The user-row streak update (`streak`, `bestStreak`, `lastActiveDate`) is the
+single most expensive write in the per-attempt flow: a `GetItem` to read the
+current `lastActiveDate` followed by a conditional `UpdateItem`. Running it
+on *every* batch sync is wasteful — once the streak has ticked for the day,
+nothing about it changes until the user crosses local midnight.
+
+**Decision:** the client owns "is this the first sync of a new local day?"
+The batch payload carries an explicit `checkStreak: bool`:
+
+- The client stores `open-lingo-last-streak-sync` (YYYY-MM-DD in the user's
+  local timezone) in localStorage. See `src/features/lesson/engine/sessionStreak.ts`.
+- On building a batch payload, `checkStreak = true` iff the stored date is
+  absent or doesn't match today.
+- On a successful response, the client writes today's date back to that
+  key. Every subsequent same-day sync sends `checkStreak: false` and the
+  server skips the streak path entirely.
+
+The server trusts the flag. It is an optimisation hint, not a security
+boundary — there is no monetary stake, the worst case is one missed streak
+tick (recovered on the next true → false transition) or one wasted cheap
+UpdateItem. The streak field stays atomic and the XP / lingots / day-rollup
+writes still happen per attempt regardless of the flag.
+
+Auth0 SDK note: `@auth0/auth0-react` exposes no SDK-level "fresh login vs.
+silent renew" callback (verified against `node_modules/@auth0/auth0-react/dist/`).
+The closest signal is an `isAuthenticated` false→true transition, which the
+SDK fires for both kinds of token acquisition. Time-based gating in
+localStorage is therefore the primary mechanism. A future enhancement may
+layer the transition signal *additively* on top — clearing the marker on a
+detected fresh login so the next sync re-checks streak — but the
+localStorage marker remains the source of truth for "have we checked today."
+
 ## Endpoint shape
 
 ```
@@ -212,12 +246,17 @@ GET  /api/core/v1/curriculum/lessons/:lessonId
   behavior). In Phase 2, sanitized.
 
 POST /api/core/v1/progress/lessons/batch
-  Body: { attempts: [
-    {
-      clientAttemptId, lessonId, attemptedAt, durationSec, passed, score,
-      stepResults: [{stepIdx, conceptIds, correct, durationMs}]
-    }, ...
-  ] }
+  Body: {
+    attempts: [
+      {
+        clientAttemptId, lessonId, attemptedAt, durationSec, passed, score,
+        stepResults: [{stepIdx, conceptIds, correct, durationMs}]
+      }, ...
+    ],
+    checkStreak: bool   # true iff first sync of a new local day; server
+                        # only runs the streak GetItem+UpdateItem path
+                        # when true. See "Streak check" section.
+  }
   Response: { results: [{
     clientAttemptId, attemptId, accepted: bool, reason?: str,
     xpEarned, streakAfter, lingotsEarned, dailyTotalLessons

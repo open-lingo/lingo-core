@@ -72,6 +72,17 @@ class BatchAttemptSubmission(BaseModel):
     """Body of POST /progress/lessons/batch — the main client sync path."""
 
     attempts: list[BatchAttempt] = Field(min_length=1, max_length=100)
+    checkStreak: bool = Field(
+        default=False,
+        description=(
+            "Client-driven hint: true means this is the first sync of a new "
+            "local day for the user and the server should run the streak "
+            "GetItem + conditional UpdateItem path. False (default) means "
+            "skip that work — the streak was already ticked earlier today. "
+            "The client owns session/day detection; see ADR-0001 § "
+            "'Streak check: client-driven, not per-attempt'."
+        ),
+    )
 
 
 class BatchAttemptResult(BaseModel):
