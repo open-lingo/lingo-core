@@ -1,27 +1,29 @@
 # lingo-core — backend
 #
 # Quick targets:
-#   make dev      uvicorn w/ SQLite forced; never touches AWS/DynamoDB
+#   make run      uvicorn w/ SQLite forced; never touches AWS/DynamoDB
+#   make dev      alias for `make run`
 #   make test     pytest
 #   make install  pip install -e .[dev]
 #
-# `make dev` overrides DB_BACKEND=sqlite at the command level so even a stray
+# `make run` overrides DB_BACKEND=sqlite at the command level so even a stray
 # `.env` with dynamodb won't push you onto AWS during local work. AWS_* vars
 # are unset for the same reason.
 
 PORT ?= 8000
 
-.PHONY: help dev test install clean
+.PHONY: help run dev test install clean
 
 help:
 	@echo "lingo-core backend"
 	@echo ""
-	@echo "  make dev      uvicorn on :$(PORT) — SQLite forced, no AWS"
+	@echo "  make run      uvicorn on :$(PORT) — SQLite forced, no AWS"
+	@echo "  make dev      alias for run"
 	@echo "  make test     pytest"
 	@echo "  make install  pip install -e .[dev]"
 	@echo "  make clean    remove local.db and __pycache__"
 
-dev:
+run:
 	@echo ">> Forcing DB_BACKEND=sqlite, unsetting AWS_* env"
 	@DB_BACKEND=sqlite \
 	  AWS_ACCESS_KEY_ID= \
@@ -29,6 +31,8 @@ dev:
 	  AWS_SESSION_TOKEN= \
 	  AWS_PROFILE= \
 	  uvicorn app.main:app --reload --port $(PORT)
+
+dev: run
 
 test:
 	pytest
