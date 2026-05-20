@@ -2,14 +2,14 @@
 
 See ``docs/adr/0001-progress-api-hybrid-rollup.md`` for the architecture.
 
-Concrete repository implementations (SQLite + Dynamo) are not yet wired —
-the dependency below will raise at request time until ``init_repositories``
-constructs a ``ProgressRepository``. That's intentional: this router lands
-the contract and endpoint shape so the frontend can start coding against
-it, while the storage layer is a separate follow-up.
+SQLite repo is wired for local dev (``DB_BACKEND=sqlite``). DynamoDB impl
+TBD. The handlers below work end-to-end against the SQLite backend; against
+DynamoDB they fail at the ``get_progress_repo`` dependency until the
+concrete repo is added.
 """
 
-from datetime import UTC, datetime
+import uuid
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -17,23 +17,27 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.auth.dependencies import get_registered_user
 from app.auth.schemas import TokenPayload
 from app.db.protocols import ProgressRepository, UserRepository
-from app.db.provider import get_user_repo  # progress provider TBD
+from app.db.provider import get_progress_repo, get_user_repo
 from app.progress.schemas import (
     AttemptList,
     AttemptResponse,
     AttemptSubmission,
+    BatchAttempt,
     BatchAttemptResponse,
     BatchAttemptResult,
     BatchAttemptSubmission,
     ConceptDelta,
+    ConceptRollup,
+    DayActivity,
+    LessonRollup,
     ProgressSummary,
     StepResult,
     TouchResponse,
     UserStats,
 )
 from app.progress.xp import (
-    lingots_for_attempt,
     level_for_xp,
+    lingots_for_attempt,
     xp_for_attempt,
 )
 
@@ -41,18 +45,7 @@ router = APIRouter(tags=["progress"])
 
 CurrentUser = Annotated[TokenPayload, Depends(get_registered_user)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
-
-
-def _get_progress_repo() -> ProgressRepository:
-    """Placeholder dependency. Once init_repositories provides a concrete
-    ProgressRepository, swap this for the equivalent of get_srs_repo()."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Progress repository not yet wired — see ADR-0001 follow-up",
-    )
-
-
-ProgressRepo = Annotated[ProgressRepository, Depends(_get_progress_repo)]
+ProgressRepo = Annotated[ProgressRepository, Depends(get_progress_repo)]
 
 
 # ── Submission ──────────────────────────────────────────────────────────────
@@ -97,9 +90,141 @@ async def submit_attempt_batch(
       attempt regardless. See ADR-0001 § "Streak check: client-driven, not
       per-attempt" for the contract.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Batch progress sync pending repo wiring",
+    results: list[BatchAttemptResult] = []
+    streak_updated_this_batch = False
+    today = date.today().isoformat()
+
+    for item in body.attempts:
+        result = await _process_one_attempt(
+            user_id=user.id,
+            item=item,
+            progress=progress,
+            users=users,
+            allow_streak_check=body.checkStreak and not streak_updated_this_batch,
+        )
+        results.append(result)
+        if result.accepted and result.streakAfter > 0:
+            streak_updated_this_batch = body.checkStreak
+
+    return BatchAttemptResponse(results=results)
+
+
+async def _process_one_attempt(
+    *,
+    user_id: str,
+    item: BatchAttempt,
+    progress: ProgressRepository,
+    users: UserRepository,
+    allow_streak_check: bool,
+) -> BatchAttemptResult:
+    # Idempotency — if we've already accepted this client attempt, return the
+    # cached outcome shape.
+    existing = await progress.attempt_exists(user_id, item.clientAttemptId)  # type: ignore[attr-defined]
+    if existing is not None:
+        return BatchAttemptResult(
+            clientAttemptId=item.clientAttemptId,
+            attemptId=existing["attemptId"],
+            accepted=True,
+            xpEarned=0,
+            streakAfter=0,
+            lingotsEarned=0,
+            dailyTotalLessons=0,
+        )
+
+    # Sanity — duration floor (1s per step or 5s, whichever is larger)
+    step_count = len(item.stepResults)
+    min_duration = max(5, step_count)
+    if item.durationSec < min_duration:
+        return BatchAttemptResult(
+            clientAttemptId=item.clientAttemptId,
+            accepted=False,
+            reason="duration_below_floor",
+            xpEarned=0,
+            streakAfter=0,
+            lingotsEarned=0,
+            dailyTotalLessons=0,
+        )
+
+    # Persist attempt (immutable source of truth)
+    attempt_id = str(uuid.uuid4())
+    attempt_row = {
+        "attemptId": attempt_id,
+        "clientAttemptId": item.clientAttemptId,
+        "lessonId": item.lessonId,
+        "attemptedAt": item.attemptedAt,
+        "durationSec": item.durationSec,
+        "passed": item.passed,
+        "score": item.score,
+        "steps": [s.model_dump() for s in item.stepResults],
+    }
+    await progress.put_attempt(user_id, attempt_row)  # type: ignore[arg-type]
+
+    # XP / lingot computation (server-authoritative)
+    xp_earned = xp_for_attempt(item.passed, item.score)
+    lingots_earned = lingots_for_attempt(item.passed)
+
+    # Eager rollup updates
+    lesson_rollup = await progress.update_lesson_rollup(user_id, item.lessonId, attempt_row)
+    day_rollup = await progress.update_day_rollup(
+        user_id,
+        date.today().isoformat(),
+        lessons_inc=1 if item.passed else 0,
+        minutes_inc=max(1, item.durationSec // 60),
+        xp_inc=xp_earned,
+    )
+
+    # Lazy concept rollup invalidation — touched concepts get staleAt set; the
+    # next /me read recomputes them. Cheap write per concept.
+    concept_ids: list[str] = []
+    for step in item.stepResults:
+        concept_ids.extend(step.conceptIds or [])
+    if concept_ids:
+        await progress.invalidate_concepts(  # type: ignore[attr-defined]
+            user_id, list(set(concept_ids)), datetime.now(UTC).isoformat()
+        )
+
+    # User-row updates: XP + lingots always. Streak only when client signals
+    # the first sync of a new local day AND we haven't already done it for
+    # an earlier attempt in this same batch.
+    user_record = await users.get_user_by_id(user_id) or {}
+    new_xp = (user_record.get("xp") or 0) + xp_earned
+    new_lingots = (user_record.get("lingots") or 0) + lingots_earned
+    new_level = level_for_xp(new_xp)
+
+    patch: dict[str, Any] = {
+        "xp": new_xp,
+        "level": new_level,
+        "lingots": new_lingots,
+    }
+
+    streak_after = user_record.get("streak") or 0
+    if allow_streak_check:
+        last_active = user_record.get("last_active_date") or user_record.get(
+            "lastActiveDate"
+        )
+        today_iso = date.today().isoformat()
+        if last_active != today_iso:
+            # Tick the streak. If yesterday was the previous active day, ++; else reset to 1.
+            yesterday_iso = (date.today() - timedelta(days=1)).isoformat()
+            if last_active == yesterday_iso:
+                streak_after = streak_after + 1
+            else:
+                streak_after = 1
+            best = user_record.get("best_streak") or user_record.get("bestStreak") or 0
+            patch["streak"] = streak_after
+            patch["best_streak"] = max(best, streak_after)
+            patch["last_active_date"] = today_iso
+
+    await users.update_user(user_id, patch)
+
+    return BatchAttemptResult(
+        clientAttemptId=item.clientAttemptId,
+        attemptId=attempt_id,
+        accepted=True,
+        xpEarned=xp_earned,
+        streakAfter=streak_after,
+        lingotsEarned=lingots_earned,
+        dailyTotalLessons=day_rollup["lessonsCompleted"],
     )
 
 

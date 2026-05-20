@@ -17,6 +17,14 @@ _MIGRATION_COLS = [
     ("community_status_expiration", "TEXT"),
     ("bio", "TEXT"),
     ("role", "TEXT NOT NULL DEFAULT 'user'"),
+    # Progress-tracking columns (per ADR-0001). Live stats on the user row
+    # so home/learn page chrome can read them in a single GetItem.
+    ("xp", "INTEGER NOT NULL DEFAULT 0"),
+    ("level", "INTEGER NOT NULL DEFAULT 1"),
+    ("lingots", "INTEGER NOT NULL DEFAULT 0"),
+    ("streak", "INTEGER NOT NULL DEFAULT 0"),
+    ("best_streak", "INTEGER NOT NULL DEFAULT 0"),
+    ("last_active_date", "TEXT"),
 ]
 
 _INIT_SQL = """

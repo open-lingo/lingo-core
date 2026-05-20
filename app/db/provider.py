@@ -13,6 +13,7 @@ from typing import Any
 from app.config import settings
 from app.db.protocols import (
     DeckRepository,
+    ProgressRepository,
     SRSRepository,
     StoryRepository,
     SubscriptionRepository,
@@ -25,11 +26,12 @@ _srs_repo: SRSRepository | None = None
 _deck_repo: DeckRepository | None = None
 _subscription_repo: SubscriptionRepository | None = None
 _story_repo: StoryRepository | None = None
+_progress_repo: ProgressRepository | None = None
 
 
 async def init_repositories() -> None:
     """Create and connect the repository singletons based on config."""
-    global _user_repo, _srs_repo, _deck_repo, _subscription_repo, _story_repo
+    global _user_repo, _srs_repo, _deck_repo, _subscription_repo, _story_repo, _progress_repo
 
     if settings.DB_BACKEND == "sqlite":
         from app.db.sqlite.user import SqliteUserRepository
@@ -62,6 +64,12 @@ async def init_repositories() -> None:
         await story_repo.connect()
         _story_repo = story_repo
 
+        from app.db.sqlite.progress import SqliteProgressRepository
+
+        progress = SqliteProgressRepository(settings.SQLITE_PATH)
+        await progress.connect()
+        _progress_repo = progress
+
     elif settings.DB_BACKEND == "dynamodb":
         from app.db.dynamo.user import DynamoUserRepository
         from app.db.dynamo.srs import DynamoSRSRepository
@@ -88,6 +96,7 @@ async def init_repositories() -> None:
         _subscription_repo = sub
 
         _story_repo = None  # Stories not yet supported for DynamoDB
+        _progress_repo = None  # DynamoProgressRepository TODO — local dev only for now
 
     else:
         raise ValueError(f"Unknown DB_BACKEND: {settings.DB_BACKEND!r}")
@@ -110,6 +119,8 @@ async def shutdown_repositories() -> None:
         await _subscription_repo.close()  # type: ignore[union-attr]
     if _story_repo and hasattr(_story_repo, "close"):
         await _story_repo.close()  # type: ignore[union-attr]
+    if _progress_repo and hasattr(_progress_repo, "close"):
+        await _progress_repo.close()  # type: ignore[union-attr]
 
 
 def get_user_repo() -> UserRepository:
@@ -137,3 +148,8 @@ def get_subscription_repo() -> SubscriptionRepository | None:
 
 def get_story_repo() -> StoryRepository | None:
     return _story_repo
+
+
+def get_progress_repo() -> ProgressRepository:
+    assert _progress_repo is not None, "progress repo not initialised (DynamoDB impl TBD — use sqlite for now)"
+    return _progress_repo
