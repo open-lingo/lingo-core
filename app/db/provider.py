@@ -71,10 +71,11 @@ async def init_repositories() -> None:
         _progress_repo = progress
 
     elif settings.DB_BACKEND == "dynamodb":
-        from app.db.dynamo.user import DynamoUserRepository
-        from app.db.dynamo.srs import DynamoSRSRepository
         from app.db.dynamo.deck import DynamoDeckRepository
+        from app.db.dynamo.progress import DynamoProgressRepository
+        from app.db.dynamo.srs import DynamoSRSRepository
         from app.db.dynamo.subscription import DynamoSubscriptionRepository
+        from app.db.dynamo.user import DynamoUserRepository
 
         prefix = settings.DYNAMODB_TABLE_PREFIX
         region = settings.AWS_REGION
@@ -96,7 +97,10 @@ async def init_repositories() -> None:
         _subscription_repo = sub
 
         _story_repo = None  # Stories not yet supported for DynamoDB
-        _progress_repo = None  # DynamoProgressRepository TODO — local dev only for now
+
+        progress = DynamoProgressRepository(f"{prefix}progress", region)
+        await progress.connect()
+        _progress_repo = progress
 
     else:
         raise ValueError(f"Unknown DB_BACKEND: {settings.DB_BACKEND!r}")
@@ -151,5 +155,5 @@ def get_story_repo() -> StoryRepository | None:
 
 
 def get_progress_repo() -> ProgressRepository:
-    assert _progress_repo is not None, "progress repo not initialised (DynamoDB impl TBD — use sqlite for now)"
+    assert _progress_repo is not None, "progress repo not initialised (call init_repositories first)"
     return _progress_repo

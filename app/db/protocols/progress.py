@@ -43,6 +43,12 @@ class ProgressRepository(Protocol):
         """
         ...
 
+    async def attempt_exists(
+        self, user_id: str, client_attempt_id: str
+    ) -> dict[str, Any] | None:
+        """Return the existing attempt if ``client_attempt_id`` was already stored."""
+        ...
+
     async def list_attempts(
         self,
         user_id: str,

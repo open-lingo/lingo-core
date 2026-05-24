@@ -203,7 +203,7 @@ Tables:
 
 ### DynamoDB (production)
 
-`DB_BACKEND=dynamodb` — uses `aioboto3`. All four repos are implemented.
+`DB_BACKEND=dynamodb` — uses `aioboto3`. User, SRS, deck, subscription, and **progress** repos are implemented.
 
 #### Key design
 
@@ -214,8 +214,24 @@ All tables use `PK (S)` + `SK (S)` as the primary key. Keys use our internal use
 | `lingo_users` | `PK=USER#<uuid>`, `SK=RECORD` / `SETTINGS` / `SUB#<type>#<id>` | Users, settings, subscriptions. GSI `Auth0-Index` for auth resolution (sub→UUID). GSI `Username-Index` for public profile lookup. |
 | `lingo_srs` | `PK=USER#<uuid>`, `SK=CARD#<card_id>` | One item per (user, card). GSI `DueDate-Index` on `user_id` + `dueDate` for due-card range queries. |
 | `lingo_decks` | `PK=DECK#<deck_id>`, `SK=META` | Manifest + cards in one item (cards as JSON string). GSI `StatusLanguage-Index` for listing by status/language; GSI `AuthorUpdated-Index` on `authorId` + `authorUpdatedDeck` (`<updatedAt>#<deck_id>`) for **My decks** without table scans. |
+| `lingo_progress` | `PK=USER#<uuid>`, `SK=ATTEMPT#…` / `LESSON#…` / `DAY#…` / `CONCEPT#…` | Lesson attempts + rollups. GSI `UserAttempts-Index` on `user_id` + `attemptedAt`. See `docs/adr/0001-progress-api-hybrid-rollup.md`. |
 
-#### Provisioning (AWS CLI)
+#### Provisioning
+
+**Recommended:** Terraform in `../lingo-infra` (includes the progress table):
+
+```bash
+cd ../lingo-infra
+terraform init
+terraform plan    # expect lingo_progress (+ any other pending tables)
+terraform apply
+```
+
+Set API env: `DB_BACKEND=dynamodb`, `DYNAMODB_TABLE_PREFIX=lingo_` (or your prefix), `AWS_REGION=…`, plus IAM credentials for the runtime.
+
+**Deploy API** after tables exist — progress routes (`/api/core/v1/progress/*`) return 500 at startup if `DB_BACKEND=dynamodb` and the progress table is missing.
+
+#### Provisioning (AWS CLI, manual)
 
 ```bash
 PREFIX=lingo_   # matches DYNAMODB_TABLE_PREFIX

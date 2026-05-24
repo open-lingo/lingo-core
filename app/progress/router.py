@@ -2,10 +2,9 @@
 
 See ``docs/adr/0001-progress-api-hybrid-rollup.md`` for the architecture.
 
-SQLite repo is wired for local dev (``DB_BACKEND=sqlite``). DynamoDB impl
-TBD. The handlers below work end-to-end against the SQLite backend; against
-DynamoDB they fail at the ``get_progress_repo`` dependency until the
-concrete repo is added.
+SQLite and DynamoDB repos implement the same protocol. Use ``DB_BACKEND=sqlite``
+for local dev or ``dynamodb`` in prod (requires ``lingo_progress`` table from
+``lingo-infra``).
 """
 
 import uuid
@@ -119,7 +118,7 @@ async def _process_one_attempt(
 ) -> BatchAttemptResult:
     # Idempotency — if we've already accepted this client attempt, return the
     # cached outcome shape.
-    existing = await progress.attempt_exists(user_id, item.clientAttemptId)  # type: ignore[attr-defined]
+    existing = await progress.attempt_exists(user_id, item.clientAttemptId)
     if existing is not None:
         return BatchAttemptResult(
             clientAttemptId=item.clientAttemptId,
@@ -179,7 +178,7 @@ async def _process_one_attempt(
     for step in item.stepResults:
         concept_ids.extend(step.conceptIds or [])
     if concept_ids:
-        await progress.invalidate_concepts(  # type: ignore[attr-defined]
+        await progress.invalidate_concepts(
             user_id, list(set(concept_ids)), datetime.now(UTC).isoformat()
         )
 
