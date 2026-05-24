@@ -79,7 +79,7 @@ class UserSettings(BaseModel):
       - accessibility: { reducedMotion, highContrast?, fontScale? }
       - audio: { soundEnabled }
       - notifications: { dailyReminderTime?, reminderEnabled }
-      - learning: { learningLanguageId, uiLocale }
+      - learning: { learningLanguageId, uiLocale, onboardingCompleted }
       - display: { dateLocale?, timezoneOverride? }
     Extra keys are preserved so the frontend can evolve without backend changes.
     """
