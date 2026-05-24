@@ -32,8 +32,11 @@ from app.progress.schemas import (
     ProgressSummary,
     StepResult,
     TouchResponse,
+    ShopPurchaseRequest,
+    ShopPurchaseResponse,
     UserStats,
 )
+from app.progress.shop_catalog import get_shop_item
 from app.progress.xp import (
     level_for_xp,
     lingots_for_attempt,
@@ -390,6 +393,58 @@ async def touch_session(
         user=_user_stats_from_record(user_record),
         streakUpdated=False,
         staleConceptIds=stale_ids,
+    )
+
+
+@router.post("/shop/purchase", response_model=ShopPurchaseResponse)
+async def purchase_shop_item(
+    body: ShopPurchaseRequest,
+    user: CurrentUser,
+    users: UserRepo,
+) -> Any:
+    """Spend lingots on a catalog item. Deducts balance and records ownership."""
+    item = get_shop_item(body.itemId)
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown shop item")
+
+    settings = await users.get_settings(user.id) or {}
+    shop_state = dict(settings.get("shop") or {})
+    purchases: list[str] = list(shop_state.get("purchases") or [])
+    inventory: dict[str, int] = {
+        str(k): int(v)
+        for k, v in (shop_state.get("inventory") or {}).items()
+        if isinstance(v, (int, float))
+    }
+
+    consumable = bool(item.get("consumable"))
+    if not consumable and body.itemId in purchases:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Already owned")
+
+    user_record = await users.get_user_by_id(user.id) or {}
+    lingots = int(user_record.get("lingots") or 0)
+    price = int(item["price"])
+    if lingots < price:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "insufficient_lingots")
+
+    await users.update_user(user.id, {"lingots": lingots - price})
+
+    if consumable:
+        inventory[body.itemId] = inventory.get(body.itemId, 0) + 1
+    elif body.itemId not in purchases:
+        purchases.append(body.itemId)
+
+    shop_state["purchases"] = purchases
+    shop_state["inventory"] = inventory
+    await users.update_settings(user.id, {"shop": shop_state})
+
+    updated = await users.get_user_by_id(user.id) or {}
+    qty = inventory.get(body.itemId, 0) if consumable else (1 if body.itemId in purchases else 0)
+    return ShopPurchaseResponse(
+        itemId=body.itemId,
+        price=price,
+        lingotsRemaining=int(updated.get("lingots") or 0),
+        owned=body.itemId in purchases or qty > 0,
+        quantity=qty,
     )
 
 

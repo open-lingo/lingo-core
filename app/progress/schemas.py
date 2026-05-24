@@ -245,3 +245,15 @@ class TouchResponse(BaseModel):
         default_factory=list,
         description="Concepts that were flagged stale at this touch — frontend can prefetch on next read",
     )
+
+
+class ShopPurchaseRequest(BaseModel):
+    itemId: str = Field(min_length=1, max_length=64)
+
+
+class ShopPurchaseResponse(BaseModel):
+    itemId: str
+    price: int = Field(ge=0)
+    lingotsRemaining: int = Field(ge=0)
+    owned: bool = False
+    quantity: int = Field(default=0, ge=0)
