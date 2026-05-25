@@ -1,16 +1,34 @@
-from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, RootModel, model_validator
 
 
-class SRSCardState(BaseModel):
-    """SM-2 state for a single flashcard."""
+# Why: Frontend ships FSRS-6 modal state ({recognition, production, ...}); the
+# old SM-2 schema 422'd every sync. We store the payload opaquely and only
+# require ``lastReviewedAt`` for last-write-wins merge.
+class SRSCardState(RootModel[dict[str, Any]]):
+    """Opaque per-card SRS blob.
 
-    easeFactor: float = Field(default=2.5, ge=1.3)
-    interval: int = Field(default=0, ge=0)
-    dueDate: str
-    repetitions: int = Field(default=0, ge=0)
-    lastReviewDate: str
-    lastSyncedAt: str | None = None
-    buriedUntil: str | None = Field(default=None, description="YYYY-MM-DD; if set and > today, card excluded from queue")
+    Only one server-merge key is required: ``lastReviewedAt`` (ISO timestamp).
+    Everything else round-trips byte-equivalent so the engine can evolve
+    without touching the API surface.
+    """
+
+    root: dict[str, Any]
+
+    @model_validator(mode="after")
+    def _require_last_reviewed_at(self) -> "SRSCardState":
+        last = self.root.get("lastReviewedAt")
+        if not isinstance(last, str):
+            raise ValueError(
+                "Each card requires a string 'lastReviewedAt' ISO timestamp"
+            )
+        try:
+            datetime.fromisoformat(last)
+        except ValueError as e:
+            raise ValueError(f"lastReviewedAt must be ISO-8601: {e}") from e
+        return self
 
 
 class SRSSyncRequest(BaseModel):
@@ -22,14 +40,14 @@ class SRSSyncRequest(BaseModel):
 class SRSSyncResponse(BaseModel):
     """Server returns the merged state for synced cards."""
 
-    cards: dict[str, SRSCardState]
+    cards: dict[str, dict[str, Any]]
     syncedAt: str
 
 
 class SRSStateResponse(BaseModel):
     """Full SRS map for a user."""
 
-    cards: dict[str, SRSCardState]
+    cards: dict[str, dict[str, Any]]
 
 
 class SRSDeleteRequest(BaseModel):
@@ -44,3 +62,14 @@ class SRSDeleteResponse(BaseModel):
 
 class SRSClearResponse(BaseModel):
     deleted: int
+
+
+__all__ = [
+    "SRSCardState",
+    "SRSSyncRequest",
+    "SRSSyncResponse",
+    "SRSStateResponse",
+    "SRSDeleteRequest",
+    "SRSDeleteResponse",
+    "SRSClearResponse",
+]

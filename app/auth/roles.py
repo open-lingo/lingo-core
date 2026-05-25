@@ -27,9 +27,30 @@ MODERATOR_ROLES = frozenset({Role.MODERATOR, Role.ADMIN, Role.SUPER_ADMIN})
 
 
 def has_admin_access(role: str | None) -> bool:
-    """True if role can access admin endpoints."""
-    # TODO: Enable once OAuth scopes are set up. For now everyone is admin.
-    return True  # role in ADMIN_ROLES if role else False
+    """True if role can access admin endpoints.
+
+    Fix 4: env-driven allow-list owns the actual gate (see
+    ``app.auth.dependencies.require_admin``). This role check is the legacy
+    DB-role path; it returns True only for explicit admin roles so the
+    require_admin dependency can OR the two together.
+    """
+    return role in ADMIN_ROLES if role else False
+
+
+def user_id_is_admin(user_id: str | None, auth0_sub: str | None) -> bool:
+    """True if the user appears in ``settings.ADMIN_USER_IDS`` either by
+    internal UUID or by Auth0 sub. Imported lazily to avoid a settings
+    import cycle at module load."""
+    from app.config import settings
+
+    allow = set(settings.ADMIN_USER_IDS or [])
+    if not allow:
+        return False
+    if user_id and user_id in allow:
+        return True
+    if auth0_sub and auth0_sub in allow:
+        return True
+    return False
 
 
 def has_moderator_access(role: str | None) -> bool:

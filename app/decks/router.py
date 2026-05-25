@@ -8,18 +8,31 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.auth.dependencies import get_current_user, get_registered_user
+from app.auth.dependencies import (
+    get_current_user,
+    get_current_user_optional,
+    get_registered_user,
+    require_admin,
+)
 from app.auth.schemas import TokenPayload
-from app.db.provider import get_deck_repo, get_subscription_repo
 from app.db.protocols import DeckRepository, SubscriptionRepository
-from app.decks.schemas import AddCardsRequest, DeckCreate, DeckResponse, DeckUpdate
+from app.db.provider import get_deck_repo, get_subscription_repo
+from app.decks.schemas import (
+    AddCardsRequest,
+    DeckCreate,
+    DeckResponse,
+    DeckUpdate,
+    DeckVoteState,
+)
 
 router = APIRouter(tags=["decks"])
 
 DeckRepo = Annotated[DeckRepository | None, Depends(get_deck_repo)]
 SubRepo = Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)]
 CurrentUser = Annotated[TokenPayload, Depends(get_current_user)]
+OptionalUser = Annotated[TokenPayload | None, Depends(get_current_user_optional)]
 RegisteredUser = Annotated[TokenPayload, Depends(get_registered_user)]
+AdminUser = Annotated[TokenPayload, Depends(require_admin)]
 
 
 def _require_deck_repo(repo: DeckRepository | None) -> DeckRepository:
@@ -47,7 +60,11 @@ def _manifest_from_body(body: DeckCreate | DeckUpdate) -> dict[str, Any]:
     }
 
 
-def _to_response(manifest: dict[str, Any], cards: list[dict[str, Any]]) -> DeckResponse:
+def _to_response(
+    manifest: dict[str, Any],
+    cards: list[dict[str, Any]],
+    vote_count: int = 0,
+) -> DeckResponse:
     return DeckResponse(
         id=manifest["id"],
         languageId=manifest.get("languageId", ""),
@@ -65,7 +82,29 @@ def _to_response(manifest: dict[str, Any], cards: list[dict[str, Any]]) -> DeckR
         updatedAt=manifest.get("updatedAt"),
         companionToStoryId=manifest.get("companionToStoryId"),
         cards=cards,
+        voteCount=vote_count,
     )
+
+
+async def _safe_vote_count(repo: DeckRepository, deck_id: str) -> int:
+    """Return vote count, swallowing NotImplementedError (Dynamo stub).
+
+    Lets the deck endpoints stay green when the backend doesn't support voting
+    yet — voteCount just reports 0 in that case.
+    """
+    try:
+        return await repo.get_vote_count(deck_id)
+    except NotImplementedError:
+        return 0
+
+
+async def _safe_vote_counts(
+    repo: DeckRepository, deck_ids: list[str]
+) -> dict[str, int]:
+    try:
+        return await repo.get_vote_counts(deck_ids)
+    except NotImplementedError:
+        return {did: 0 for did in deck_ids}
 
 
 @router.get("", response_model=list[DeckResponse])
@@ -84,11 +123,15 @@ async def list_my_decks(
         status=deck_status,
         exclude_companion=exclude_companion_decks,
     )
+    deck_ids = [m["id"] for m in manifests]
+    counts = await _safe_vote_counts(r, deck_ids)
     result = []
     for m in manifests:
         deck = await r.get_deck(m["id"])
         if deck:
-            result.append(_to_response(deck, deck.get("cards", [])))
+            result.append(
+                _to_response(deck, deck.get("cards", []), counts.get(m["id"], 0))
+            )
     return result
 
 
@@ -124,15 +167,25 @@ async def get_decks_batch(
     deck_ids = [s.strip() for s in ids.split(",") if s.strip()]
     if not deck_ids:
         return []
+    # Fix 9 — cap the batch size so a runaway client can't fan out 1000+
+    # DynamoDB get_item calls per request.
+    if len(deck_ids) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="too many deck ids (max 50)",
+        )
     r = _require_deck_repo(repo)
     decks = await r.get_decks_batch(deck_ids)
+    counts = await _safe_vote_counts(r, [d["id"] for d in decks])
     result = []
     for deck in decks:
         author = deck.get("authorId")
         deck_status = deck.get("status", "published")
         if author and author != user.id and deck_status == "draft":
             continue
-        result.append(_to_response(deck, deck.get("cards", [])))
+        result.append(
+            _to_response(deck, deck.get("cards", []), counts.get(deck["id"], 0))
+        )
     return result
 
 
@@ -151,6 +204,10 @@ async def list_admin_decks(
         status=status,
         exclude_companion=True,
     )
+    eligible_ids = [
+        m.get("id", "") for m in manifests if not m.get("id", "").startswith("vocab-")
+    ]
+    counts = await _safe_vote_counts(r, eligible_ids)
     result = []
     for m in manifests:
         deck_id = m.get("id", "")
@@ -158,7 +215,9 @@ async def list_admin_decks(
             continue
         deck = await r.get_deck(deck_id)
         if deck:
-            result.append(_to_response(deck, deck.get("cards", [])))
+            result.append(
+                _to_response(deck, deck.get("cards", []), counts.get(deck_id, 0))
+            )
     return result
 
 
@@ -166,10 +225,10 @@ async def list_admin_decks(
 async def admin_update_deck_status(
     deck_id: str,
     repo: DeckRepo,
-    user: CurrentUser,
+    _admin: AdminUser,
     status: str = Query(..., description="draft | published"),
 ) -> Any:
-    """Approve (published) or reject (draft) a deck. No RBAC for now — all users have access."""
+    """Approve (published) or reject (draft) a deck. Admin only (Fix 4)."""
     if status not in ("draft", "published"):
         raise HTTPException(status_code=400, detail="status must be draft or published")
     r = _require_deck_repo(repo)
@@ -289,7 +348,76 @@ async def get_deck(
     deck_status = deck.get("status", "published")
     if author and author != user.id and deck_status == "draft":
         raise HTTPException(status_code=404, detail="Deck not found")
-    return _to_response(deck, deck.get("cards", []))
+    count = await _safe_vote_count(r, deck_id)
+    return _to_response(deck, deck.get("cards", []), count)
+
+
+# ── Voting ──────────────────────────────────────────────────────────────────
+
+
+@router.get("/{deck_id}/vote", response_model=DeckVoteState)
+async def get_deck_vote(
+    deck_id: str,
+    repo: DeckRepo,
+    user: OptionalUser,
+) -> Any:
+    """Return ``{count, voted}`` for a deck. ``voted=false`` when not authed."""
+    r = _require_deck_repo(repo)
+    existing = await r.get_manifest(deck_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    try:
+        state = await r.get_vote_state(deck_id, user.id if user else None)
+    except NotImplementedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=str(exc),
+        ) from exc
+    return DeckVoteState(count=int(state.get("count", 0)), voted=bool(state.get("voted", False)))
+
+
+@router.post("/{deck_id}/vote", response_model=DeckVoteState)
+async def vote_on_deck(
+    deck_id: str,
+    repo: DeckRepo,
+    user: CurrentUser,
+) -> Any:
+    """Upvote a deck. Idempotent — voting again is a no-op."""
+    r = _require_deck_repo(repo)
+    existing = await r.get_manifest(deck_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    try:
+        await r.add_vote(deck_id, user.id)
+        state = await r.get_vote_state(deck_id, user.id)
+    except NotImplementedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=str(exc),
+        ) from exc
+    return DeckVoteState(count=int(state.get("count", 0)), voted=bool(state.get("voted", False)))
+
+
+@router.delete("/{deck_id}/vote", response_model=DeckVoteState)
+async def remove_vote_on_deck(
+    deck_id: str,
+    repo: DeckRepo,
+    user: CurrentUser,
+) -> Any:
+    """Remove the current user's vote on a deck. No-op if not voted."""
+    r = _require_deck_repo(repo)
+    existing = await r.get_manifest(deck_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    try:
+        await r.remove_vote(deck_id, user.id)
+        state = await r.get_vote_state(deck_id, user.id)
+    except NotImplementedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=str(exc),
+        ) from exc
+    return DeckVoteState(count=int(state.get("count", 0)), voted=bool(state.get("voted", False)))
 
 
 @router.put("/{deck_id}", response_model=DeckResponse)

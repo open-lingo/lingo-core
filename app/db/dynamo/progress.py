@@ -17,7 +17,16 @@ from decimal import Decimal
 from typing import Any
 
 import aioboto3
-from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.types import TypeSerializer
+
+_SERIALIZER = TypeSerializer()
+
+
+def _to_attr_map(item: dict[str, Any]) -> dict[str, Any]:
+    """Convert a Python dict to the DynamoDB AttributeValue map shape
+    required by the low-level transact_write_items API."""
+    return {k: _SERIALIZER.serialize(v) for k, v in item.items()}
 
 _USER_PREFIX = "USER#"
 _ATTEMPT_PREFIX = "ATTEMPT#"
@@ -158,13 +167,38 @@ class DynamoProgressRepository:
             "score": _to_decimal(attempt["score"]),
             "steps": attempt.get("steps", []),
         }
-        await self._table.put_item(
-            Item={**base, "SK": f"{_ATTEMPT_PREFIX}{lesson_id}#{attempted_at}"},
-            ConditionExpression=Attr("SK").not_exists(),
-        )
-        await self._table.put_item(
-            Item={**base, "SK": f"{_CLIENT_PREFIX}{attempt['clientAttemptId']}"},
-            ConditionExpression=Attr("SK").not_exists(),
+        attempt_item = {
+            **base,
+            "SK": f"{_ATTEMPT_PREFIX}{lesson_id}#{attempted_at}",
+        }
+        client_item = {
+            **base,
+            "SK": f"{_CLIENT_PREFIX}{attempt['clientAttemptId']}",
+        }
+
+        # Fix 3 — atomic two-item write. Previously the second PutItem could
+        # fail after the first succeeded, leaving an orphan ATTEMPT row that
+        # made subsequent idempotency lookups miss and the retry's
+        # ConditionExpression fail. TransactWriteItems is 2x WCU but
+        # eliminates that failure mode.
+        client = self._table.meta.client
+        await client.transact_write_items(
+            TransactItems=[
+                {
+                    "Put": {
+                        "TableName": self._table_name,
+                        "Item": _to_attr_map(attempt_item),
+                        "ConditionExpression": "attribute_not_exists(SK)",
+                    }
+                },
+                {
+                    "Put": {
+                        "TableName": self._table_name,
+                        "Item": _to_attr_map(client_item),
+                        "ConditionExpression": "attribute_not_exists(SK)",
+                    }
+                },
+            ]
         )
 
     async def list_attempts(

@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_current_user, get_registered_user
 from app.auth.schemas import TokenPayload
-from app.db.provider import get_deck_repo, get_story_repo, get_subscription_repo, get_user_repo
 from app.db.protocols import SubscriptionRepository, UserRepository
+from app.db.provider import get_deck_repo, get_story_repo, get_subscription_repo, get_user_repo
 from app.users.schemas import (
     MeUpdate,
     SubscriptionCreate,
@@ -63,10 +63,13 @@ async def get_me(user: CurrentUser, repo: UserRepo) -> Any:
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_me(user: CurrentUser, repo: UserRepo) -> None:
     """Delete the current user's account record and stored settings."""
+    from app.auth.dependencies import invalidate_user_id_cache
+
     existing = await repo.get_user_by_id(user.id)
     if existing is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     await repo.delete_user(user.id)
+    invalidate_user_id_cache(user.sub)
 
 
 @router.patch("/me", response_model=UserResponse)
@@ -141,6 +144,13 @@ async def list_subscriptions(
     content_type: str | None = Query(None, description="Filter by type: deck, addon, story"),
 ) -> Any:
     r = _require_subscription_repo(repo)
+    # Fix 10 — validate content_type against the ContentType enum so a typo
+    # surfaces as 400 rather than silently returning an empty list.
+    if content_type is not None and content_type not in [c.value for c in ContentType]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"contentType must be one of: {[c.value for c in ContentType]}",
+        )
     items = await r.list(user.id, content_type=content_type)
     return [SubscriptionItem(**x) for x in items]
 

@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import TokenPayload
-from app.db.provider import get_story_repo
 from app.db.protocols import StoryRepository
+from app.db.provider import get_story_repo
 from app.stories.schemas import StoryCreate, StoryResponse, StoryUpdate
 
 router = APIRouter(tags=["stories"])

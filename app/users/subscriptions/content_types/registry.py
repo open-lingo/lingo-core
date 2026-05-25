@@ -2,9 +2,9 @@
 
 from typing import Any
 
+from app.users.subscriptions.content_types.addon import AddonContentType
 from app.users.subscriptions.content_types.base import BaseContentType
 from app.users.subscriptions.content_types.deck import DeckContentType
-from app.users.subscriptions.content_types.addon import AddonContentType
 from app.users.subscriptions.content_types.story import StoryContentType
 from app.users.subscriptions.types import ContentType
 

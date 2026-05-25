@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_registered_user
 from app.auth.schemas import TokenPayload
-from app.db.provider import get_srs_repo
 from app.db.protocols import SRSRepository
+from app.db.provider import get_srs_repo
 from app.srs.schemas import (
     SRSClearResponse,
     SRSDeleteRequest,
@@ -42,13 +42,14 @@ async def get_due_cards(
 async def sync_cards(body: SRSSyncRequest, user: CurrentUser, repo: SRSRepo) -> Any:
     """Sync dirty cards from the client.
 
-    Uses last-write-wins by lastReviewDate: if the server has a newer
+    Uses last-write-wins by ``lastReviewedAt``: if the server has a newer
     review for a card, the server version is kept.
     """
     if not body.cards:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No cards to sync")
 
-    cards_dict = {cid: state.model_dump() for cid, state in body.cards.items()}
+    # Why: SRSCardState is a RootModel; ``state.root`` is the opaque payload.
+    cards_dict = {cid: state.root for cid, state in body.cards.items()}
     merged = await repo.upsert_cards(user.id, cards_dict)
     return {
         "cards": merged,

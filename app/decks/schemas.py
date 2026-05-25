@@ -55,3 +55,11 @@ class DeckResponse(BaseModel):
     updatedAt: str | None = None
     companionToStoryId: str | None = None
     cards: list[dict] = Field(default_factory=list)
+    voteCount: int = 0
+
+
+class DeckVoteState(BaseModel):
+    """Vote state for a single deck from the current user's perspective."""
+
+    count: int = 0
+    voted: bool = False

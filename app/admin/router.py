@@ -7,15 +7,27 @@ from pydantic import BaseModel
 
 from app.auth.dependencies import require_admin
 from app.auth.schemas import TokenPayload
-from app.db.provider import get_deck_repo, get_story_repo, get_subscription_repo, get_srs_repo, get_user_repo
-from app.db.protocols import DeckRepository, SRSRepository, StoryRepository, SubscriptionRepository, UserRepository
+from app.db.protocols import (
+    DeckRepository,
+    SRSRepository,
+    StoryRepository,
+    SubscriptionRepository,
+    UserRepository,
+)
+from app.db.provider import (
+    get_deck_repo,
+    get_srs_repo,
+    get_story_repo,
+    get_subscription_repo,
+    get_user_repo,
+)
 from app.decks.router import _to_response
 from app.decks.schemas import DeckResponse
+from app.srs.schemas import SRSCardState, SRSStateResponse
 from app.stories.schemas import StoryResponse
 from app.users.schemas import SubscriptionCreate, SubscriptionItem, UserResponse, UserUpdate
 from app.users.subscriptions.content_types.registry import get_content_type_handler
 from app.users.subscriptions.types import ContentType
-from app.srs.schemas import SRSCardState, SRSStateResponse
 
 router = APIRouter(tags=["admin"])
 
@@ -216,7 +228,8 @@ async def admin_update_user_srs(
     if not body.cards:
         cards = await srs_repo.get_all(user_id)
         return {"cards": cards}
-    cards_dict = {cid: s.model_dump() for cid, s in body.cards.items()}
+    # Why: SRSCardState is a RootModel; ``state.root`` is the opaque payload.
+    cards_dict = {cid: s.root for cid, s in body.cards.items()}
     merged = await srs_repo.upsert_cards(user_id, cards_dict)
     return {"cards": merged}
 

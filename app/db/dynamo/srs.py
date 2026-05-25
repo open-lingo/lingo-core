@@ -9,58 +9,40 @@ GSI (DueDate-Index):
 
   Used by get_due_cards() for efficient range queries.
 
-Numeric note: DynamoDB returns all numbers as Decimal.  We convert:
-  - easeFactor  (float) → Decimal on write, float on read
-  - interval / repetitions (int) → int on read  (Decimal → int is safe)
+Card state is stored as an opaque ``payload`` map. We extract two
+top-level fields onto the item so they can be queried/indexed:
+  - ``dueDate``         — earliest of modal dueDates; populates DueDate-Index
+  - ``lastReviewedAt``  — ISO timestamp; lex-sortable LWW key
 """
 
 import asyncio
-import json
-from decimal import Decimal
 from typing import Any
 
 import aioboto3
 
+from app.shared.utils import earliest_due_date
+
 _CARD_SK_PREFIX = "CARD#"
 
 
-def _to_decimal(val: float | int) -> Decimal:
-    return Decimal(str(val))
-
-
 def _item_to_state(item: dict[str, Any]) -> dict[str, Any]:
-    state: dict[str, Any] = {
-        "easeFactor": float(item["easeFactor"]),
-        "interval": int(item["interval"]),
-        "dueDate": item["dueDate"],
-        "repetitions": int(item["repetitions"]),
-        "lastReviewDate": item["lastReviewDate"],
-    }
-    if "lastSyncedAt" in item:
-        state["lastSyncedAt"] = item["lastSyncedAt"]
-    if "buriedUntil" in item and item["buriedUntil"]:
-        state["buriedUntil"] = item["buriedUntil"]
-    return state
+    payload = item.get("payload")
+    if isinstance(payload, dict):
+        return dict(payload)
+    return {}
 
 
 def _state_to_item(
     user_id: str, card_id: str, state: dict[str, Any]
 ) -> dict[str, Any]:
-    item: dict[str, Any] = {
+    return {
         "PK": f"USER#{user_id}",
         "SK": f"{_CARD_SK_PREFIX}{card_id}",
-        "user_id": user_id,  # plain attribute used as GSI hash key
-        "easeFactor": _to_decimal(state.get("easeFactor", 2.5)),
-        "interval": int(state.get("interval", 0)),
-        "dueDate": state.get("dueDate", ""),
-        "repetitions": int(state.get("repetitions", 0)),
-        "lastReviewDate": state.get("lastReviewDate", ""),
+        "user_id": user_id,
+        "dueDate": earliest_due_date(state),
+        "lastReviewedAt": str(state.get("lastReviewedAt") or ""),
+        "payload": state,
     }
-    if state.get("lastSyncedAt"):
-        item["lastSyncedAt"] = state["lastSyncedAt"]
-    if state.get("buriedUntil"):
-        item["buriedUntil"] = state["buriedUntil"]
-    return item
 
 
 async def _paginate_query(table: Any, **kwargs: Any) -> list[dict[str, Any]]:
@@ -79,26 +61,6 @@ class DynamoSRSRepository:
     Required table / GSI:
       Table  PK (S) + SK (S)
       GSI    "DueDate-Index"  hash=user_id (S)  range=dueDate (S)
-
-    Create this table (AWS CLI example):
-
-      aws dynamodb create-table \\
-        --table-name lingo_srs \\
-        --attribute-definitions \\
-            AttributeName=PK,AttributeType=S \\
-            AttributeName=SK,AttributeType=S \\
-            AttributeName=user_id,AttributeType=S \\
-            AttributeName=dueDate,AttributeType=S \\
-        --key-schema AttributeName=PK,KeyType=HASH AttributeName=SK,KeyType=RANGE \\
-        --global-secondary-indexes '[{
-            "IndexName":"DueDate-Index",
-            "KeySchema":[
-                {"AttributeName":"user_id","KeyType":"HASH"},
-                {"AttributeName":"dueDate","KeyType":"RANGE"}
-            ],
-            "Projection":{"ProjectionType":"ALL"}
-        }]' \\
-        --billing-mode PAY_PER_REQUEST
     """
 
     def __init__(self, table_name: str, region: str) -> None:
@@ -149,44 +111,77 @@ class DynamoSRSRepository:
         item = resp.get("Item")
         return _item_to_state(item) if item else None
 
+    async def _get_raw_item(
+        self, user_id: str, card_id: str
+    ) -> dict[str, Any] | None:
+        resp = await self._table.get_item(
+            Key={"PK": f"USER#{user_id}", "SK": f"{_CARD_SK_PREFIX}{card_id}"}
+        )
+        return resp.get("Item")
+
     async def upsert_cards(
         self, user_id: str, cards: dict[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
         card_ids = list(cards.keys())
         existing_list = await asyncio.gather(
-            *[self.get_card(user_id, cid) for cid in card_ids],
+            *[self._get_raw_item(user_id, cid) for cid in card_ids],
             return_exceptions=True,
         )
         existing_map: dict[str, dict[str, Any]] = {}
-        for cid, state in zip(card_ids, existing_list):
-            if isinstance(state, Exception) or state is None:
+        for cid, raw in zip(card_ids, existing_list, strict=True):
+            if isinstance(raw, Exception) or raw is None:
                 continue
-            existing_map[cid] = state
+            existing_map[cid] = raw
 
+        # Pass 1: resolve LWW + bury merging serially (pure CPU, no I/O).
+        # Collects the put_item tasks so we can fire them in parallel below.
         result: dict[str, dict[str, Any]] = {}
+        puts: list[tuple[str, dict[str, Any]]] = []
         for card_id, incoming in cards.items():
-            existing = existing_map.get(card_id)
-
-            core_win = (
-                existing
-                and existing.get("lastReviewDate", "") >= incoming.get("lastReviewDate", "")
+            existing_raw = existing_map.get(card_id)
+            existing_payload = (
+                _item_to_state(existing_raw) if existing_raw else None
             )
+            existing_last = (
+                str(existing_raw.get("lastReviewedAt") or "") if existing_raw else ""
+            )
+            incoming_last = str(incoming.get("lastReviewedAt") or "")
+
+            # Why: ISO-8601 sorts lexicographically — safe string compare.
+            server_wins = (
+                existing_payload is not None and existing_last >= incoming_last
+            )
+
             bury_changed = (
-                existing
+                existing_payload is not None
                 and "buriedUntil" in incoming
-                and incoming.get("buriedUntil") != existing.get("buriedUntil")
+                and incoming.get("buriedUntil") != existing_payload.get("buriedUntil")
             )
 
-            if core_win and not bury_changed:
-                result[card_id] = existing
+            if server_wins and not bury_changed:
+                result[card_id] = existing_payload  # type: ignore[assignment]
                 continue
 
-            if core_win and bury_changed and existing:
-                incoming = {**existing, "buriedUntil": incoming.get("buriedUntil")}
+            if server_wins and bury_changed and existing_payload is not None:
+                incoming = {
+                    **existing_payload,
+                    "buriedUntil": incoming.get("buriedUntil"),
+                }
 
-            item = _state_to_item(user_id, card_id, incoming)
-            await self._table.put_item(Item=item)
+            puts.append((card_id, incoming))
             result[card_id] = incoming
+
+        # Pass 2: fire all put_item calls in parallel (Low debt fix —
+        # matches the parallelization already used for the get_item pass
+        # above). For typical sync batches (≤100 cards) we stay well below
+        # Dynamo's per-table write-rate ceiling.
+        if puts:
+            await asyncio.gather(
+                *[
+                    self._table.put_item(Item=_state_to_item(user_id, cid, payload))
+                    for cid, payload in puts
+                ]
+            )
 
         return result
 

@@ -39,6 +39,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.DEBUG, settings.DB_BACKEND, settings.DEV_USER,
     )
     if settings.DEBUG:
+        # Fix 5 — the hard guard in config.py refuses DEBUG=true when
+        # AWS_LAMBDA_FUNCTION_NAME is set. The CORS warning here is still
+        # useful for non-Lambda misconfigurations (docker, EC2 box, etc.).
         startup.info("Auth bypass ACTIVE — all requests authenticate as DEV_USER")
         for origin in settings.CORS_ORIGINS:
             if "localhost" not in origin and "127.0.0.1" not in origin:

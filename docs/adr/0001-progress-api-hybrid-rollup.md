@@ -175,7 +175,7 @@ Why:
 
 Sync triggers (same as SRS):
 
-1. **Manual** — user clicks "Sync now" in the SyncManager panel
+1. **Manual** — user clicks the header cloud (dirty/error) or "Sync now" in the SyncManager popover (`cloud` / `cloudSync` / `cloudAlert` states; see `lingo/docs/handoff-2026-05-24-home-sync-ux.md`)
 2. **Periodic** — auto-flush every N minutes when the buffer is non-empty and
    the user is online
 3. **On exit** — `beforeunload` handler attempts a `navigator.sendBeacon` flush
@@ -268,10 +268,6 @@ POST /api/core/v1/progress/lessons/batch
     3. Prerequisite check
     4. Persist attempt + rollup updates (per the hybrid flow below)
     5. Return per-attempt result
-
-POST /api/core/v1/progress/lessons/:lessonId/attempt  (single-attempt convenience)
-  Same shape as one entry of the batch endpoint. Kept for testing + direct
-  curl-against-the-server flows. Client code uses the batch endpoint.
 
 GET  /api/core/v1/progress/me
   Aggregate for page render. Includes lessons[], concepts[] (lazy-recomputed on this call if stale), last30days, user stats.

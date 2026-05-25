@@ -116,6 +116,9 @@ class ProgressRepository(Protocol):
         ...
 
     # ── Lazy concept rollup ────────────────────────────────────────────────
+    # TODO (ADR-0001 phase 2): the lazy recompute path never landed. The
+    # ``invalidate_concepts`` plumbing below is no longer called from the hot
+    # write path (Fix 11) but kept on the protocol for when phase 2 ships.
 
     async def invalidate_concepts(
         self, user_id: str, concept_ids: list[str], staleAt: str

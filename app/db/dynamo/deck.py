@@ -289,3 +289,26 @@ class DynamoDeckRepository:
         await self._table.delete_item(
             Key={"PK": self._pk(deck_id), "SK": _META_SK},
         )
+
+    # ── Voting ────────────────────────────────────────────────────────────
+    # SQLite-first per maintainer instruction 2026-05-25 — Dynamo path lands
+    # once the SQLite vote flow validates. Each method raises so an accidental
+    # promotion of Dynamo before this is wired surfaces as a 500 rather than
+    # silently dropping votes on the floor.
+
+    async def add_vote(self, deck_id: str, user_id: str) -> None:
+        raise NotImplementedError("Deck votes not yet implemented for Dynamo")
+
+    async def remove_vote(self, deck_id: str, user_id: str) -> None:
+        raise NotImplementedError("Deck votes not yet implemented for Dynamo")
+
+    async def get_vote_state(
+        self, deck_id: str, user_id: str | None
+    ) -> dict[str, Any]:
+        raise NotImplementedError("Deck votes not yet implemented for Dynamo")
+
+    async def get_vote_count(self, deck_id: str) -> int:
+        raise NotImplementedError("Deck votes not yet implemented for Dynamo")
+
+    async def get_vote_counts(self, deck_ids: list[str]) -> dict[str, int]:
+        raise NotImplementedError("Deck votes not yet implemented for Dynamo")

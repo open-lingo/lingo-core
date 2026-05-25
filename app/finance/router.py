@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter
 
@@ -22,5 +22,5 @@ async def get_funding_transparency() -> FundingTransparencyResponse:
         premiumPercent=100 - ad,
         source=settings.funding_source,  # type: ignore[arg-type]
         periodLabel=settings.funding_period_label,
-        updatedAt=datetime.now(timezone.utc).isoformat(),
+        updatedAt=datetime.now(UTC).isoformat(),
     )

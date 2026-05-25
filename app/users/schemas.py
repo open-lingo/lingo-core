@@ -60,11 +60,32 @@ class UserResponse(BaseModel):
     community_status: str | None = None
     community_status_expiration: str | None = None
     role: str = "user"
+    # Progress stats lifted from the user row (see ADR-0001).
+    xp: int = 0
+    level: int = 1
+    lingots: int = 0
+    streak: int = 0
+    best_streak: int = 0
+    last_active_date: str | None = None
     created_at: str
     updated_at: str
 
 
 # -- User settings (preferences blob) --
+
+
+class SocialSettings(BaseModel):
+    """Per-user social/leaderboard preferences (nested under UserSettings.social).
+
+    ``show_on_leaderboard`` is opt-in by default per maintainer instruction —
+    XP writes to ``social_leaderboard`` are suppressed unless the user
+    explicitly toggles this on.
+    """
+
+    visibility: Literal["public", "friends", "private"] = "friends"
+    allow_friend_requests: bool = True
+    show_on_leaderboard: bool = False  # opt-in
+    show_activity_feed: bool = True
 
 
 class UserSettings(BaseModel):
@@ -81,6 +102,7 @@ class UserSettings(BaseModel):
       - notifications: { dailyReminderTime?, reminderEnabled }
       - learning: { learningLanguageId, uiLocale, onboardingCompleted }
       - display: { dateLocale?, timezoneOverride? }
+      - social: { visibility, allow_friend_requests, show_on_leaderboard, show_activity_feed }
     Extra keys are preserved so the frontend can evolve without backend changes.
     """
 
@@ -95,6 +117,7 @@ class UserSettings(BaseModel):
     notifications: dict | None = None
     learning: dict | None = None
     display: dict | None = None
+    social: SocialSettings | None = None
 
 
 class UserSettingsPatch(BaseModel):
@@ -111,6 +134,7 @@ class UserSettingsPatch(BaseModel):
     notifications: dict | None = None
     learning: dict | None = None
     display: dict | None = None
+    social: dict | None = None
 
 
 # -- Subscriptions (content user has added) --

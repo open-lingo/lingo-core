@@ -55,3 +55,27 @@ class DeckRepository(Protocol):
     async def delete_deck(self, deck_id: str) -> None:
         """Delete a deck and its content. No-op if not found."""
         ...
+
+    # ── Voting ──────────────────────────────────────────────────────────────
+
+    async def add_vote(self, deck_id: str, user_id: str) -> None:
+        """Record an upvote from ``user_id`` on ``deck_id``. Idempotent."""
+        ...
+
+    async def remove_vote(self, deck_id: str, user_id: str) -> None:
+        """Remove ``user_id``'s upvote on ``deck_id``. No-op if not voted."""
+        ...
+
+    async def get_vote_state(
+        self, deck_id: str, user_id: str | None
+    ) -> dict[str, Any]:
+        """Return ``{count, voted}`` for ``deck_id``. ``voted=False`` if user is None."""
+        ...
+
+    async def get_vote_count(self, deck_id: str) -> int:
+        """Return the total upvote count for ``deck_id``."""
+        ...
+
+    async def get_vote_counts(self, deck_ids: list[str]) -> dict[str, int]:
+        """Return ``{deck_id: count}`` for a batch of decks. Missing decks → 0."""
+        ...

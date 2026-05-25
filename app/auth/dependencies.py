@@ -12,6 +12,7 @@ resolved from (in order):
 """
 
 import logging
+import time
 from typing import Annotated
 
 import httpx
@@ -27,6 +28,13 @@ logger = logging.getLogger("lingo.auth")
 _bearer = HTTPBearer(auto_error=False)
 
 _jwks_cache: dict | None = None
+# Fix 7 — TTL-driven JWKS refresh. ``_jwks_cache_at`` is the epoch seconds of
+# the last successful fetch; ``_jwks_last_refresh`` rate-limits kid-miss
+# refreshes so a flood of bad tokens can't DoS Auth0 (HTTP 429).
+_jwks_cache_at: float = 0.0
+_jwks_last_refresh: float = 0.0
+_JWKS_TTL_SEC = 3600  # 1 hour
+_JWKS_REFRESH_MIN_INTERVAL_SEC = 60  # at most 1 force-refresh per minute
 
 
 def _dev_user_from_request(request: Request) -> TokenPayload | None:
@@ -40,17 +48,53 @@ def _dev_user_from_request(request: Request) -> TokenPayload | None:
     return TokenPayload(sub=dev_user, permissions=[])
 
 
-async def _get_jwks() -> dict:
-    """Fetch and cache the Auth0 JWKS (JSON Web Key Set)."""
-    global _jwks_cache
-    if _jwks_cache is not None:
-        return _jwks_cache
+async def _fetch_jwks() -> dict:
+    """Unconditional fetch — caller decides whether the cache is stale."""
     url = f"https://{settings.AUTH0_DOMAIN}/.well-known/jwks.json"
     async with httpx.AsyncClient() as client:
         resp = await client.get(url)
         resp.raise_for_status()
-        _jwks_cache = resp.json()
+        return resp.json()
+
+
+async def _get_jwks() -> dict:
+    """Return cached JWKS, refreshing if older than the TTL."""
+    global _jwks_cache, _jwks_cache_at
+    now = time.time()
+    if _jwks_cache is not None and (now - _jwks_cache_at) < _JWKS_TTL_SEC:
         return _jwks_cache
+    _jwks_cache = await _fetch_jwks()
+    _jwks_cache_at = now
+    return _jwks_cache
+
+
+def _exact_kid_present(jwks: dict, kid: str) -> bool:
+    if not kid:
+        return False
+    for key in jwks.get("keys", []):
+        if key.get("kid") == kid and _to_rsa_key(key) is not None:
+            return True
+    return False
+
+
+async def _get_rsa_keys_with_refresh(kid: str) -> list[dict]:
+    """Return RSA keys for ``kid``. On exact-kid miss, refresh JWKS once
+    (rate-limited to once a minute to avoid Auth0 429)."""
+    global _jwks_cache, _jwks_cache_at, _jwks_last_refresh
+    jwks = await _get_jwks()
+    if _exact_kid_present(jwks, kid):
+        return _get_rsa_keys(jwks, kid)
+
+    now = time.time()
+    if now - _jwks_last_refresh < _JWKS_REFRESH_MIN_INTERVAL_SEC:
+        return _get_rsa_keys(jwks, kid)
+    _jwks_last_refresh = now
+    try:
+        _jwks_cache = await _fetch_jwks()
+        _jwks_cache_at = now
+    except Exception:  # noqa: BLE001
+        return _get_rsa_keys(jwks, kid)
+    return _get_rsa_keys(_jwks_cache, kid)
 
 
 def _to_rsa_key(key: dict) -> dict | None:
@@ -83,8 +127,8 @@ async def _validate_jwt(token: str) -> TokenPayload:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token header")
 
     kid = unverified_header.get("kid", "")
-    jwks = await _get_jwks()
-    rsa_keys = _get_rsa_keys(jwks, kid)
+    rsa_keys = await _get_rsa_keys_with_refresh(kid)
+    jwks = _jwks_cache or {}
 
     if not rsa_keys:
         logger.warning("JWKS has no RSA keys: domain=%s", settings.AUTH0_DOMAIN)
@@ -126,15 +170,49 @@ async def _validate_jwt(token: str) -> TokenPayload:
     )
 
 
+# Fix 8 — in-process LRU for auth0_sub → internal user_id. Each authed
+# request paid for a get_user_by_auth0_id call before; on Dynamo that's a
+# GSI query per request. 5-minute TTL is the same shape as the JWKS cache.
+_USER_ID_CACHE_TTL_SEC = 300
+_user_id_cache: dict[str, tuple[str, float]] = {}
+
+
+def invalidate_user_id_cache(auth0_sub: str | None = None) -> None:
+    """Drop one or all entries from the cache (call on user delete)."""
+    if auth0_sub is None:
+        _user_id_cache.clear()
+    else:
+        _user_id_cache.pop(auth0_sub, None)
+
+
 async def _resolve_user_id(token: TokenPayload) -> TokenPayload:
-    """Look up the internal user UUID for this auth0 sub and attach it."""
+    """Look up the internal user UUID for this auth0 sub and attach it.
+
+    Uses a short-TTL in-process cache to avoid a repo round-trip on every
+    authed request. The cache is invalidated when a user is deleted.
+    """
+    cached = _user_id_cache.get(token.sub)
+    if cached is not None:
+        cached_id, expires_at = cached
+        if expires_at > time.time():
+            return token.model_copy(update={"id": cached_id})
+        # Expired — drop the stale entry.
+        _user_id_cache.pop(token.sub, None)
+
     from app.db.provider import get_user_repo
 
-    repo = get_user_repo()
+    try:
+        repo = get_user_repo()
+    except HTTPException:
+        return token
     if repo is None:
         return token
     user = await repo.get_user_by_auth0_id(token.sub)
     if user:
+        _user_id_cache[token.sub] = (
+            user["id"],
+            time.time() + _USER_ID_CACHE_TTL_SEC,
+        )
         return token.model_copy(update={"id": user["id"]})
     return token
 
@@ -207,9 +285,15 @@ async def get_registered_user(
 async def require_admin(
     user: Annotated[TokenPayload, Depends(get_registered_user)],
 ) -> TokenPayload:
-    """Require admin or super_admin role. Fetches user record to check role."""
-    from app.auth.roles import has_admin_access
+    """Require admin: either DB role is admin/super_admin OR the user appears
+    in ``settings.ADMIN_USER_IDS``. Fix 4 — until OAuth scopes land, the
+    env allow-list is the de-facto gate; the DB-role path stays so seeded
+    admins can be promoted from the admin UI without env changes."""
+    from app.auth.roles import has_admin_access, user_id_is_admin
     from app.db.provider import get_user_repo
+
+    if user_id_is_admin(user.id, user.sub):
+        return user
 
     repo = get_user_repo()
     if not repo:

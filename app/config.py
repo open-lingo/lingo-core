@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
@@ -29,6 +30,11 @@ class Settings(BaseSettings):
     # requests authenticate as this user automatically.
     DEV_USER: str = "dev|user-1"
 
+    # Fix 4 — admin allow-list. Until OAuth scopes land, admin routes are
+    # gated by membership in this set. Populated via ``ADMIN_USER_IDS`` in
+    # .env as a JSON list. Either internal UUIDs *or* Auth0 subs are accepted.
+    ADMIN_USER_IDS: list[str] = []
+
     # Funding transparency meter (public GET /finance/transparency)
     FUNDING_AD_PERCENT: int = 40
     FUNDING_PERIOD_LABEL: str = "Last 30 days"
@@ -50,6 +56,34 @@ class Settings(BaseSettings):
         s = (self.FUNDING_SOURCE or "estimated").lower()
         return s if s in ("manual", "estimated", "live") else "estimated"
 
+
+def _guard_debug_in_prod(s: "Settings") -> None:
+    """Fix 5 — refuse to boot with DEBUG=true in a real Lambda environment.
+
+    AWS Lambda always sets ``AWS_LAMBDA_FUNCTION_NAME``; CI / dev / docker
+    do not. We treat the presence of that env var as a hard signal that we
+    are running in production.
+    """
+    if not s.DEBUG:
+        return
+    if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        raise RuntimeError(
+            "DEBUG=true is not allowed in production environments "
+            "(AWS_LAMBDA_FUNCTION_NAME is set)."
+        )
+
+
+# Wrap Settings.__init__ so direct ``Settings()`` calls (e.g. in tests) also
+# raise. The module-level singleton below uses the same path.
+_orig_init = Settings.__init__
+
+
+def _patched_init(self: "Settings", *args: object, **kwargs: object) -> None:
+    _orig_init(self, *args, **kwargs)  # type: ignore[arg-type]
+    _guard_debug_in_prod(self)
+
+
+Settings.__init__ = _patched_init  # type: ignore[assignment]
 
 settings = Settings()
 

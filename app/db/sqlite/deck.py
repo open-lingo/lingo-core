@@ -35,6 +35,17 @@ CREATE TABLE IF NOT EXISTS deck_content (
     cards   TEXT NOT NULL,
     FOREIGN KEY (deck_id) REFERENCES deck_manifests (id)
 );
+
+-- Per-user upvotes. PRIMARY KEY (deck_id, user_id) makes voting idempotent
+-- naturally — INSERT OR IGNORE collapses a second vote into a no-op.
+CREATE TABLE IF NOT EXISTS deck_votes (
+    deck_id    TEXT NOT NULL,
+    user_id    TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (deck_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_deck_votes_deck ON deck_votes (deck_id);
 """
 
 
@@ -289,4 +300,61 @@ class SqliteDeckRepository:
     async def delete_deck(self, deck_id: str) -> None:
         await self._conn().execute("DELETE FROM deck_content WHERE deck_id = ?", (deck_id,))
         await self._conn().execute("DELETE FROM deck_manifests WHERE id = ?", (deck_id,))
+        await self._conn().execute("DELETE FROM deck_votes WHERE deck_id = ?", (deck_id,))
         await self._conn().commit()
+
+    # ── Voting ────────────────────────────────────────────────────────────
+
+    async def add_vote(self, deck_id: str, user_id: str) -> None:
+        """Idempotent upvote. INSERT OR IGNORE collapses a repeat into a no-op."""
+        now = datetime.now(UTC).isoformat()
+        await self._conn().execute(
+            """INSERT OR IGNORE INTO deck_votes (deck_id, user_id, created_at)
+               VALUES (?, ?, ?)""",
+            (deck_id, user_id, now),
+        )
+        await self._conn().commit()
+
+    async def remove_vote(self, deck_id: str, user_id: str) -> None:
+        await self._conn().execute(
+            "DELETE FROM deck_votes WHERE deck_id = ? AND user_id = ?",
+            (deck_id, user_id),
+        )
+        await self._conn().commit()
+
+    async def get_vote_count(self, deck_id: str) -> int:
+        cur = await self._conn().execute(
+            "SELECT COUNT(*) AS c FROM deck_votes WHERE deck_id = ?",
+            (deck_id,),
+        )
+        row = await cur.fetchone()
+        return int(row["c"]) if row else 0
+
+    async def get_vote_state(
+        self, deck_id: str, user_id: str | None
+    ) -> dict[str, Any]:
+        count = await self.get_vote_count(deck_id)
+        if user_id is None:
+            return {"count": count, "voted": False}
+        cur = await self._conn().execute(
+            "SELECT 1 FROM deck_votes WHERE deck_id = ? AND user_id = ? LIMIT 1",
+            (deck_id, user_id),
+        )
+        row = await cur.fetchone()
+        return {"count": count, "voted": row is not None}
+
+    async def get_vote_counts(self, deck_ids: list[str]) -> dict[str, int]:
+        if not deck_ids:
+            return {}
+        placeholders = ",".join("?" for _ in deck_ids)
+        cur = await self._conn().execute(
+            f"""SELECT deck_id, COUNT(*) AS c
+                FROM deck_votes
+                WHERE deck_id IN ({placeholders})
+                GROUP BY deck_id""",
+            deck_ids,
+        )
+        rows = await cur.fetchall()
+        counts = {row["deck_id"]: int(row["c"]) for row in rows}
+        # Fill in zeros for missing decks
+        return {did: counts.get(did, 0) for did in deck_ids}

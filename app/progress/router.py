@@ -8,7 +8,7 @@ for local dev or ``dynamodb`` in prod (requires ``lingo_progress`` table from
 """
 
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -16,24 +16,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.auth.dependencies import get_registered_user
 from app.auth.schemas import TokenPayload
 from app.db.protocols import ProgressRepository, UserRepository
-from app.db.provider import get_progress_repo, get_user_repo
+from app.db.provider import get_progress_repo, get_social_repo, get_user_repo
 from app.progress.schemas import (
     AttemptList,
-    AttemptResponse,
-    AttemptSubmission,
     BatchAttempt,
     BatchAttemptResponse,
     BatchAttemptResult,
     BatchAttemptSubmission,
-    ConceptDelta,
     ConceptRollup,
     DayActivity,
     LessonRollup,
     ProgressSummary,
-    StepResult,
-    TouchResponse,
     ShopPurchaseRequest,
     ShopPurchaseResponse,
+    TouchResponse,
     UserStats,
 )
 from app.progress.shop_catalog import get_shop_item
@@ -92,21 +88,89 @@ async def submit_attempt_batch(
       attempt regardless. See ADR-0001 § "Streak check: client-driven, not
       per-attempt" for the contract.
     """
+    # Fix 2 — hoist the user-row read OUT of the per-attempt loop and do
+    # exactly ONE update_user at the end of the batch. Each attempt's writes
+    # to the progress tables (attempt log, day/lesson rollups) still happen
+    # per-iteration; only the cross-batch user-row arithmetic is batched.
+    user_record = await users.get_user_by_id(user.id) or {}
+    today_iso = date.today().isoformat()
+
     results: list[BatchAttemptResult] = []
-    streak_updated_this_batch = False
-    today = date.today().isoformat()
+    total_xp_inc = 0
+    total_lingots_inc = 0
 
     for item in body.attempts:
-        result = await _process_one_attempt(
+        result, xp_inc, lingots_inc = await _process_one_attempt(
             user_id=user.id,
             item=item,
             progress=progress,
-            users=users,
-            allow_streak_check=body.checkStreak and not streak_updated_this_batch,
         )
         results.append(result)
-        if result.accepted and result.streakAfter > 0:
-            streak_updated_this_batch = body.checkStreak
+        total_xp_inc += xp_inc
+        total_lingots_inc += lingots_inc
+
+    # Compute new user-row state from a single base snapshot.
+    base_xp = int(user_record.get("xp") or 0)
+    base_lingots = int(user_record.get("lingots") or 0)
+    new_xp = base_xp + total_xp_inc
+    new_lingots = base_lingots + total_lingots_inc
+
+    patch: dict[str, Any] = {
+        "xp": new_xp,
+        "level": level_for_xp(new_xp),
+        "lingots": new_lingots,
+    }
+
+    streak_after = int(user_record.get("streak") or 0)
+    streak_touched = False
+    if body.checkStreak and any(r.accepted for r in results):
+        last_active = user_record.get("last_active_date") or user_record.get(
+            "lastActiveDate"
+        )
+        if last_active != today_iso:
+            yesterday_iso = (date.today() - timedelta(days=1)).isoformat()
+            if last_active == yesterday_iso:
+                streak_after = streak_after + 1
+            else:
+                streak_after = 1
+            best = int(
+                user_record.get("best_streak") or user_record.get("bestStreak") or 0
+            )
+            patch["streak"] = streak_after
+            patch["best_streak"] = max(best, streak_after)
+            patch["last_active_date"] = today_iso
+            streak_touched = True
+
+    if total_xp_inc or total_lingots_inc or streak_touched:
+        await users.update_user(user.id, patch)
+
+    # Leaderboard hook — opt-in via user settings. Done ONCE per batch with
+    # the total XP increment (was per-attempt before; both cost one settings
+    # read so consolidating is free).
+    if total_xp_inc > 0:
+        social_repo = get_social_repo()
+        if social_repo is not None:
+            try:
+                settings_blob = await users.get_settings(user.id) or {}
+                social_cfg = settings_blob.get("social") or {}
+                if social_cfg.get("show_on_leaderboard"):
+                    learning = settings_blob.get("learning") or {}
+                    lang = (
+                        learning.get("learningLanguageId")
+                        or settings_blob.get("learningLanguage")
+                    )
+                    if lang:
+                        await social_repo.add_xp_to_leaderboard(
+                            user.id, str(lang), total_xp_inc
+                        )
+            except Exception:
+                # Leaderboard write failures must never break a lesson sync.
+                pass
+
+    # Stamp streakAfter on every accepted result for FE display.
+    for r in results:
+        if r.accepted:
+            r.streakAfter = streak_after
 
     return BatchAttemptResponse(results=results)
 
@@ -116,35 +180,46 @@ async def _process_one_attempt(
     user_id: str,
     item: BatchAttempt,
     progress: ProgressRepository,
-    users: UserRepository,
-    allow_streak_check: bool,
-) -> BatchAttemptResult:
+) -> tuple[BatchAttemptResult, int, int]:
+    """Persist one attempt + its day/lesson rollups.
+
+    Returns ``(result, xp_inc, lingots_inc)``. User-row updates are batched
+    by the caller (see Fix 2 in ``submit_attempt_batch``).
+    """
     # Idempotency — if we've already accepted this client attempt, return the
     # cached outcome shape.
     existing = await progress.attempt_exists(user_id, item.clientAttemptId)
     if existing is not None:
-        return BatchAttemptResult(
-            clientAttemptId=item.clientAttemptId,
-            attemptId=existing["attemptId"],
-            accepted=True,
-            xpEarned=0,
-            streakAfter=0,
-            lingotsEarned=0,
-            dailyTotalLessons=0,
+        return (
+            BatchAttemptResult(
+                clientAttemptId=item.clientAttemptId,
+                attemptId=existing["attemptId"],
+                accepted=True,
+                xpEarned=0,
+                streakAfter=0,
+                lingotsEarned=0,
+                dailyTotalLessons=0,
+            ),
+            0,
+            0,
         )
 
     # Sanity — duration floor (1s per step or 5s, whichever is larger)
     step_count = len(item.stepResults)
     min_duration = max(5, step_count)
     if item.durationSec < min_duration:
-        return BatchAttemptResult(
-            clientAttemptId=item.clientAttemptId,
-            accepted=False,
-            reason="duration_below_floor",
-            xpEarned=0,
-            streakAfter=0,
-            lingotsEarned=0,
-            dailyTotalLessons=0,
+        return (
+            BatchAttemptResult(
+                clientAttemptId=item.clientAttemptId,
+                accepted=False,
+                reason="duration_below_floor",
+                xpEarned=0,
+                streakAfter=0,
+                lingotsEarned=0,
+                dailyTotalLessons=0,
+            ),
+            0,
+            0,
         )
 
     # Persist attempt (immutable source of truth)
@@ -166,7 +241,7 @@ async def _process_one_attempt(
     lingots_earned = lingots_for_attempt(item.passed)
 
     # Eager rollup updates
-    lesson_rollup = await progress.update_lesson_rollup(user_id, item.lessonId, attempt_row)
+    await progress.update_lesson_rollup(user_id, item.lessonId, attempt_row)
     day_rollup = await progress.update_day_rollup(
         user_id,
         date.today().isoformat(),
@@ -175,102 +250,29 @@ async def _process_one_attempt(
         xp_inc=xp_earned,
     )
 
-    # Lazy concept rollup invalidation — touched concepts get staleAt set; the
-    # next /me read recomputes them. Cheap write per concept.
-    concept_ids: list[str] = []
-    for step in item.stepResults:
-        concept_ids.extend(step.conceptIds or [])
-    if concept_ids:
-        await progress.invalidate_concepts(
-            user_id, list(set(concept_ids)), datetime.now(UTC).isoformat()
-        )
+    # Fix 11 — invalidate_concepts removed from the hot path. The lazy
+    # recompute path described in ADR-0001 § "Concept rollups (lazy)" never
+    # landed; reads currently return whatever the last full recompute wrote.
+    # Re-add invalidation when the recompute path is wired up.
 
-    # User-row updates: XP + lingots always. Streak only when client signals
-    # the first sync of a new local day AND we haven't already done it for
-    # an earlier attempt in this same batch.
-    user_record = await users.get_user_by_id(user_id) or {}
-    new_xp = (user_record.get("xp") or 0) + xp_earned
-    new_lingots = (user_record.get("lingots") or 0) + lingots_earned
-    new_level = level_for_xp(new_xp)
-
-    patch: dict[str, Any] = {
-        "xp": new_xp,
-        "level": new_level,
-        "lingots": new_lingots,
-    }
-
-    streak_after = user_record.get("streak") or 0
-    if allow_streak_check:
-        last_active = user_record.get("last_active_date") or user_record.get(
-            "lastActiveDate"
-        )
-        today_iso = date.today().isoformat()
-        if last_active != today_iso:
-            # Tick the streak. If yesterday was the previous active day, ++; else reset to 1.
-            yesterday_iso = (date.today() - timedelta(days=1)).isoformat()
-            if last_active == yesterday_iso:
-                streak_after = streak_after + 1
-            else:
-                streak_after = 1
-            best = user_record.get("best_streak") or user_record.get("bestStreak") or 0
-            patch["streak"] = streak_after
-            patch["best_streak"] = max(best, streak_after)
-            patch["last_active_date"] = today_iso
-
-    await users.update_user(user_id, patch)
-
-    return BatchAttemptResult(
-        clientAttemptId=item.clientAttemptId,
-        attemptId=attempt_id,
-        accepted=True,
-        xpEarned=xp_earned,
-        streakAfter=streak_after,
-        lingotsEarned=lingots_earned,
-        dailyTotalLessons=day_rollup["lessonsCompleted"],
+    return (
+        BatchAttemptResult(
+            clientAttemptId=item.clientAttemptId,
+            attemptId=attempt_id,
+            accepted=True,
+            xpEarned=xp_earned,
+            streakAfter=0,  # filled in by caller after batch-level streak roll
+            lingotsEarned=lingots_earned,
+            dailyTotalLessons=day_rollup["lessonsCompleted"],
+        ),
+        xp_earned,
+        lingots_earned,
     )
 
 
-@router.post(
-    "/lessons/{lesson_id}/attempt",
-    response_model=AttemptResponse,
-)
-async def submit_attempt(
-    lesson_id: str,
-    body: AttemptSubmission,
-    user: CurrentUser,
-    progress: ProgressRepo,
-    users: UserRepo,
-) -> Any:
-    """Validate a lesson attempt server-side, write attempt + rollups, return result.
-
-    Per-attempt write flow (non-transactional, see ADR-0001):
-
-      1. Load server-side answer key for ``lesson_id`` from curriculum store
-      2. Validate each step against the key, compute pass/fail and score
-      3. Sanity checks: durationSec floor/ceiling, prerequisite met
-      4. PutItem ATTEMPT row (idempotent on clientAttemptId)
-      5. UpdateItem user row (ADD xp, ADD lingots, conditional streak update)
-      6. UpdateItem LESSON rollup (attemptCount, bestScore, latestAttemptAt)
-      7. UpdateItem DAY rollup (lessonsCompleted, minutesActive, xpEarned)
-      8. Invalidate CONCEPT rollups touched by this attempt (set staleAt = now)
-      9. Return result with conceptDeltas computed from the in-memory state
-    """
-    # Sanity: durationSec floor/ceiling are enforced by the schema (Field ge/le)
-    if body.durationSec < max(5, len(body.answers) * 1):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="durationSec below minimum for step count",
-        )
-
-    # TODO: load answer key from app/curriculum/answers/<lesson_id>.json
-    # TODO: validate steps
-    # TODO: write attempt + rollups
-    # TODO: compute conceptDeltas
-
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Progress validation pipeline pending — answer-key extraction script + repo wiring",
-    )
+# Fix 12 — the single-attempt POST endpoint was a never-implemented 501 stub
+# documented in ADR-0001 only as a curl convenience. Removed to keep the API
+# surface honest. The batch endpoint above is the production sync path.
 
 
 # ── Reads ───────────────────────────────────────────────────────────────────
@@ -476,14 +478,3 @@ async def purchase_shop_item(
         owned=body.itemId in purchases or qty > 0,
         quantity=qty,
     )
-
-
-# ── Helpers ─────────────────────────────────────────────────────────────────
-
-
-def _iso_now() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _today_yyyymmdd() -> str:
-    return datetime.now(UTC).date().isoformat()
