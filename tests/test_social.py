@@ -17,16 +17,6 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-# We mutate process env *before* importing app.config so the Settings instance
-# picks up our temp SQLite path and DEBUG mode. Tests are sync — the TestClient
-# spins up its own loop.
-TMP_DB = os.path.join(tempfile.mkdtemp(prefix="lingo-social-"), "social.db")
-os.environ["DB_BACKEND"] = "sqlite"
-os.environ["SQLITE_PATH"] = TMP_DB
-os.environ["DEBUG"] = "true"
-os.environ["DEV_USER"] = "auth0|alice"
-
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -56,15 +46,24 @@ def _as(sub: str) -> dict[str, str]:
 
 @pytest.fixture(scope="module")
 def client() -> Any:
-    # Lazy-import after env mutation so settings see DEBUG=true + temp DB.
-    from app.config import settings
-    settings.DB_BACKEND = "sqlite"
-    settings.SQLITE_PATH = TMP_DB
-    settings.DEBUG = True
-    settings.DEV_USER = "auth0|alice"
+    tmp_db = os.path.join(tempfile.mkdtemp(prefix="lingo-social-"), "social.db")
+    os.environ["DB_BACKEND"] = "sqlite"
+    os.environ["SQLITE_PATH"] = tmp_db
+    os.environ["DEBUG"] = "true"
+    os.environ["DEV_USER"] = "auth0|alice"
 
-    from app.main import app
-    with TestClient(app) as c:
+    import importlib
+
+    from app import config as config_mod
+    importlib.reload(config_mod)
+    from app.db import provider as provider_mod
+    importlib.reload(provider_mod)
+    from app.auth import dependencies as auth_dep_mod
+    importlib.reload(auth_dep_mod)
+    from app import main as main_mod
+    importlib.reload(main_mod)
+
+    with TestClient(main_mod.app) as c:
         yield c
 
 
