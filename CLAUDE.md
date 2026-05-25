@@ -39,7 +39,7 @@ app/
 │   └── mock/               # MockCommunityRepository (⚠️ in-memory, wired for ALL backends)
 ├── v1/router.py            # mounts srs/users/decks/stories/community/admin under /api/core/v1
 ├── users/                  # router + schemas + subscriptions/ (content-type handler registry)
-├── srs/                    # SM-2 sync (delta merge, last-write-wins by lastReviewDate)
+├── srs/                    # FSRS-6 modal sync (recognition + production, delta merge, last-write-wins by max lastReviewDate)
 ├── decks/                  # CRUD + batch fetch + admin approval
 ├── stories/                # ⚠️ DynamoDB impl missing (None in provider)
 ├── community/              # forum threads/posts/votes + addons + markdown

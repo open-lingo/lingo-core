@@ -1,22 +1,23 @@
-"""DynamoDB-backed SRS repository.
+"""DynamoDB-backed SRS repository — FSRS-6 with modality split.
 
 Single-table design — keyed by our internal user UUID:
   PK = USER#<uuid>   SK = CARD#<card_id>  → one item per (user, card)
 
 GSI (DueDate-Index):
   hash  = user_id  (plain UUID attribute)
-  range = dueDate  (YYYY-MM-DD string, sorts lexicographically)
+  range = dueDate  (min of both modalities, YYYY-MM-DD, sorts lexicographically)
 
-  Used by get_due_cards() for efficient range queries.
+Full FSRS-6 modal state is stored as a nested map attribute (state_map).
+The top-level dueDate attribute is computed as min(recognition.dueDate,
+production.dueDate) so the GSI range query returns cards due in either modality.
 
-Numeric note: DynamoDB returns all numbers as Decimal.  We convert:
-  - easeFactor  (float) → Decimal on write, float on read
-  - interval / repetitions (int) → int on read  (Decimal → int is safe)
+Numeric note: DynamoDB returns all numbers as Decimal. The state is stored
+as a JSON string (state_json attribute) to avoid Decimal conversion hassles
+on nested structures. The dueDate attribute remains a plain string for the GSI.
 """
 
 import asyncio
 import json
-from decimal import Decimal
 from typing import Any
 
 import aioboto3
@@ -24,43 +25,27 @@ import aioboto3
 _CARD_SK_PREFIX = "CARD#"
 
 
-def _to_decimal(val: float | int) -> Decimal:
-    return Decimal(str(val))
+def _min_due(state: dict[str, Any]) -> str:
+    r = state.get("recognition", {}).get("dueDate", "")
+    p = state.get("production", {}).get("dueDate", "")
+    if not r:
+        return p
+    if not p:
+        return r
+    return min(r, p)
+
+
+def _max_last_review(state: dict[str, Any]) -> str:
+    r = state.get("recognition", {}).get("lastReviewDate", "")
+    p = state.get("production", {}).get("lastReviewDate", "")
+    return max(r, p)
 
 
 def _item_to_state(item: dict[str, Any]) -> dict[str, Any]:
-    state: dict[str, Any] = {
-        "easeFactor": float(item["easeFactor"]),
-        "interval": int(item["interval"]),
-        "dueDate": item["dueDate"],
-        "repetitions": int(item["repetitions"]),
-        "lastReviewDate": item["lastReviewDate"],
-    }
-    if "lastSyncedAt" in item:
-        state["lastSyncedAt"] = item["lastSyncedAt"]
-    if "buriedUntil" in item and item["buriedUntil"]:
-        state["buriedUntil"] = item["buriedUntil"]
-    return state
-
-
-def _state_to_item(
-    user_id: str, card_id: str, state: dict[str, Any]
-) -> dict[str, Any]:
-    item: dict[str, Any] = {
-        "PK": f"USER#{user_id}",
-        "SK": f"{_CARD_SK_PREFIX}{card_id}",
-        "user_id": user_id,  # plain attribute used as GSI hash key
-        "easeFactor": _to_decimal(state.get("easeFactor", 2.5)),
-        "interval": int(state.get("interval", 0)),
-        "dueDate": state.get("dueDate", ""),
-        "repetitions": int(state.get("repetitions", 0)),
-        "lastReviewDate": state.get("lastReviewDate", ""),
-    }
-    if state.get("lastSyncedAt"):
-        item["lastSyncedAt"] = state["lastSyncedAt"]
-    if state.get("buriedUntil"):
-        item["buriedUntil"] = state["buriedUntil"]
-    return item
+    if "state_json" in item:
+        return json.loads(item["state_json"])
+    # Legacy SM-2 item — return None so caller can skip.
+    return {}
 
 
 async def _paginate_query(table: Any, **kwargs: Any) -> list[dict[str, Any]]:
@@ -74,7 +59,7 @@ async def _paginate_query(table: Any, **kwargs: Any) -> list[dict[str, Any]]:
 
 
 class DynamoSRSRepository:
-    """DynamoDB-backed SRS repository.
+    """DynamoDB-backed SRS repository (FSRS-6 modal).
 
     Required table / GSI:
       Table  PK (S) + SK (S)
@@ -126,7 +111,12 @@ class DynamoSRSRepository:
                 ":prefix": _CARD_SK_PREFIX,
             },
         )
-        return {item["SK"][len(_CARD_SK_PREFIX):]: _item_to_state(item) for item in items}
+        result: dict[str, dict[str, Any]] = {}
+        for item in items:
+            state = _item_to_state(item)
+            if state:
+                result[item["SK"][len(_CARD_SK_PREFIX):]] = state
+        return result
 
     async def get_due_cards(
         self, user_id: str, on_or_before: str
@@ -140,14 +130,22 @@ class DynamoSRSRepository:
                 ":date": on_or_before,
             },
         )
-        return {item["SK"][len(_CARD_SK_PREFIX):]: _item_to_state(item) for item in items}
+        result: dict[str, dict[str, Any]] = {}
+        for item in items:
+            state = _item_to_state(item)
+            if state:
+                result[item["SK"][len(_CARD_SK_PREFIX):]] = state
+        return result
 
     async def get_card(self, user_id: str, card_id: str) -> dict[str, Any] | None:
         resp = await self._table.get_item(
             Key={"PK": f"USER#{user_id}", "SK": f"{_CARD_SK_PREFIX}{card_id}"}
         )
         item = resp.get("Item")
-        return _item_to_state(item) if item else None
+        if not item:
+            return None
+        state = _item_to_state(item)
+        return state if state else None
 
     async def upsert_cards(
         self, user_id: str, cards: dict[str, dict[str, Any]]
@@ -167,10 +165,10 @@ class DynamoSRSRepository:
         for card_id, incoming in cards.items():
             existing = existing_map.get(card_id)
 
-            core_win = (
-                existing
-                and existing.get("lastReviewDate", "") >= incoming.get("lastReviewDate", "")
-            )
+            incoming_review = _max_last_review(incoming)
+            existing_review = _max_last_review(existing) if existing else ""
+            core_win = existing and existing_review >= incoming_review
+
             bury_changed = (
                 existing
                 and "buriedUntil" in incoming
@@ -184,7 +182,14 @@ class DynamoSRSRepository:
             if core_win and bury_changed and existing:
                 incoming = {**existing, "buriedUntil": incoming.get("buriedUntil")}
 
-            item = _state_to_item(user_id, card_id, incoming)
+            due = _min_due(incoming)
+            item: dict[str, Any] = {
+                "PK": f"USER#{user_id}",
+                "SK": f"{_CARD_SK_PREFIX}{card_id}",
+                "user_id": user_id,
+                "dueDate": due,
+                "state_json": json.dumps(incoming, ensure_ascii=False),
+            }
             await self._table.put_item(Item=item)
             result[card_id] = incoming
 
