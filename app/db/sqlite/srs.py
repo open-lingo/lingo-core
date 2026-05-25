@@ -1,11 +1,8 @@
-"""SQLite-backed SRS repository.
+"""SQLite-backed SRS repository — FSRS-6 with modality split.
 
-One row per (user, card) keyed by our internal user UUID. Card state is
-stored as an opaque JSON ``payload`` blob plus three indexed scalar columns
-used for queries / LWW merge:
-
-  ``due_date``         — extracted from payload for the due-date index.
-  ``last_reviewed_at`` — ISO timestamp used for LWW merge (lex-sortable).
+One row per (user, card), keyed by our internal user UUID.
+Full FSRS-6 state stored as JSON; due_date column holds
+min(recognition.dueDate, production.dueDate) for efficient index queries.
 """
 
 import json
@@ -13,28 +10,39 @@ from typing import Any
 
 import aiosqlite
 
-from app.shared.utils import earliest_due_date
-
 _INIT_SQL = """
-CREATE TABLE IF NOT EXISTS srs_cards (
-    user_id          TEXT NOT NULL,
-    card_id          TEXT NOT NULL,
-    payload          TEXT NOT NULL DEFAULT '{}',
-    due_date         TEXT NOT NULL DEFAULT '',
-    last_reviewed_at TEXT NOT NULL DEFAULT '',
+CREATE TABLE IF NOT EXISTS srs_cards_v2 (
+    user_id    TEXT NOT NULL,
+    card_id    TEXT NOT NULL,
+    due_date   TEXT NOT NULL,
+    state_json TEXT NOT NULL,
     PRIMARY KEY (user_id, card_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_srs_due ON srs_cards (user_id, due_date);
+CREATE INDEX IF NOT EXISTS idx_srs_v2_due ON srs_cards_v2 (user_id, due_date);
 """
 
-# Why: legacy installs may have the SM-2 columns; add the new columns
-# idempotently so existing local.db files keep working. We do not drop
-# old columns — they're left null/empty and ignored.
-_MIGRATION_COLS = [
-    ("payload", "TEXT NOT NULL DEFAULT '{}'"),
-    ("last_reviewed_at", "TEXT NOT NULL DEFAULT ''"),
-]
+_DROP_LEGACY = "DROP TABLE IF EXISTS srs_cards;"
+
+
+def _min_due(state: dict[str, Any]) -> str:
+    r = state.get("recognition", {}).get("dueDate", "")
+    p = state.get("production", {}).get("dueDate", "")
+    if not r:
+        return p
+    if not p:
+        return r
+    return min(r, p)
+
+
+def _max_last_review(state: dict[str, Any]) -> str:
+    r = state.get("recognition", {}).get("lastReviewDate", "")
+    p = state.get("production", {}).get("lastReviewDate", "")
+    return max(r, p)
+
+
+def _row_to_state(row: aiosqlite.Row) -> dict[str, Any]:
+    return json.loads(row["state_json"])
 
 
 class SqliteSRSRepository:
@@ -45,16 +53,7 @@ class SqliteSRSRepository:
     async def connect(self) -> None:
         self._db = await aiosqlite.connect(self._db_path)
         self._db.row_factory = aiosqlite.Row
-        await self._db.executescript(_INIT_SQL)
-        for col, col_type in _MIGRATION_COLS:
-            try:
-                await self._conn().execute(
-                    f"ALTER TABLE srs_cards ADD COLUMN {col} {col_type}"
-                )
-                await self._conn().commit()
-            except aiosqlite.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
-                    raise
+        await self._db.executescript(_DROP_LEGACY + _INIT_SQL)
 
     async def close(self) -> None:
         if self._db:
@@ -64,47 +63,33 @@ class SqliteSRSRepository:
         assert self._db is not None, "call connect() first"
         return self._db
 
-    def _row_to_state(self, row: aiosqlite.Row) -> dict[str, Any]:
-        try:
-            payload = json.loads(row["payload"] or "{}")
-        except (json.JSONDecodeError, TypeError):
-            payload = {}
-        return payload
-
     async def get_all(self, user_id: str) -> dict[str, dict[str, Any]]:
         cur = await self._conn().execute(
-            "SELECT * FROM srs_cards WHERE user_id = ?", (user_id,)
+            "SELECT card_id, state_json FROM srs_cards_v2 WHERE user_id = ?",
+            (user_id,),
         )
         rows = await cur.fetchall()
-        return {row["card_id"]: self._row_to_state(row) for row in rows}
+        return {row["card_id"]: _row_to_state(row) for row in rows}
 
     async def get_due_cards(
         self, user_id: str, on_or_before: str
     ) -> dict[str, dict[str, Any]]:
-        """Return cards with due_date <= on_or_before. Uses idx_srs_due."""
         cur = await self._conn().execute(
-            """SELECT * FROM srs_cards
+            """SELECT card_id, state_json FROM srs_cards_v2
                WHERE user_id = ? AND due_date <= ?
                ORDER BY due_date""",
             (user_id, on_or_before),
         )
         rows = await cur.fetchall()
-        return {row["card_id"]: self._row_to_state(row) for row in rows}
+        return {row["card_id"]: _row_to_state(row) for row in rows}
 
     async def get_card(self, user_id: str, card_id: str) -> dict[str, Any] | None:
         cur = await self._conn().execute(
-            "SELECT * FROM srs_cards WHERE user_id = ? AND card_id = ?",
+            "SELECT state_json FROM srs_cards_v2 WHERE user_id = ? AND card_id = ?",
             (user_id, card_id),
         )
         row = await cur.fetchone()
-        return self._row_to_state(row) if row else None
-
-    async def _get_row(self, user_id: str, card_id: str) -> aiosqlite.Row | None:
-        cur = await self._conn().execute(
-            "SELECT * FROM srs_cards WHERE user_id = ? AND card_id = ?",
-            (user_id, card_id),
-        )
-        return await cur.fetchone()
+        return _row_to_state(row) if row else None
 
     async def upsert_cards(
         self, user_id: str, cards: dict[str, dict[str, Any]]
@@ -112,50 +97,33 @@ class SqliteSRSRepository:
         result: dict[str, dict[str, Any]] = {}
 
         for card_id, incoming in cards.items():
-            existing_row = await self._get_row(user_id, card_id)
-            existing_payload = self._row_to_state(existing_row) if existing_row else None
-            existing_last = (
-                existing_row["last_reviewed_at"] if existing_row else ""
-            ) or ""
-            incoming_last = str(incoming.get("lastReviewedAt") or "")
+            existing = await self.get_card(user_id, card_id)
 
-            # Why: ISO-8601 sorts lexicographically — safe string compare.
-            server_wins = (
-                existing_payload is not None and existing_last >= incoming_last
-            )
+            incoming_review = _max_last_review(incoming)
+            existing_review = _max_last_review(existing) if existing else ""
+            core_win = existing and existing_review >= incoming_review
 
             bury_changed = (
-                existing_payload is not None
+                existing
                 and "buriedUntil" in incoming
-                and incoming.get("buriedUntil") != existing_payload.get("buriedUntil")
+                and incoming.get("buriedUntil") != existing.get("buriedUntil")
             )
-
-            if server_wins and not bury_changed:
-                result[card_id] = existing_payload  # type: ignore[assignment]
+            if core_win and not bury_changed:
+                result[card_id] = existing
                 continue
 
-            if server_wins and bury_changed and existing_payload is not None:
-                incoming = {
-                    **existing_payload,
-                    "buriedUntil": incoming.get("buriedUntil"),
-                }
+            if core_win and bury_changed and existing:
+                incoming = {**existing, "buriedUntil": incoming.get("buriedUntil")}
 
-            due = earliest_due_date(incoming)
+            due = _min_due(incoming)
             await self._conn().execute(
-                """INSERT INTO srs_cards
-                       (user_id, card_id, payload, due_date, last_reviewed_at)
-                   VALUES (?, ?, ?, ?, ?)
+                """INSERT INTO srs_cards_v2
+                       (user_id, card_id, due_date, state_json)
+                   VALUES (?, ?, ?, ?)
                    ON CONFLICT(user_id, card_id) DO UPDATE SET
-                       payload          = excluded.payload,
-                       due_date         = excluded.due_date,
-                       last_reviewed_at = excluded.last_reviewed_at""",
-                (
-                    user_id,
-                    card_id,
-                    json.dumps(incoming),
-                    due,
-                    incoming_last,
-                ),
+                       due_date   = excluded.due_date,
+                       state_json = excluded.state_json""",
+                (user_id, card_id, due, json.dumps(incoming, ensure_ascii=False)),
             )
             result[card_id] = incoming
 
@@ -167,7 +135,7 @@ class SqliteSRSRepository:
             return 0
         placeholders = ",".join("?" for _ in card_ids)
         cur = await self._conn().execute(
-            f"DELETE FROM srs_cards WHERE user_id = ? AND card_id IN ({placeholders})",
+            f"DELETE FROM srs_cards_v2 WHERE user_id = ? AND card_id IN ({placeholders})",
             [user_id, *card_ids],
         )
         await self._conn().commit()
@@ -175,7 +143,7 @@ class SqliteSRSRepository:
 
     async def clear_all(self, user_id: str) -> int:
         cur = await self._conn().execute(
-            "DELETE FROM srs_cards WHERE user_id = ?", (user_id,)
+            "DELETE FROM srs_cards_v2 WHERE user_id = ?", (user_id,)
         )
         await self._conn().commit()
         return cur.rowcount

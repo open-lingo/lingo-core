@@ -1,53 +1,55 @@
-from datetime import datetime
-from typing import Any
+from typing import Literal
 
-from pydantic import BaseModel, RootModel, model_validator
+from pydantic import BaseModel, Field
 
 
-# Why: Frontend ships FSRS-6 modal state ({recognition, production, ...}); the
-# old SM-2 schema 422'd every sync. We store the payload opaquely and only
-# require ``lastReviewedAt`` for last-write-wins merge.
-class SRSCardState(RootModel[dict[str, Any]]):
-    """Opaque per-card SRS blob.
+SRSPhase = Literal["new", "learning", "review", "relearning"]
 
-    Only one server-merge key is required: ``lastReviewedAt`` (ISO timestamp).
-    Everything else round-trips byte-equivalent so the engine can evolve
-    without touching the API surface.
-    """
 
-    root: dict[str, Any]
+class SRSModalityState(BaseModel):
+    """FSRS-6 state for one direction (recognition or production)."""
 
-    @model_validator(mode="after")
-    def _require_last_reviewed_at(self) -> "SRSCardState":
-        last = self.root.get("lastReviewedAt")
-        if not isinstance(last, str):
-            raise ValueError(
-                "Each card requires a string 'lastReviewedAt' ISO timestamp"
-            )
-        try:
-            datetime.fromisoformat(last)
-        except ValueError as e:
-            raise ValueError(f"lastReviewedAt must be ISO-8601: {e}") from e
-        return self
+    stability: float = Field(default=0, ge=0)
+    difficulty: float = Field(default=0, ge=0)
+    state: SRSPhase = "new"
+    interval: int = Field(default=0, ge=0)
+    dueDate: str
+    lastReviewDate: str
+    reps: int = Field(default=0, ge=0)
+    lapses: int = Field(default=0, ge=0)
+    learningSteps: int | None = None
+
+
+class SRSCardState(BaseModel):
+    """FSRS-6 state with recognition/production modality split."""
+
+    recognition: SRSModalityState
+    production: SRSModalityState
+    lastSyncedAt: str | None = None
+    buriedUntil: str | None = Field(
+        default=None,
+        description="YYYY-MM-DD; if set and > today, card excluded from queue",
+    )
 
 
 class SRSSyncRequest(BaseModel):
     """Client pushes dirty cards. Keys are card IDs."""
 
     cards: dict[str, SRSCardState]
+    syncedAt: str | None = None
 
 
 class SRSSyncResponse(BaseModel):
     """Server returns the merged state for synced cards."""
 
-    cards: dict[str, dict[str, Any]]
+    cards: dict[str, SRSCardState]
     syncedAt: str
 
 
 class SRSStateResponse(BaseModel):
     """Full SRS map for a user."""
 
-    cards: dict[str, dict[str, Any]]
+    cards: dict[str, SRSCardState]
 
 
 class SRSDeleteRequest(BaseModel):
@@ -62,14 +64,3 @@ class SRSDeleteResponse(BaseModel):
 
 class SRSClearResponse(BaseModel):
     deleted: int
-
-
-__all__ = [
-    "SRSCardState",
-    "SRSSyncRequest",
-    "SRSSyncResponse",
-    "SRSStateResponse",
-    "SRSDeleteRequest",
-    "SRSDeleteResponse",
-    "SRSClearResponse",
-]
