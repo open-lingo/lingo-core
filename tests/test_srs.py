@@ -1,7 +1,15 @@
-"""SRS API tests — verifies FSRS-6 modal blob round-trips through the
-schema, router, and SQLite repo intact (Fix 1)."""
+"""SRS API tests — superseded.
+
+The merged-in `tests/test_srs_sync.py` (from origin's eacbf4a SRS migration)
+covers the same paths with the correct schema. These tests were built on an
+opaque-blob `lastReviewedAt` design that did not land; the merged schema
+uses per-modality `lastReviewDate` instead. Skipping the file rather than
+deleting so the maintainer can confirm before removal.
+"""
 
 import pytest
+
+pytestmark = pytest.mark.skip(reason="superseded by tests/test_srs_sync.py post-merge")
 
 
 def _modal_state(last_reviewed_at: str = "2026-05-25T12:00:00+00:00") -> dict:

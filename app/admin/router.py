@@ -201,8 +201,7 @@ async def admin_update_user_srs(
         if not body.cards:
             cards = await srs_repo.get_all(user_id)
             return {"cards": cards}
-        # Why: SRSCardState is a RootModel; ``state.root`` is the opaque payload.
-        cards_dict = {cid: s.root for cid, s in body.cards.items()}
+        cards_dict = {cid: s.model_dump(mode="json") for cid, s in body.cards.items()}
         merged = await srs_repo.upsert_cards(user_id, cards_dict)
     return {"cards": merged}
 

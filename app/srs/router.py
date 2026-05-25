@@ -48,8 +48,7 @@ async def sync_cards(body: SRSSyncRequest, user: CurrentUser, repo: SRSRepo) -> 
     if not body.cards:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No cards to sync")
 
-    # Why: SRSCardState is a RootModel; ``state.root`` is the opaque payload.
-    cards_dict = {cid: state.root for cid, state in body.cards.items()}
+    cards_dict = {cid: state.model_dump(mode="json") for cid, state in body.cards.items()}
     merged = await repo.upsert_cards(user.id, cards_dict)
     return {
         "cards": merged,
