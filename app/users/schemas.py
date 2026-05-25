@@ -164,3 +164,35 @@ class SubscriptionSettingsPatch(BaseModel):
     enabled: bool | None = None
     newCardsPerDay: int | None = Field(default=None, ge=0, le=100)
     newCardOrder: str | None = Field(default=None, description="ordered | shuffled")
+
+
+# -- Public discovery (find-friends / contributors browse) --
+
+
+PublicFriendshipStatus = Literal[
+    "self", "friend", "request_in", "request_out", "blocked", "none"
+]
+
+
+class PublicUserSummary(BaseModel):
+    """Slim, publicly browseable view of another user.
+
+    Powers the find-friends discover surface + the contributors list. Reads from
+    the user row + settings + social graph; never exposes auth-only fields.
+    """
+
+    auth0_id: str
+    user_id: str
+    username: str
+    display_name: str
+    profile_picture_key: str | None = None
+    learning_language: str | None = None
+    weekly_xp: int = 0
+    streak_days: int = 0
+    friendship_status: PublicFriendshipStatus = "none"
+
+
+class DiscoverUsersResponse(BaseModel):
+    users: list[PublicUserSummary] = Field(default_factory=list)
+    total: int = 0
+    has_more: bool = False

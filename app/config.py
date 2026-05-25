@@ -20,8 +20,11 @@ class Settings(BaseSettings):
     DYNAMODB_TABLE_PREFIX: str = "lingo_"
     AWS_REGION: str = "us-east-1"
 
-    # CORS
-    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    # CORS — dev defaults include Vite's strict port and common loopback variants.
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
 
     DEBUG: bool = False
 

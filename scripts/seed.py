@@ -244,13 +244,19 @@ TREVOR_BLOCKS = ["banned_bob"]
 # We'll seed this into `social_activity` (table will be CREATE IF NOT EXISTS;
 # if the parallel agent ships a different schema, the named-column INSERTs
 # need updating but the constants stay).
-ACTIVITY_KINDS = ("lesson", "streak", "level", "mastery", "friend")
+ACTIVITY_KINDS = (
+    "lesson_completed",
+    "streak_milestone",
+    "level_up",
+    "friend_joined",
+    "achievement",
+)
 
 SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-1",
         "actor": "kenji_dev",
-        "kind": "lesson",
+        "kind": "lesson_completed",
         "text": "Finished Module 2 — Dakuten & Yōon",
         "days_ago": 0,
         "hours_ago": 12 / 60,
@@ -258,7 +264,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-2",
         "actor": "priya_n5",
-        "kind": "streak",
+        "kind": "streak_milestone",
         "text": "Hit a 64-day streak 🔥",
         "days_ago": 0,
         "hours_ago": 1,
@@ -266,7 +272,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-3",
         "actor": "anna_lang",
-        "kind": "league",
+        "kind": "achievement",
         "text": "Promoted to Sapphire League",
         "days_ago": 1,
         "hours_ago": 0,
@@ -274,7 +280,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-4",
         "actor": "mai_morning",
-        "kind": "milestone",
+        "kind": "achievement",
         "text": "Reached 3,000 XP",
         "days_ago": 2,
         "hours_ago": 0,
@@ -282,7 +288,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-5",
         "actor": "sora_n5",
-        "kind": "lesson",
+        "kind": "lesson_completed",
         "text": "Completed M3 Lesson 2 — Particles wa vs ga",
         "days_ago": 0,
         "hours_ago": 3,
@@ -290,7 +296,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-6",
         "actor": "yuto_jpn",
-        "kind": "mastery",
+        "kind": "achievement",
         "text": "Mastered 5 new kanji",
         "days_ago": 1,
         "hours_ago": 4,
@@ -298,7 +304,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-7",
         "actor": "trevor",
-        "kind": "level",
+        "kind": "level_up",
         "text": "Reached Level 7",
         "days_ago": 0,
         "hours_ago": 6,
@@ -306,7 +312,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-8",
         "actor": "aiko_kanji",
-        "kind": "streak",
+        "kind": "streak_milestone",
         "text": "Hit a 30-day streak!",
         "days_ago": 2,
         "hours_ago": 5,
@@ -314,7 +320,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-9",
         "actor": "noor_x",
-        "kind": "lesson",
+        "kind": "lesson_completed",
         "text": "Finished M4 Lesson 1 — verb stems",
         "days_ago": 3,
         "hours_ago": 0,
@@ -322,7 +328,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-10",
         "actor": "kenji_dev",
-        "kind": "friend",
+        "kind": "friend_joined",
         "text": "Kenji and Yuto are now friends",
         "days_ago": 4,
         "hours_ago": 1,
@@ -330,7 +336,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-11",
         "actor": "trevor",
-        "kind": "lesson",
+        "kind": "lesson_completed",
         "text": "Completed M3 Lesson 3 — building sentences",
         "days_ago": 1,
         "hours_ago": 2,
@@ -338,7 +344,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-12",
         "actor": "priya_n5",
-        "kind": "mastery",
+        "kind": "achievement",
         "text": "Mastered 12 vocab cards",
         "days_ago": 5,
         "hours_ago": 0,
@@ -346,7 +352,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-13",
         "actor": "luca_eu",
-        "kind": "level",
+        "kind": "level_up",
         "text": "Reached Level 4",
         "days_ago": 6,
         "hours_ago": 0,
@@ -354,7 +360,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-14",
         "actor": "anna_lang",
-        "kind": "lesson",
+        "kind": "lesson_completed",
         "text": "Finished M2 Lesson 4",
         "days_ago": 5,
         "hours_ago": 3,
@@ -362,7 +368,7 @@ SEED_ACTIVITY: list[dict] = [
     {
         "id": "a-15",
         "actor": "mai_morning",
-        "kind": "streak",
+        "kind": "streak_milestone",
         "text": "Hit a 19-day streak",
         "days_ago": 6,
         "hours_ago": 12,
@@ -441,6 +447,145 @@ SEED_THREADS: list[dict] = [
     },
 ]
 
+
+# ── Quests ──────────────────────────────────────────────────────────────────
+# 6 quests for Trevor — 2 daily (one mid-progress, one claimable), 2 weekly
+# (one early, one almost done), 1 random (with ~6h expiry), 1 friend quest
+# (vs Sora). All progress states are realistic so the UI can show its full
+# range without click-through.
+
+SEED_QUESTS: list[dict] = [
+    {
+        "id": "quest-daily-fifty-xp",
+        "owner_username": "trevor",
+        "type": "daily",
+        "title_key": "quests.daily.fiftyXp.title",
+        "description_key": "quests.daily.fiftyXp.desc",
+        "emoji": "⚡",
+        "progress_current": 30,
+        "progress_target": 50,
+        "progress_unit": "XP",
+        "reward_lingots": 5,
+        "reward_xp": 10,
+        "reward_ad_free_minutes": 0,
+        "reward_streak_shield": False,
+        "status": "active",
+        "expires_in_hours": 16,
+    },
+    {
+        "id": "quest-daily-flashcards",
+        "owner_username": "trevor",
+        "type": "daily",
+        "title_key": "quests.daily.flashcards.title",
+        "description_key": "quests.daily.flashcards.desc",
+        "emoji": "🃏",
+        "progress_current": 15,
+        "progress_target": 15,
+        "progress_unit": "cards",
+        "reward_lingots": 3,
+        "reward_xp": 5,
+        "reward_ad_free_minutes": 0,
+        "reward_streak_shield": False,
+        "status": "claimable",
+        "expires_in_hours": 16,
+    },
+    {
+        "id": "quest-weekly-three-lessons",
+        "owner_username": "trevor",
+        "type": "weekly",
+        "title_key": "quests.weekly.threeLessons.title",
+        "description_key": "quests.weekly.threeLessons.desc",
+        "emoji": "📚",
+        "progress_current": 2,
+        "progress_target": 5,
+        "progress_unit": "lessons",
+        "reward_lingots": 25,
+        "reward_xp": 50,
+        "reward_ad_free_minutes": 0,
+        "reward_streak_shield": True,
+        "status": "active",
+        "expires_in_hours": 24 * 4,
+    },
+    {
+        "id": "quest-weekly-master-row",
+        "owner_username": "trevor",
+        "type": "weekly",
+        "title_key": "quests.weekly.masterRow.title",
+        "description_key": "quests.weekly.masterRow.desc",
+        "emoji": "★",
+        "progress_current": 0,
+        "progress_target": 1,
+        "progress_unit": "modules",
+        "reward_lingots": 30,
+        "reward_xp": 75,
+        "reward_ad_free_minutes": 0,
+        "reward_streak_shield": False,
+        "status": "active",
+        "expires_in_hours": 24 * 4,
+    },
+    {
+        "id": "quest-random-try-story",
+        "owner_username": "trevor",
+        "type": "random",
+        "title_key": "quests.random.tryStory.title",
+        "description_key": "quests.random.tryStory.desc",
+        "emoji": "📖",
+        "progress_current": 0,
+        "progress_target": 1,
+        "progress_unit": "stories",
+        "reward_lingots": 8,
+        "reward_xp": 0,
+        "reward_ad_free_minutes": 15,
+        "reward_streak_shield": False,
+        "status": "active",
+        "expires_in_hours": 6,
+    },
+    {
+        "id": "quest-friend-overtake-sora",
+        "owner_username": "trevor",
+        "type": "friend",
+        "title_key": "quests.friend.overtake.title",
+        "description_key": "quests.friend.overtake.desc",
+        "emoji": "🤝",
+        "progress_current": 40,
+        "progress_target": 100,
+        "progress_unit": "XP",
+        "reward_lingots": 20,
+        "reward_xp": 40,
+        "reward_ad_free_minutes": 0,
+        "reward_streak_shield": False,
+        "status": "active",
+        "friend_username": "sora_n5",
+        "friend_display_name": "Sora",
+        "expires_in_hours": 24 * 4,
+    },
+]
+
+QUESTS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS quests (
+    id                       TEXT PRIMARY KEY,
+    user_id                  TEXT NOT NULL,
+    type                     TEXT NOT NULL,
+    title_key                TEXT NOT NULL,
+    description_key          TEXT NOT NULL,
+    emoji                    TEXT NOT NULL DEFAULT '',
+    progress_current         INTEGER NOT NULL DEFAULT 0,
+    progress_target          INTEGER NOT NULL,
+    progress_unit            TEXT NOT NULL DEFAULT '',
+    reward_lingots           INTEGER NOT NULL DEFAULT 0,
+    reward_xp                INTEGER NOT NULL DEFAULT 0,
+    reward_ad_free_minutes   INTEGER NOT NULL DEFAULT 0,
+    reward_streak_shield     INTEGER NOT NULL DEFAULT 0,
+    status                   TEXT NOT NULL DEFAULT 'active',
+    friend_id                TEXT,
+    friend_display_name      TEXT,
+    expires_at               TEXT,
+    reward_granted           INTEGER NOT NULL DEFAULT 0,
+    created_at               TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_quests_user ON quests (user_id, created_at DESC);
+"""
+
 # (thread_id, from_username, body, hours_ago)
 SEED_MESSAGES: list[tuple[str, str, str, float]] = [
     ("thread-sora", "trevor", "yo nice streak!", 20.0),
@@ -464,6 +609,9 @@ def _rand_invite_code() -> str:
 SEED_DECKS = [
     {
         "id": "ko-beginner",
+        # Attribution: who shows up as the deck's maintainer on community
+        # browse. Resolved to internal user_id when inserted.
+        "maintainerAuth0Id": "dev|user-3",
         "manifest": {
             "languageId": "ko",
             "name": "Korean beginner",
@@ -537,6 +685,7 @@ SEED_DECKS = [
     },
     {
         "id": "addon-kdrama",
+        "maintainerAuth0Id": "dev|noor_x",
         "manifest": {
             "languageId": "ko",
             "name": "K-Drama Phrases",
@@ -605,6 +754,7 @@ SEED_DECKS = [
     },
     {
         "id": "ja-beginner",
+        "maintainerAuth0Id": "dev|kenji_dev",
         "manifest": {
             "languageId": "ja",
             "name": "Japanese beginner",
@@ -676,6 +826,7 @@ SEED_DECKS = [
     },
     {
         "id": "addon-particles",
+        "maintainerAuth0Id": "dev|aiko_kanji",
         "manifest": {
             "languageId": "ko",
             "name": "Korean Particles Master",
@@ -726,6 +877,7 @@ SEED_DECKS = [
     },
     {
         "id": "addon-jlpt-n5",
+        "maintainerAuth0Id": "dev|sora_n5",
         "manifest": {
             "languageId": "ja",
             "name": "JLPT N5 Vocab",
@@ -936,6 +1088,7 @@ async def reset(db: aiosqlite.Connection) -> None:
     print("  Dropping tables...")
     # Social-context tables (added by parallel agent + seeded here).
     for tbl in (
+        "quests",
         "social_messages",
         "social_threads",
         "social_invite_redemptions",
@@ -973,6 +1126,7 @@ async def seed(db_path: str, do_reset: bool) -> None:
 
     await db.executescript(INIT_SQL)
     await db.executescript(SOCIAL_EXTENSION_SQL)
+    await db.executescript(QUESTS_TABLE_SQL)
 
     # Migration: user_settings and subscriptions from auth0_id -> user_id (app expects user_id)
     cur = await db.execute("PRAGMA table_info(user_settings)")
@@ -1122,10 +1276,36 @@ async def seed(db_path: str, do_reset: bool) -> None:
     deck_created = 0
     for deck in SEED_DECKS:
         cur = await db.execute("SELECT 1 FROM deck_manifests WHERE id = ?", (deck["id"],))
-        if await cur.fetchone():
+        existing = await cur.fetchone()
+        if existing:
+            # Backfill author_id on existing seeded decks if missing — keeps
+            # the seed idempotent and lets `--reset`-less reruns wire newly
+            # added maintainer attributions without dropping the DB.
+            maintainer_auth0 = deck.get("maintainerAuth0Id")
+            backfill_author_id = (
+                auth0_to_user_id.get(maintainer_auth0) if maintainer_auth0 else None
+            )
+            if backfill_author_id:
+                await db.execute(
+                    """UPDATE deck_manifests
+                          SET author_id = COALESCE(author_id, ?)
+                        WHERE id = ?""",
+                    (backfill_author_id, deck["id"]),
+                )
             continue
         manifest = deck["manifest"]
         cards = deck["cards"]
+        # Resolve maintainer auth0_id → internal user_id so the deck's author_id
+        # points at a real seeded user. Falls back to the manifest's authorId or
+        # NULL if the maintainer didn't seed (e.g. inactive/banned user removed
+        # from SEED_USERS). The contributors browse + maintainer chip on
+        # community cards both join through author_id → users.
+        maintainer_auth0 = deck.get("maintainerAuth0Id")
+        author_id = (
+            auth0_to_user_id.get(maintainer_auth0)
+            if maintainer_auth0
+            else manifest.get("authorId")
+        ) or manifest.get("authorId")
         # Use status='published' so decks appear in community browse (listAdminDecks filters by published)
         await db.execute(
             """INSERT INTO deck_manifests
@@ -1137,7 +1317,7 @@ async def seed(db_path: str, do_reset: bool) -> None:
                 manifest["name"],
                 manifest.get("description"),
                 manifest.get("courseId"),
-                manifest.get("authorId"),
+                author_id,
                 "published",
                 manifest.get("version", "1.0"),
                 len(cards),
@@ -1424,6 +1604,49 @@ async def seed(db_path: str, do_reset: bool) -> None:
             )
             message_rows += 1
 
+    # ── Quests ──────────────────────────────────────────────────────────────
+    quest_rows = 0
+    for q in SEED_QUESTS:
+        owner_id = username_to_user_id.get(q["owner_username"])
+        if not owner_id:
+            continue
+        friend_username = q.get("friend_username")
+        friend_id = username_to_user_id.get(friend_username) if friend_username else None
+        expires_at = (
+            now_dt + timedelta(hours=q.get("expires_in_hours", 24))
+        ).isoformat()
+        await db.execute(
+            """INSERT OR IGNORE INTO quests (
+                id, user_id, type, title_key, description_key, emoji,
+                progress_current, progress_target, progress_unit,
+                reward_lingots, reward_xp, reward_ad_free_minutes,
+                reward_streak_shield, status, friend_id, friend_display_name,
+                expires_at, reward_granted, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                q["id"],
+                owner_id,
+                q["type"],
+                q["title_key"],
+                q["description_key"],
+                q.get("emoji") or "",
+                int(q.get("progress_current") or 0),
+                int(q["progress_target"]),
+                q.get("progress_unit") or "",
+                int(q.get("reward_lingots") or 0),
+                int(q.get("reward_xp") or 0),
+                int(q.get("reward_ad_free_minutes") or 0),
+                1 if q.get("reward_streak_shield") else 0,
+                q.get("status") or "active",
+                friend_id,
+                q.get("friend_display_name"),
+                expires_at,
+                0,
+                now_dt.isoformat(),
+            ),
+        )
+        quest_rows += 1
+
     await db.commit()
     await db.close()
 
@@ -1441,6 +1664,7 @@ async def seed(db_path: str, do_reset: bool) -> None:
     print(f"  Redemptions:  {redemption_rows}")
     print(f"  Threads:      {thread_rows}")
     print(f"  Messages:     {message_rows}")
+    print(f"  Quests:       {quest_rows}")
     print("Done.")
 
 

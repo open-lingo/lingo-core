@@ -19,6 +19,7 @@ from app.config import settings
 from app.db.protocols import (
     DeckRepository,
     ProgressRepository,
+    QuestRepository,
     SocialRepository,
     SRSRepository,
     StoryRepository,
@@ -36,6 +37,7 @@ _subscription_repo: SubscriptionRepository | None = None
 _story_repo: StoryRepository | None = None
 _progress_repo: ProgressRepository | None = None
 _social_repo: SocialRepository | None = None
+_quest_repo: QuestRepository | None = None
 
 # Set of domain names whose connect() raised during startup.
 _degraded: set[str] = set()
@@ -58,13 +60,14 @@ async def _safe_connect(domain: str, repo: Any) -> Any | None:
 async def init_repositories() -> None:
     """Create and connect the repository singletons based on config."""
     global _user_repo, _srs_repo, _deck_repo, _subscription_repo, _story_repo, _progress_repo
-    global _social_repo
+    global _social_repo, _quest_repo
 
     _degraded.clear()
 
     if settings.DB_BACKEND == "sqlite":
         from app.db.sqlite.deck import SqliteDeckRepository
         from app.db.sqlite.progress import SqliteProgressRepository
+        from app.db.sqlite.quests import SqliteQuestRepository
         from app.db.sqlite.social import SqliteSocialRepository
         from app.db.sqlite.srs import SqliteSRSRepository
         from app.db.sqlite.story import SqliteStoryRepository
@@ -82,10 +85,12 @@ async def init_repositories() -> None:
             "progress", SqliteProgressRepository(settings.SQLITE_PATH)
         )
         _social_repo = await _safe_connect("social", SqliteSocialRepository(settings.SQLITE_PATH))
+        _quest_repo = await _safe_connect("quest", SqliteQuestRepository(settings.SQLITE_PATH))
 
     elif settings.DB_BACKEND == "dynamodb":
         from app.db.dynamo.deck import DynamoDeckRepository
         from app.db.dynamo.progress import DynamoProgressRepository
+        from app.db.dynamo.quests import DynamoQuestRepository
         from app.db.dynamo.social import DynamoSocialRepository
         from app.db.dynamo.srs import DynamoSRSRepository
         from app.db.dynamo.subscription import DynamoSubscriptionRepository
@@ -111,6 +116,11 @@ async def init_repositories() -> None:
         # social repo is a stub that raises NotImplementedError on use.
         _social_repo = await _safe_connect(
             "social", DynamoSocialRepository(f"{prefix}social", region)
+        )
+
+        # Same story for quests: SQLite-first; Dynamo stub raises on every method.
+        _quest_repo = await _safe_connect(
+            "quest", DynamoQuestRepository(f"{prefix}quests", region)
         )
 
     else:
@@ -141,6 +151,8 @@ async def shutdown_repositories() -> None:
         await _progress_repo.close()  # type: ignore[union-attr]
     if _social_repo and hasattr(_social_repo, "close"):
         await _social_repo.close()  # type: ignore[union-attr]
+    if _quest_repo and hasattr(_quest_repo, "close"):
+        await _quest_repo.close()  # type: ignore[union-attr]
 
 
 def _raise_degraded(domain: str) -> None:
@@ -190,6 +202,10 @@ def get_progress_repo() -> ProgressRepository:
 
 def get_social_repo() -> SocialRepository | None:
     return _social_repo
+
+
+def get_quest_repo() -> QuestRepository | None:
+    return _quest_repo
 
 
 def degraded_domains() -> set[str]:

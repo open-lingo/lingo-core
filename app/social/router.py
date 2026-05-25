@@ -14,7 +14,7 @@ import string
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from statistics import median
-from typing import Annotated, Any
+from typing import Annotated, Any, get_args
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -22,6 +22,7 @@ from app.auth.dependencies import get_registered_user
 from app.auth.schemas import TokenPayload
 from app.db.protocols import ProgressRepository, SocialRepository, UserRepository
 from app.db.provider import get_progress_repo, get_social_repo, get_user_repo
+from app.shared.errors import api_error
 from app.social.schemas import (
     DEFAULT_AD_FREE_MINUTES_INVITEE,
     DEFAULT_AD_FREE_MINUTES_INVITER,
@@ -32,6 +33,7 @@ from app.social.schemas import (
     REACTION_KINDS,
     ActivityFeedResponse,
     ActivityItem,
+    ActivityKind,
     ActivityReaction,
     BlockedUserItem,
     FriendItem,
@@ -671,6 +673,9 @@ def _summarize_reactions(
     return [ActivityReaction(**by_kind[k]) for k in REACTION_KINDS]
 
 
+_ACTIVITY_KINDS: frozenset[str] = frozenset(get_args(ActivityKind))
+
+
 @router.get("/activity", response_model=ActivityFeedResponse)
 async def list_activity(
     user: CurrentUser,
@@ -679,38 +684,49 @@ async def list_activity(
     limit: int = Query(50, ge=1, le=100),
     cursor: str | None = None,
 ) -> Any:
-    edges = await social.list_friends(user.id)
-    friend_ids = [e["friend_id"] for e in edges]
-    items, next_cursor = await social.list_activity(
-        user.id, friend_ids, limit=limit, cursor=cursor
-    )
-    if not items:
-        return ActivityFeedResponse(items=[], cursor=None)
-
-    actor_ids = list({i["user_id"] for i in items})
-    actor_map = await _users_by_ids(users, actor_ids)
-    reactions_by_aid = await social.list_reactions_bulk([i["id"] for i in items])
-
-    out: list[ActivityItem] = []
-    for row in items:
-        actor = actor_map.get(row["user_id"])
-        if not actor:
-            continue
-        rxn_rows = reactions_by_aid.get(row["id"], [])
-        out.append(
-            ActivityItem(
-                id=row["id"],
-                user_id=actor["id"],
-                username=actor["username"],
-                display_name=actor["display_name"],
-                profile_picture_key=actor.get("profile_picture_key"),
-                kind=row["kind"],
-                payload=row.get("payload") or {},
-                created_at=row["created_at"],
-                reactions=_summarize_reactions(rxn_rows, user.id),
-            )
+    with api_error("listing activity feed"):
+        edges = await social.list_friends(user.id)
+        friend_ids = [e["friend_id"] for e in edges]
+        items, next_cursor = await social.list_activity(
+            user.id, friend_ids, limit=limit, cursor=cursor
         )
-    return ActivityFeedResponse(items=out, cursor=next_cursor)
+        if not items:
+            return ActivityFeedResponse(items=[], cursor=None)
+
+        actor_ids = list({i["user_id"] for i in items})
+        actor_map = await _users_by_ids(users, actor_ids)
+        reactions_by_aid = await social.list_reactions_bulk([i["id"] for i in items])
+
+        out: list[ActivityItem] = []
+        for row in items:
+            actor = actor_map.get(row["user_id"])
+            if not actor:
+                continue
+            # Skip rows whose persisted kind is not in the current enum — these
+            # are stale seed/migration artifacts. Logging once helps spot them
+            # without 500-ing the whole feed (which suppresses CORS headers).
+            if row.get("kind") not in _ACTIVITY_KINDS:
+                logger.warning(
+                    "Skipping activity %s with unknown kind=%r",
+                    row.get("id"),
+                    row.get("kind"),
+                )
+                continue
+            rxn_rows = reactions_by_aid.get(row["id"], [])
+            out.append(
+                ActivityItem(
+                    id=row["id"],
+                    user_id=actor["id"],
+                    username=actor["username"],
+                    display_name=actor["display_name"],
+                    profile_picture_key=actor.get("profile_picture_key"),
+                    kind=row["kind"],
+                    payload=row.get("payload") or {},
+                    created_at=row["created_at"],
+                    reactions=_summarize_reactions(rxn_rows, user.id),
+                )
+            )
+        return ActivityFeedResponse(items=out, cursor=next_cursor)
 
 
 @router.post(

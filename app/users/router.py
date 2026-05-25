@@ -4,12 +4,22 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_current_user, get_registered_user
 from app.auth.schemas import TokenPayload
-from app.db.protocols import SubscriptionRepository, UserRepository
-from app.db.provider import get_deck_repo, get_story_repo, get_subscription_repo, get_user_repo
+from app.db.protocols import ProgressRepository, SocialRepository, SubscriptionRepository, UserRepository
+from app.db.provider import (
+    get_deck_repo,
+    get_progress_repo,
+    get_social_repo,
+    get_story_repo,
+    get_subscription_repo,
+    get_user_repo,
+)
 from app.shared.errors import api_error
 from app.shared.repos import require_repo
 from app.users.schemas import (
+    DiscoverUsersResponse,
     MeUpdate,
+    PublicFriendshipStatus,
+    PublicUserSummary,
     SubscriptionCreate,
     SubscriptionItem,
     SubscriptionSettingsPatch,
@@ -251,3 +261,150 @@ async def remove_subscription(
     r = require_repo(repo, "subscription")
     with api_error("removing subscription"):
         await r.remove(user.id, content_type, content_id)
+
+
+# ── Discover (find-friends + contributors browse) ────────────────────────────
+#
+# This endpoint backs the Community → People surface and the rewritten
+# Contributors page. It is intentionally cheap: a single `list_users` scan
+# plus per-row weekly-XP and friendship-status lookups. Pagination is
+# offset-based to keep the SQL simple and the SQLite path linear; the
+# DynamoDB list_users impl already does its own cursor-based paging.
+#
+# Filtering:
+#   - q: substring match (case-insensitive) on username + display_name.
+#   - lang: filter to users whose `learning.learningLanguageId` (or legacy
+#     `learningLanguage`) matches the supplied language id.
+#   - When `q` is empty, the caller is excluded so they don't show up in
+#     their own discover feed. When `q` is set, self-match is allowed so
+#     "search for myself" still works.
+#
+# Blocked users (in either direction) are always excluded.
+
+
+def _learning_language_from_settings(settings_blob: dict[str, Any] | None) -> str | None:
+    if not settings_blob:
+        return None
+    learning = settings_blob.get("learning")
+    if isinstance(learning, dict):
+        v = learning.get("learningLanguageId")
+        if v:
+            return str(v)
+    legacy = settings_blob.get("learningLanguage")
+    return str(legacy) if legacy else None
+
+
+async def _weekly_xp(progress: ProgressRepository | None, user_id: str) -> int:
+    if progress is None:
+        return 0
+    from datetime import UTC, date, datetime, timedelta
+
+    today = datetime.now(UTC).date()
+    since = (today - timedelta(days=6)).isoformat()
+    until = today.isoformat()
+    try:
+        rows = await progress.get_day_rollups(user_id, since, until)
+    except Exception:  # noqa: BLE001  — progress impl may not exist locally
+        return 0
+    return sum(int(r.get("xpEarned") or 0) for r in rows)
+
+
+async def _discover_friendship_status(
+    social: SocialRepository | None, me_id: str, other_id: str
+) -> PublicFriendshipStatus:
+    if me_id == other_id:
+        return "self"
+    if social is None:
+        return "none"
+    if await social.is_blocked(me_id, other_id):
+        return "blocked"
+    if await social.is_blocked(other_id, me_id):
+        return "blocked"
+    if await social.is_friend(me_id, other_id):
+        return "friend"
+    if await social.get_friend_request(me_id, other_id):
+        return "request_out"
+    if await social.get_friend_request(other_id, me_id):
+        return "request_in"
+    return "none"
+
+
+@router.get("/discover", response_model=DiscoverUsersResponse)
+async def discover_users(
+    user: CurrentUser,
+    repo: UserRepo,
+    social: Annotated[SocialRepository | None, Depends(get_social_repo)],
+    progress: Annotated[ProgressRepository | None, Depends(get_progress_repo)],
+    q: str | None = Query(None, description="Substring match on username + display_name"),
+    lang: str | None = Query(None, description="Filter by learning language id"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> Any:
+    """Public learner directory powering find-friends + contributors browse.
+
+    Excludes blocked users (both directions) and the caller themselves when
+    `q` is empty. Returns one ``PublicUserSummary`` per row with friendship
+    status pre-computed.
+    """
+    with api_error("listing users for discover"):
+        # Overfetch defensively — list_users is bounded server-side. The
+        # SQLite repo caps internally, the DynamoDB repo paginates via cursor.
+        # 500 covers the local dev dataset (20 seeded users) and is well
+        # under SQLite's hard limit.
+        records, _ = await repo.list_users(limit=500)
+
+        normalized_q = (q or "").strip().lower()
+        lang_filter = (lang or "").strip().lower() or None
+        candidates: list[tuple[dict[str, Any], dict[str, Any] | None]] = []
+        for record in records:
+            if record.get("status") == "banned":
+                continue
+            if not normalized_q and record["id"] == user.id:
+                continue
+            if normalized_q:
+                hay = (
+                    f"{record.get('username') or ''} "
+                    f"{record.get('display_name') or ''}"
+                ).lower()
+                if normalized_q not in hay:
+                    continue
+            settings_blob = await repo.get_settings(record["id"])
+            if lang_filter:
+                user_lang = (_learning_language_from_settings(settings_blob) or "").lower()
+                if user_lang != lang_filter:
+                    continue
+            candidates.append((record, settings_blob))
+
+        # Pull friendship status + weekly XP for the full filtered set so we
+        # can sort by XP server-side (contributors page expects this).
+        enriched: list[tuple[dict[str, Any], dict[str, Any] | None, int, PublicFriendshipStatus]] = []
+        for record, settings_blob in candidates:
+            fs = await _discover_friendship_status(social, user.id, record["id"])
+            if fs == "blocked":
+                continue
+            weekly = await _weekly_xp(progress, record["id"])
+            enriched.append((record, settings_blob, weekly, fs))
+
+        # Sort: weekly_xp DESC, then streak DESC, then username for stability.
+        enriched.sort(
+            key=lambda p: (-p[2], -int(p[0].get("streak") or 0), p[0].get("username") or "")
+        )
+
+        total = len(enriched)
+        sliced = enriched[offset : offset + limit]
+        users_out = [
+            PublicUserSummary(
+                auth0_id=record.get("auth0_id") or "",
+                user_id=record["id"],
+                username=record["username"],
+                display_name=record["display_name"],
+                profile_picture_key=record.get("profile_picture_key"),
+                learning_language=_learning_language_from_settings(settings_blob),
+                weekly_xp=weekly,
+                streak_days=int(record.get("streak") or 0),
+                friendship_status=fs,
+            )
+            for record, settings_blob, weekly, fs in sliced
+        ]
+        has_more = (offset + len(sliced)) < total
+    return DiscoverUsersResponse(users=users_out, total=total, has_more=has_more)
