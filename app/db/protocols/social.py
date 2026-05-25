@@ -1,141 +1,143 @@
-"""SocialRepository protocol — friend graph, blocks, leaderboards.
+"""SocialRepository protocol.
 
-Identity is the internal user UUID throughout. Usernames are mutable and are
-only used as a lookup vector (via the existing user-by-username path) before
-being resolved to a UUID.
+Backs the /social router: friends, friend requests, blocks, leaderboards,
+activity feed (with reactions), invite codes + redemptions, threads + messages,
+and friend-quest target heuristics. The protocol stays storage-agnostic; SQLite
+and DynamoDB impls live in app/db/sqlite/social.py and app/db/dynamo/social.py.
 
-Two backing data structures:
-
-  ``social`` table — kind ∈ {FRIEND, REQUEST_IN, REQUEST_OUT, BLOCK}
-    A row per (owner_id, kind, other_id). Mirrored writes ensure both sides
-    of a relationship can be queried cheaply by owner.
-
-  ``social_leaderboard`` table — ranked XP buckets per language/period.
-    bucket format: "<langId>#<periodKey>" e.g. "ja#2026-W21" or "ja#2026-05".
-
-See the design doc in the implementation prompt for the full motivation.
+All ids are internal user UUIDs unless otherwise noted; ``code`` for invites is
+an 8-char alphanumeric scoped to its owner.
 """
 
 from typing import Any, Protocol
 
 
 class SocialRepository(Protocol):
-    """Friend graph, blocks, and leaderboard backend."""
-
-    # ── Friend graph ────────────────────────────────────────────────────────
+    # ── Friends ──────────────────────────────────────────────────────────────
 
     async def list_friends(self, user_id: str) -> list[dict[str, Any]]:
-        """Return all FRIEND rows owned by ``user_id``.
-
-        Each row: ``{other_id, created_at, metadata}``.
-        Caller resolves user records for display.
-        """
+        """Friend edges for ``user_id``. Items contain ``friend_id`` + ``friended_at``."""
         ...
+
+    async def is_friend(self, user_id: str, other_id: str) -> bool:
+        ...
+
+    async def add_friend_edge(self, a_id: str, b_id: str) -> None:
+        """Create reciprocal friend edges. Idempotent."""
+        ...
+
+    async def remove_friend_edge(self, a_id: str, b_id: str) -> None:
+        """Remove reciprocal friend edges. No-op if absent."""
+        ...
+
+    # ── Friend requests ──────────────────────────────────────────────────────
 
     async def list_friend_requests(
         self, user_id: str
-    ) -> dict[str, list[dict[str, Any]]]:
-        """Return ``{incoming: [...], outgoing: [...]}`` for the user.
-
-        Each item: ``{other_id, created_at, metadata}``.
-        """
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Returns (incoming, outgoing) request rows."""
         ...
 
-    async def get_relationship(
-        self, owner_id: str, other_id: str
+    async def get_friend_request(
+        self, from_id: str, to_id: str
     ) -> dict[str, Any] | None:
-        """Return any relationship row from owner→other, or None.
-
-        Used to detect existing FRIEND / REQUEST / BLOCK before inserting new
-        ones. Returns the row with ``kind`` populated when found.
-        """
         ...
 
-    async def send_friend_request(
-        self, from_user_id: str, to_user_id: str
-    ) -> None:
-        """Atomically insert REQUEST_OUT (from→to) and REQUEST_IN (to→from).
-
-        Caller is responsible for pre-flight checks (self, block, dup).
-        """
+    async def upsert_friend_request(self, from_id: str, to_id: str) -> dict[str, Any]:
         ...
 
-    async def accept_friend_request(
-        self, accepter_id: str, requester_id: str
-    ) -> bool:
-        """Promote pending REQUEST rows into mutual FRIEND rows.
-
-        Returns True on success, False if no pending request found.
-        """
+    async def delete_friend_request(self, from_id: str, to_id: str) -> None:
         ...
 
-    async def delete_friend_request(
-        self, owner_id: str, other_id: str
-    ) -> bool:
-        """Decline an incoming request OR cancel an outgoing one.
+    # ── Blocks ───────────────────────────────────────────────────────────────
 
-        Deletes both mirrored REQUEST rows if either exists.
-        Returns True if any row was deleted.
-        """
+    async def list_blocks(self, user_id: str) -> list[dict[str, Any]]:
         ...
 
-    async def unfriend(self, user_id: str, friend_id: str) -> bool:
-        """Delete both mirrored FRIEND rows. Returns True if any row deleted."""
+    async def is_blocked(self, blocker_id: str, blocked_id: str) -> bool:
         ...
 
-    # ── Blocks ──────────────────────────────────────────────────────────────
-
-    async def block_user(self, owner_id: str, other_id: str) -> None:
-        """Insert a BLOCK row (one-directional) and cascade-delete any
-        FRIEND / REQUEST rows between the two users.
-        """
+    async def block_user(self, blocker_id: str, blocked_id: str) -> None:
         ...
 
-    async def unblock_user(self, owner_id: str, other_id: str) -> bool:
-        """Delete the BLOCK row. Returns True if a row was deleted."""
+    async def unblock_user(self, blocker_id: str, blocked_id: str) -> None:
         ...
 
-    async def list_blocks(self, owner_id: str) -> list[dict[str, Any]]:
-        """Return all BLOCK rows owned by ``owner_id``."""
-        ...
+    # ── Activity feed + reactions ────────────────────────────────────────────
 
-    async def is_blocked(self, owner_id: str, other_id: str) -> bool:
-        """Return True if ``owner_id`` has blocked ``other_id``."""
-        ...
-
-    # ── Leaderboards ────────────────────────────────────────────────────────
-
-    async def add_xp_to_leaderboard(
-        self, user_id: str, lang: str, xp_delta: int
-    ) -> None:
-        """Increment the user's XP in the current week and month buckets for
-        ``lang``. Caller is responsible for opt-in checks; this method just
-        does the writes (UPSERT + INCREMENT).
-        """
-        ...
-
-    async def get_leaderboard(
+    async def list_activity(
         self,
-        bucket: str,
+        user_id: str,
+        friend_ids: list[str],
         limit: int = 50,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        """Return the ranked entries for ``bucket`` ordered by XP desc.
-
-        Each row: ``{user_id, xp, lessons, last_updated}``.
-        """
+        cursor: str | None = None,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """Return recent activity for the user + their friends. Newest first."""
         ...
 
-    async def get_user_leaderboard_entry(
-        self, bucket: str, user_id: str
+    async def get_activity(self, activity_id: str) -> dict[str, Any] | None:
+        ...
+
+    async def put_activity(self, activity: dict[str, Any]) -> dict[str, Any]:
+        """Insert (or upsert) an activity item. Used by tests / seed."""
+        ...
+
+    async def list_reactions(
+        self, activity_id: str
+    ) -> list[dict[str, Any]]:
+        """All reaction rows for one activity. Each row: kind, user_id, created_at."""
+        ...
+
+    async def list_reactions_bulk(
+        self, activity_ids: list[str]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Bulk fetch reactions for many activities. Returns {activity_id: [rows]}."""
+        ...
+
+    async def toggle_reaction(
+        self, activity_id: str, user_id: str, kind: str
+    ) -> tuple[bool, int]:
+        """Toggle the (activity_id, user_id, kind) reaction. Returns (mine, count_after)."""
+        ...
+
+    # ── Invites ──────────────────────────────────────────────────────────────
+
+    async def get_invite_code_for_owner(self, owner_id: str) -> dict[str, Any] | None:
+        ...
+
+    async def create_invite_code(self, owner_id: str, code: str) -> dict[str, Any]:
+        ...
+
+    async def get_invite_code(self, code: str) -> dict[str, Any] | None:
+        ...
+
+    async def count_redemptions_for_owner_in_month(
+        self, owner_id: str, year_month: str
+    ) -> int:
+        """``year_month`` is ``YYYY-MM``. Counts redemptions whose status != 'invalid'."""
+        ...
+
+    async def get_redemption(
+        self, code: str, invitee_id: str
     ) -> dict[str, Any] | None:
-        """Return ``{user_id, xp, lessons, last_updated, rank, total}`` for a
-        single user in a bucket, or None if the user has no entry.
-        """
         ...
 
-    async def get_friends_leaderboard(
-        self, user_id: str, bucket: str
-    ) -> list[dict[str, Any]]:
-        """Return the user + their friends, ranked by XP desc in ``bucket``."""
+    async def upsert_redemption(self, redemption: dict[str, Any]) -> dict[str, Any]:
+        ...
+
+    # ── Threads (stub messaging) ─────────────────────────────────────────────
+
+    async def list_threads_for_user(self, user_id: str) -> list[dict[str, Any]]:
+        ...
+
+    async def get_thread(self, thread_id: str) -> dict[str, Any] | None:
+        ...
+
+    async def put_thread(self, thread: dict[str, Any]) -> dict[str, Any]:
+        ...
+
+    async def list_messages(self, thread_id: str) -> list[dict[str, Any]]:
+        ...
+
+    async def put_message(self, message: dict[str, Any]) -> dict[str, Any]:
         ...

@@ -825,19 +825,30 @@ CREATE TABLE IF NOT EXISTS deck_content (
     cards   TEXT NOT NULL
 );
 
--- Social: friend graph + blocks + leaderboards. Schema mirrors
--- app/db/sqlite/social.py exactly so the live repo finds the tables
--- already populated. ``social.kind`` ∈ {FRIEND, REQUEST_IN, REQUEST_OUT, BLOCK}.
-CREATE TABLE IF NOT EXISTS social (
-    owner_id   TEXT NOT NULL,
-    kind       TEXT NOT NULL,
-    other_id   TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    metadata   TEXT,
-    PRIMARY KEY (owner_id, kind, other_id)
+-- Social: friend graph + blocks (split tables, matching app/db/sqlite/social.py).
+CREATE TABLE IF NOT EXISTS social_friends (
+    user_id     TEXT NOT NULL,
+    friend_id   TEXT NOT NULL,
+    friended_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, friend_id)
 );
-CREATE INDEX IF NOT EXISTS idx_social_other_id ON social(other_id);
-CREATE INDEX IF NOT EXISTS idx_social_owner_kind ON social(owner_id, kind);
+CREATE INDEX IF NOT EXISTS idx_social_friends_user ON social_friends (user_id);
+
+CREATE TABLE IF NOT EXISTS social_friend_requests (
+    from_id      TEXT NOT NULL,
+    to_id        TEXT NOT NULL,
+    requested_at TEXT NOT NULL,
+    PRIMARY KEY (from_id, to_id)
+);
+CREATE INDEX IF NOT EXISTS idx_social_friend_requests_to ON social_friend_requests (to_id);
+CREATE INDEX IF NOT EXISTS idx_social_friend_requests_from ON social_friend_requests (from_id);
+
+CREATE TABLE IF NOT EXISTS social_blocks (
+    blocker_id TEXT NOT NULL,
+    blocked_id TEXT NOT NULL,
+    blocked_at TEXT NOT NULL,
+    PRIMARY KEY (blocker_id, blocked_id)
+);
 
 CREATE TABLE IF NOT EXISTS social_leaderboard (
     bucket       TEXT NOT NULL,
@@ -860,16 +871,15 @@ CREATE INDEX IF NOT EXISTS idx_leaderboard_bucket_xp
 
 SOCIAL_EXTENSION_SQL = """
 CREATE TABLE IF NOT EXISTS social_activity (
-    id         TEXT PRIMARY KEY,
-    actor_id   TEXT NOT NULL,
-    kind       TEXT NOT NULL,
-    text       TEXT NOT NULL,
-    payload    TEXT,
-    created_at TEXT NOT NULL
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    payload_json  TEXT NOT NULL DEFAULT '{}',
+    created_at    TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_social_activity_actor
-    ON social_activity(actor_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_social_activity_created
+CREATE INDEX IF NOT EXISTS idx_social_activity_user_time
+    ON social_activity(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_social_activity_time
     ON social_activity(created_at DESC);
 
 CREATE TABLE IF NOT EXISTS social_activity_reactions (
@@ -879,55 +889,46 @@ CREATE TABLE IF NOT EXISTS social_activity_reactions (
     created_at  TEXT NOT NULL,
     PRIMARY KEY (activity_id, user_id, kind)
 );
-CREATE INDEX IF NOT EXISTS idx_reactions_activity
-    ON social_activity_reactions(activity_id);
+CREATE INDEX IF NOT EXISTS idx_social_activity_reactions_activity
+    ON social_activity_reactions (activity_id);
 
 CREATE TABLE IF NOT EXISTS social_invite_codes (
     code        TEXT PRIMARY KEY,
-    owner_id    TEXT NOT NULL,
-    created_at  TEXT NOT NULL,
-    redeemed_count INTEGER NOT NULL DEFAULT 0,
-    reward_lingots INTEGER NOT NULL DEFAULT 100,
-    reward_ad_free_hours INTEGER NOT NULL DEFAULT 1
+    owner_id    TEXT NOT NULL UNIQUE,
+    created_at  TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_invite_codes_owner
-    ON social_invite_codes(owner_id);
 
 CREATE TABLE IF NOT EXISTS social_invite_redemptions (
-    id            TEXT PRIMARY KEY,
-    code          TEXT NOT NULL,
-    inviter_id    TEXT NOT NULL,
-    invitee_id    TEXT NOT NULL,
-    status        TEXT NOT NULL,  -- pending | redeemed
-    reward_lingots INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL,
-    redeemed_at   TEXT
+    code         TEXT NOT NULL,
+    invitee_id   TEXT NOT NULL,
+    inviter_id   TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    redeemed_at  TEXT NOT NULL,
+    year_month   TEXT NOT NULL,
+    PRIMARY KEY (code, invitee_id)
 );
-CREATE INDEX IF NOT EXISTS idx_redemptions_inviter
-    ON social_invite_redemptions(inviter_id);
+CREATE INDEX IF NOT EXISTS idx_social_invite_redemptions_inviter_month
+    ON social_invite_redemptions (inviter_id, year_month);
 
 CREATE TABLE IF NOT EXISTS social_threads (
-    id           TEXT PRIMARY KEY,
-    user_a_id    TEXT NOT NULL,
-    user_b_id    TEXT NOT NULL,
-    last_message TEXT,
-    last_at      TEXT,
-    unread_for_a INTEGER NOT NULL DEFAULT 0,
-    unread_for_b INTEGER NOT NULL DEFAULT 0,
-    created_at   TEXT NOT NULL
+    id          TEXT PRIMARY KEY,
+    user_a_id   TEXT NOT NULL,
+    user_b_id   TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_threads_user_a ON social_threads(user_a_id);
-CREATE INDEX IF NOT EXISTS idx_threads_user_b ON social_threads(user_b_id);
+CREATE INDEX IF NOT EXISTS idx_social_threads_user_a ON social_threads (user_a_id);
+CREATE INDEX IF NOT EXISTS idx_social_threads_user_b ON social_threads (user_b_id);
 
 CREATE TABLE IF NOT EXISTS social_messages (
     id         TEXT PRIMARY KEY,
     thread_id  TEXT NOT NULL,
-    from_id    TEXT NOT NULL,
+    sender_id  TEXT NOT NULL,
     body       TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    sent_at    TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_messages_thread
-    ON social_messages(thread_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_social_messages_thread_time
+    ON social_messages (thread_id, sent_at);
 """
 
 
@@ -942,6 +943,9 @@ async def reset(db: aiosqlite.Connection) -> None:
         "social_activity_reactions",
         "social_activity",
         "social_leaderboard",
+        "social_blocks",
+        "social_friend_requests",
+        "social_friends",
         "social",
         "subscriptions",
         "deck_content",
@@ -1199,9 +1203,9 @@ async def seed(db_path: str, do_reset: bool) -> None:
         ts = (datetime.now(UTC) - timedelta(days=days_back)).isoformat()
         for o, t in ((owner_id, other_id), (other_id, owner_id)):
             await db.execute(
-                """INSERT OR IGNORE INTO social
-                       (owner_id, kind, other_id, created_at, metadata)
-                   VALUES (?, 'FRIEND', ?, ?, NULL)""",
+                """INSERT OR IGNORE INTO social_friends
+                       (user_id, friend_id, friended_at)
+                   VALUES (?, ?, ?)""",
                 (o, t, ts),
             )
             friendship_rows += 1
@@ -1218,18 +1222,12 @@ async def seed(db_path: str, do_reset: bool) -> None:
                 datetime.now(UTC) - timedelta(hours=random.Random(name).randint(1, 72))
             ).isoformat()
             await db.execute(
-                """INSERT OR IGNORE INTO social
-                       (owner_id, kind, other_id, created_at, metadata)
-                   VALUES (?, 'REQUEST_OUT', ?, ?, NULL)""",
+                """INSERT OR IGNORE INTO social_friend_requests
+                       (from_id, to_id, requested_at)
+                   VALUES (?, ?, ?)""",
                 (rid, trevor_id, ts),
             )
-            await db.execute(
-                """INSERT OR IGNORE INTO social
-                       (owner_id, kind, other_id, created_at, metadata)
-                   VALUES (?, 'REQUEST_IN', ?, ?, NULL)""",
-                (trevor_id, rid, ts),
-            )
-            request_rows += 2
+            request_rows += 1
 
         # Outgoing FROM Trevor (trevor → target)
         for name in OUTGOING_REQUESTS_FROM_TREVOR:
@@ -1240,18 +1238,12 @@ async def seed(db_path: str, do_reset: bool) -> None:
                 datetime.now(UTC) - timedelta(hours=random.Random(name).randint(1, 72))
             ).isoformat()
             await db.execute(
-                """INSERT OR IGNORE INTO social
-                       (owner_id, kind, other_id, created_at, metadata)
-                   VALUES (?, 'REQUEST_OUT', ?, ?, NULL)""",
+                """INSERT OR IGNORE INTO social_friend_requests
+                       (from_id, to_id, requested_at)
+                   VALUES (?, ?, ?)""",
                 (trevor_id, tid, ts),
             )
-            await db.execute(
-                """INSERT OR IGNORE INTO social
-                       (owner_id, kind, other_id, created_at, metadata)
-                   VALUES (?, 'REQUEST_IN', ?, ?, NULL)""",
-                (tid, trevor_id, ts),
-            )
-            request_rows += 2
+            request_rows += 1
 
     # ── Blocks ──────────────────────────────────────────────────────────────
     block_rows = 0
@@ -1262,9 +1254,9 @@ async def seed(db_path: str, do_reset: bool) -> None:
                 continue
             ts = datetime.now(UTC).isoformat()
             await db.execute(
-                """INSERT OR IGNORE INTO social
-                       (owner_id, kind, other_id, created_at, metadata)
-                   VALUES (?, 'BLOCK', ?, ?, NULL)""",
+                """INSERT OR IGNORE INTO social_blocks
+                       (blocker_id, blocked_id, blocked_at)
+                   VALUES (?, ?, ?)""",
                 (trevor_id, bid, ts),
             )
             block_rows += 1
@@ -1318,11 +1310,12 @@ async def seed(db_path: str, do_reset: bool) -> None:
         if not actor_id:
             continue
         created_at = (now_dt - timedelta(days=a["days_ago"], hours=a["hours_ago"])).isoformat()
+        payload_json = json.dumps({"text": a["text"]})
         await db.execute(
             """INSERT OR IGNORE INTO social_activity
-                   (id, actor_id, kind, text, payload, created_at)
-               VALUES (?, ?, ?, ?, NULL, ?)""",
-            (a["id"], actor_id, a["kind"], a["text"], created_at),
+                   (id, user_id, kind, payload_json, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (a["id"], actor_id, a["kind"], payload_json, created_at),
         )
         activity_id_set.add(a["id"])
         activity_rows += 1
@@ -1352,13 +1345,12 @@ async def seed(db_path: str, do_reset: bool) -> None:
     if trevor_id:
         await db.execute(
             """INSERT OR IGNORE INTO social_invite_codes
-                   (code, owner_id, created_at, redeemed_count, reward_lingots, reward_ad_free_hours)
-               VALUES (?, ?, ?, ?, 100, 1)""",
+                   (code, owner_id, created_at)
+               VALUES (?, ?, ?)""",
             (
                 TREVOR_INVITE_CODE,
                 trevor_id,
                 (now_dt - timedelta(days=30)).isoformat(),
-                sum(1 for r in SEED_INVITE_REDEMPTIONS if r["status"] == "redeemed"),
             ),
         )
         invite_codes_rows += 1
@@ -1368,21 +1360,17 @@ async def seed(db_path: str, do_reset: bool) -> None:
             if not invitee_id:
                 continue
             created_at = (now_dt - timedelta(days=r["days_ago"])).isoformat()
-            redeemed_at = created_at if r["status"] == "redeemed" else None
             await db.execute(
                 """INSERT OR IGNORE INTO social_invite_redemptions
-                       (id, code, inviter_id, invitee_id, status,
-                        reward_lingots, created_at, redeemed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                       (code, invitee_id, inviter_id, status, redeemed_at, year_month)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
                 (
-                    r["id"],
                     r["code"],
-                    trevor_id,
                     invitee_id,
+                    trevor_id,
                     r["status"],
-                    r["reward_lingots"],
                     created_at,
-                    redeemed_at,
+                    created_at[:7],
                 ),
             )
             redemption_rows += 1
@@ -1402,29 +1390,22 @@ async def seed(db_path: str, do_reset: bool) -> None:
         ub = username_to_user_id.get(t["user_b"])
         if not ua or not ub:
             continue
-        msgs = sorted(thread_msg_buckets.get(t["id"], []), key=lambda m: -m[3])
-        # last message = the most recent (smallest hours_ago)
+        msgs = thread_msg_buckets.get(t["id"], [])
         if msgs:
             most_recent = min(msgs, key=lambda m: m[3])
-            last_msg = most_recent[2]
-            last_at = (now_dt - timedelta(hours=most_recent[3])).isoformat()
+            updated_at = (now_dt - timedelta(hours=most_recent[3])).isoformat()
         else:
-            last_msg = None
-            last_at = None
+            updated_at = (now_dt - timedelta(days=2)).isoformat()
         await db.execute(
             """INSERT OR IGNORE INTO social_threads
-                   (id, user_a_id, user_b_id, last_message, last_at,
-                    unread_for_a, unread_for_b, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (id, user_a_id, user_b_id, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)""",
             (
                 t["id"],
                 ua,
                 ub,
-                last_msg,
-                last_at,
-                t["unread_for_a"],
-                t["unread_for_b"],
                 (now_dt - timedelta(days=2)).isoformat(),
+                updated_at,
             ),
         )
         thread_rows += 1
@@ -1433,13 +1414,11 @@ async def seed(db_path: str, do_reset: bool) -> None:
             from_id = username_to_user_id.get(from_name)
             if not from_id:
                 continue
-            # Deterministic id so re-running the seed without --reset doesn't
-            # duplicate messages (idempotent INSERT OR IGNORE on PRIMARY KEY).
             msg_id = f"{thread_id}-msg-{idx:02d}"
             ts = (now_dt - timedelta(hours=hours_ago)).isoformat()
             await db.execute(
                 """INSERT OR IGNORE INTO social_messages
-                       (id, thread_id, from_id, body, created_at)
+                       (id, thread_id, sender_id, body, sent_at)
                    VALUES (?, ?, ?, ?, ?)""",
                 (msg_id, thread_id, from_id, body, ts),
             )

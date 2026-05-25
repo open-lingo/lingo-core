@@ -1,13 +1,15 @@
-"""Pydantic v2 schemas for the social API.
+"""Pydantic schemas for the social API.
 
-Friends, blocks, leaderboards, profile, activity feed (stub).
+Snake-case fields throughout, matching the rest of the lingo-core surface.
+Date / time values are ISO-8601 strings on the wire (datetime in Python).
 """
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-# ── Friends ────────────────────────────────────────────────────────────────
+# ─── Friends ─────────────────────────────────────────────────────────────────
 
 
 class FriendItem(BaseModel):
@@ -17,44 +19,42 @@ class FriendItem(BaseModel):
     profile_picture_key: str | None = None
     xp: int = 0
     streak: int = 0
-    lastActiveAt: str | None = None
-    friendedAt: str
+    last_active_at: str | None = None
+    friended_at: str
 
 
 class FriendRequestItem(BaseModel):
     user_id: str
     username: str
     display_name: str
-    requestedAt: str
+    requested_at: str
 
 
 class FriendRequestsResponse(BaseModel):
-    incoming: list[FriendRequestItem]
-    outgoing: list[FriendRequestItem]
+    incoming: list[FriendRequestItem] = Field(default_factory=list)
+    outgoing: list[FriendRequestItem] = Field(default_factory=list)
 
 
-class FriendRequestCreate(BaseModel):
-    """Either ``toUsername`` or ``toUserId`` is required (username preferred)."""
-
-    toUsername: str | None = Field(default=None, min_length=3, max_length=30)
-    toUserId: str | None = None
+class SendFriendRequestBody(BaseModel):
+    to_username: str | None = None
+    to_user_id: str | None = None
 
 
 class FriendRequestStatus(BaseModel):
     status: Literal["pending", "accepted", "exists"]
 
 
-# ── Blocks ─────────────────────────────────────────────────────────────────
+# ─── Blocks ──────────────────────────────────────────────────────────────────
 
 
 class BlockedUserItem(BaseModel):
     user_id: str
     username: str
     display_name: str
-    blockedAt: str
+    blocked_at: str
 
 
-# ── Leaderboards ───────────────────────────────────────────────────────────
+# ─── Leaderboards ────────────────────────────────────────────────────────────
 
 
 class LeaderboardEntry(BaseModel):
@@ -62,31 +62,67 @@ class LeaderboardEntry(BaseModel):
     username: str
     display_name: str
     profile_picture_key: str | None = None
-    xp_this_period: int
+    xp_this_period: int = 0
     rank: int
 
 
 class LeaderboardResponse(BaseModel):
     bucket: str
-    entries: list[LeaderboardEntry]
-    total: int
+    entries: list[LeaderboardEntry] = Field(default_factory=list)
+    total: int = 0
     my_rank: int | None = None
 
 
 class MyLeaderboardSlot(BaseModel):
     bucket: str
-    xp: int
-    rank: int | None
-    total: int
+    xp: int = 0
+    rank: int | None = None
+    total: int = 0
 
 
 class MyLeaderboardSummary(BaseModel):
-    weekly: MyLeaderboardSlot | None
-    monthly: MyLeaderboardSlot | None
-    lang: str | None
+    weekly: MyLeaderboardSlot | None = None
+    monthly: MyLeaderboardSlot | None = None
+    lang: str | None = None
 
 
-# ── Public profile ─────────────────────────────────────────────────────────
+# ─── League spotlight ────────────────────────────────────────────────────────
+
+# Brackets keyed on weekly XP. Picked to ease testing + match a Duolingo-ish
+# vibe:
+#   0-99      bronze   (tier 1)
+#   100-499   silver   (tier 2)
+#   500-1499  gold     (tier 3)
+#   1500-4999 diamond  (tier 4)
+#   5000+     obsidian (tier 4 capped — display only)
+LeagueName = Literal["bronze", "silver", "gold", "diamond", "obsidian"]
+
+
+class LeagueSpotlightResponse(BaseModel):
+    league: LeagueName
+    league_tier: int
+    my_row: LeaderboardEntry | None = None
+    rank: int | None = None
+    rank_yesterday: int | None = None
+    rank_delta_today: int = 0
+    daily_xp: int = 0
+    friend_median_daily_xp: int = 0
+    top_three: list[LeaderboardEntry] = Field(default_factory=list)
+    promotion_threshold: int | None = None
+    demotion_threshold: int | None = None
+
+
+# ─── Streak snapshot ─────────────────────────────────────────────────────────
+
+
+class StreakSnapshotResponse(BaseModel):
+    my_streak_days: int = 0
+    friend_median_streak_days: int = 0
+    best_friend_streak_days: int | None = None
+    best_friend_username: str | None = None
+
+
+# ─── Public profile ──────────────────────────────────────────────────────────
 
 
 FriendshipStatus = Literal[
@@ -107,9 +143,117 @@ class PublicProfileResponse(BaseModel):
     friendship_status: FriendshipStatus | None = None
 
 
-# ── Activity feed (stub) ───────────────────────────────────────────────────
+# ─── Activity feed ───────────────────────────────────────────────────────────
+
+
+ReactionKind = Literal["wave", "fire", "clap", "target"]
+REACTION_KINDS: tuple[ReactionKind, ...] = ("wave", "fire", "clap", "target")
+
+
+class ActivityReaction(BaseModel):
+    kind: ReactionKind
+    count: int = 0
+    mine: bool = False
+
+
+ActivityKind = Literal[
+    "lesson_completed",
+    "streak_milestone",
+    "level_up",
+    "friend_joined",
+    "achievement",
+]
+
+
+class ActivityItem(BaseModel):
+    id: str
+    user_id: str
+    username: str
+    display_name: str
+    profile_picture_key: str | None = None
+    kind: ActivityKind
+    payload: dict = Field(default_factory=dict)
+    created_at: str
+    reactions: list[ActivityReaction] = Field(default_factory=list)
 
 
 class ActivityFeedResponse(BaseModel):
-    items: list[dict]
+    items: list[ActivityItem] = Field(default_factory=list)
     cursor: str | None = None
+
+
+# ─── Invites ─────────────────────────────────────────────────────────────────
+
+
+# Defaults baked in — the spec calls these out as fixed values for the MVP.
+DEFAULT_LINGOT_REWARD_INVITER = 100
+DEFAULT_LINGOT_REWARD_INVITEE = 50
+DEFAULT_AD_FREE_MINUTES_INVITER = 1440
+DEFAULT_AD_FREE_MINUTES_INVITEE = 1440
+DEFAULT_MONTHLY_CAP = 10
+DEFAULT_INVITE_BASE_URL = "https://lingo.app/invite"
+
+
+class InviteOfferResponse(BaseModel):
+    code: str
+    url: str
+    lingot_reward_inviter: int = DEFAULT_LINGOT_REWARD_INVITER
+    lingot_reward_invitee: int = DEFAULT_LINGOT_REWARD_INVITEE
+    ad_free_minutes_inviter: int = DEFAULT_AD_FREE_MINUTES_INVITER
+    ad_free_minutes_invitee: int = DEFAULT_AD_FREE_MINUTES_INVITEE
+    monthly_cap: int = DEFAULT_MONTHLY_CAP
+    redeemed_count_this_month: int = 0
+    first_lesson_required: bool = True
+
+
+InviteStatus = Literal["pending", "redeemed", "expired", "invalid", "self", "cap_reached"]
+
+
+class InviteRedeemResponse(BaseModel):
+    status: InviteStatus
+    lingot_reward: int = 0
+    ad_free_minutes: int = 0
+
+
+# ─── Threads (stub messaging) ────────────────────────────────────────────────
+
+
+class ThreadItem(BaseModel):
+    id: str
+    other_user_id: str
+    other_username: str
+    other_display_name: str
+    other_avatar_key: str | None = None
+    last_message_preview: str
+    last_message_at: datetime
+    unread_count: int = 0
+
+
+class Message(BaseModel):
+    id: str
+    thread_id: str
+    sender_id: str
+    body: str
+    sent_at: datetime
+
+
+class ThreadDetailResponse(BaseModel):
+    id: str
+    other_user_id: str
+    other_username: str
+    other_display_name: str
+    other_avatar_key: str | None = None
+    messages: list[Message] = Field(default_factory=list)
+
+
+# ─── Friend quest targets ────────────────────────────────────────────────────
+
+
+class QuestTargetItem(BaseModel):
+    user_id: str
+    username: str
+    display_name: str
+    avatar_key: str | None = None
+    streak_days: int = 0
+    level: int = 1
+    reachable_for: list[str] = Field(default_factory=list)

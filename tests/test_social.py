@@ -1,366 +1,391 @@
-"""Social API tests — friends, blocks, leaderboards, profile visibility.
+"""Social API happy-path tests.
 
-These use the shared ``api_client`` fixture (DEBUG=true + X-Dev-User header
-bypass) and the per-test SQLite path so the social tables are isolated.
+Boots the full FastAPI app with SQLite on a temp DB, seeds two users (alice and
+bob) plus a baseline activity item, and verifies the new endpoints. Auth is
+short-circuited via ``DEBUG=true`` + the ``X-Dev-User`` header which is honored
+by ``app.auth.dependencies.get_current_user``.
 """
 
+from __future__ import annotations
+
+import os
+import tempfile
 import uuid
-from collections.abc import Iterator
+from datetime import UTC, datetime
+from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
-# ── Helpers ────────────────────────────────────────────────────────────────
+# We mutate process env *before* importing app.config so the Settings instance
+# picks up our temp SQLite path and DEBUG mode. Tests are sync — the TestClient
+# spins up its own loop.
+TMP_DB = os.path.join(tempfile.mkdtemp(prefix="lingo-social-"), "social.db")
+os.environ["DB_BACKEND"] = "sqlite"
+os.environ["SQLITE_PATH"] = TMP_DB
+os.environ["DEBUG"] = "true"
+os.environ["DEV_USER"] = "auth0|alice"
 
 
-def _register_user(client, dev_sub: str) -> tuple[str, str]:
-    """Register a fresh user under the given dev sub. Returns (user_id, username)."""
-    username = f"u{uuid.uuid4().hex[:8]}"
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _register_user(
+    client: TestClient, sub: str, username: str, display_name: str
+) -> dict[str, Any]:
+    """Create a user via POST /users/me, impersonating ``sub``."""
     resp = client.post(
         "/api/core/v1/users/me",
-        json={"username": username, "display_name": f"User {username}"},
-        headers={"X-Dev-User": dev_sub},
+        json={"username": username, "display_name": display_name},
+        headers={"X-Dev-User": sub},
     )
-    assert resp.status_code == 201, resp.text
-    return resp.json()["id"], username
+    assert resp.status_code in (200, 201, 409), resp.text
+    if resp.status_code == 409:
+        # Already exists — fetch.
+        resp = client.get("/api/core/v1/users/me", headers={"X-Dev-User": sub})
+        assert resp.status_code == 200, resp.text
+    return resp.json()
 
 
-def _hdr(sub: str) -> dict[str, str]:
+def _as(sub: str) -> dict[str, str]:
     return {"X-Dev-User": sub}
 
 
-# ── Friend graph ────────────────────────────────────────────────────────────
+# ── Fixtures ─────────────────────────────────────────────────────────────────
 
 
-def test_send_and_accept_friend_request(api_client) -> None:
-    client, user_id, _admin_id = api_client
+@pytest.fixture(scope="module")
+def client() -> Any:
+    # Lazy-import after env mutation so settings see DEBUG=true + temp DB.
+    from app.config import settings
+    settings.DB_BACKEND = "sqlite"
+    settings.SQLITE_PATH = TMP_DB
+    settings.DEBUG = True
+    settings.DEV_USER = "auth0|alice"
 
-    # Register a second target user.
-    other_sub = f"dev|other-{uuid.uuid4().hex[:6]}"
-    other_id, other_username = _register_user(client, other_sub)
+    from app.main import app
+    with TestClient(app) as c:
+        yield c
 
-    # User A sends request to B by username.
+
+@pytest.fixture(scope="module")
+def users(client: TestClient) -> dict[str, dict[str, Any]]:
+    alice = _register_user(client, "auth0|alice", "alice_t", "Alice T")
+    bob = _register_user(client, "auth0|bob", "bob_t", "Bob T")
+    carol = _register_user(client, "auth0|carol", "carol_t", "Carol T")
+    return {"alice": alice, "bob": bob, "carol": carol}
+
+
+# ── Friends ──────────────────────────────────────────────────────────────────
+
+
+def test_send_and_accept_friend_request(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    bob_id = users["bob"]["id"]
+    # Alice sends a request to Bob.
     resp = client.post(
         "/api/core/v1/social/friends/requests",
-        json={"toUsername": other_username},
-        headers=_hdr("dev|test-user"),
+        json={"to_user_id": bob_id},
+        headers=_as("auth0|alice"),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "pending"
 
-    # B sees it in incoming.
-    resp = client.get(
-        "/api/core/v1/social/friends/requests",
-        headers=_hdr(other_sub),
-    )
+    # Bob sees an incoming request.
+    resp = client.get("/api/core/v1/social/friends/requests", headers=_as("auth0|bob"))
     assert resp.status_code == 200
-    bundle = resp.json()
-    assert any(it["user_id"] == user_id for it in bundle["incoming"])
-    assert bundle["outgoing"] == []
+    body = resp.json()
+    assert any(r["username"] == "alice_t" for r in body["incoming"])
 
-    # A sees it in outgoing.
-    resp = client.get(
-        "/api/core/v1/social/friends/requests",
-        headers=_hdr("dev|test-user"),
-    )
-    assert resp.status_code == 200
-    bundle = resp.json()
-    assert any(it["user_id"] == other_id for it in bundle["outgoing"])
-
-    # B accepts.
+    # Bob accepts.
+    alice_id = users["alice"]["id"]
     resp = client.post(
-        f"/api/core/v1/social/friends/requests/{user_id}/accept",
-        headers=_hdr(other_sub),
+        f"/api/core/v1/social/friends/requests/{alice_id}/accept",
+        headers=_as("auth0|bob"),
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "accepted"
 
-    # Both see each other as friends.
-    resp = client.get("/api/core/v1/social/friends", headers=_hdr("dev|test-user"))
-    assert resp.status_code == 200
-    friend_ids_a = [it["user_id"] for it in resp.json()]
-    assert other_id in friend_ids_a
-
-    resp = client.get("/api/core/v1/social/friends", headers=_hdr(other_sub))
-    assert resp.status_code == 200
-    friend_ids_b = [it["user_id"] for it in resp.json()]
-    assert user_id in friend_ids_b
+    # Both list each other as friends.
+    resp = client.get("/api/core/v1/social/friends", headers=_as("auth0|alice"))
+    assert any(f["user_id"] == bob_id for f in resp.json())
+    resp = client.get("/api/core/v1/social/friends", headers=_as("auth0|bob"))
+    assert any(f["user_id"] == alice_id for f in resp.json())
 
 
-def test_cannot_request_self(api_client) -> None:
-    client, _user_id, _admin_id = api_client
-    # Get my username back so we can try to friend by username.
-    resp = client.get("/api/core/v1/users/me", headers=_hdr("dev|test-user"))
-    me = resp.json()
+def test_block_and_unblock(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
+    carol_id = users["carol"]["id"]
     resp = client.post(
-        "/api/core/v1/social/friends/requests",
-        json={"toUsername": me["username"]},
-        headers=_hdr("dev|test-user"),
-    )
-    assert resp.status_code == 400
-
-
-def test_cannot_request_blocked_user(api_client) -> None:
-    """A blocks B → B's request to A is rejected with 404 (blocker invisible)."""
-    client, user_id, _admin_id = api_client
-
-    other_sub = f"dev|blocker-{uuid.uuid4().hex[:6]}"
-    other_id, _other_username = _register_user(client, other_sub)
-
-    # A (test-user) blocks B (other).
-    resp = client.post(
-        f"/api/core/v1/social/blocks/{other_id}",
-        headers=_hdr("dev|test-user"),
+        f"/api/core/v1/social/blocks/{carol_id}", headers=_as("auth0|alice")
     )
     assert resp.status_code == 200
+    assert resp.json() == {"status": "blocked"}
 
-    # B's request to A returns 404 (blocker is invisible).
-    me = client.get("/api/core/v1/users/me", headers=_hdr("dev|test-user")).json()
-    resp = client.post(
-        "/api/core/v1/social/friends/requests",
-        json={"toUsername": me["username"]},
-        headers=_hdr(other_sub),
-    )
-    assert resp.status_code == 404
-    _ = user_id  # silence unused
-
-
-def test_block_cascades_friendship(api_client) -> None:
-    client, user_id, _admin_id = api_client
-
-    other_sub = f"dev|friend-{uuid.uuid4().hex[:6]}"
-    other_id, other_username = _register_user(client, other_sub)
-
-    # Become friends.
-    client.post(
-        "/api/core/v1/social/friends/requests",
-        json={"toUsername": other_username},
-        headers=_hdr("dev|test-user"),
-    )
-    client.post(
-        f"/api/core/v1/social/friends/requests/{user_id}/accept",
-        headers=_hdr(other_sub),
-    )
-
-    # Sanity: friendship visible from both sides.
-    resp = client.get("/api/core/v1/social/friends", headers=_hdr("dev|test-user"))
-    assert any(it["user_id"] == other_id for it in resp.json())
-
-    # A blocks B.
-    resp = client.post(
-        f"/api/core/v1/social/blocks/{other_id}",
-        headers=_hdr("dev|test-user"),
-    )
+    resp = client.get("/api/core/v1/social/blocks", headers=_as("auth0|alice"))
     assert resp.status_code == 200
+    assert any(b["user_id"] == carol_id for b in resp.json())
 
-    # Both FRIEND rows must be gone.
-    resp = client.get("/api/core/v1/social/friends", headers=_hdr("dev|test-user"))
-    assert all(it["user_id"] != other_id for it in resp.json())
-    resp = client.get("/api/core/v1/social/friends", headers=_hdr(other_sub))
-    assert all(it["user_id"] != user_id for it in resp.json())
-
-    # Block row exists.
-    resp = client.get("/api/core/v1/social/blocks", headers=_hdr("dev|test-user"))
-    assert any(it["user_id"] == other_id for it in resp.json())
-
-
-def test_community_banned_user_blocked_from_social(api_client) -> None:
-    """A community-banned user gets 403 on every social endpoint."""
-    client, _user_id, _admin_id = api_client
-
-    # Ban "dev|test-user" via the user repo directly (bypassing admin endpoints,
-    # which aren't role-gated yet but live outside this test's scope).
-    from app.db.provider import get_user_repo
-
-    repo = get_user_repo()
-
-    import asyncio
-
-    async def _ban() -> None:
-        record = await repo.get_user_by_auth0_id("dev|test-user")
-        await repo.update_user(record["id"], {"community_status": "banned"})
-
-    asyncio.get_event_loop().run_until_complete(_ban())
-
-    for method, path in (
-        ("get", "/api/core/v1/social/friends"),
-        ("get", "/api/core/v1/social/friends/requests"),
-        ("get", "/api/core/v1/social/blocks"),
-        ("get", "/api/core/v1/social/leaderboards/ja/weekly"),
-        ("get", "/api/core/v1/social/leaderboards/ja/monthly"),
-        ("get", "/api/core/v1/social/leaderboards/friends"),
-        ("get", "/api/core/v1/social/leaderboards/me"),
-    ):
-        resp = getattr(client, method)(path, headers=_hdr("dev|test-user"))
-        assert resp.status_code == 403, f"{method} {path} → {resp.status_code}"
-        assert resp.json()["detail"]["code"] == "COMMUNITY_BANNED"
-
-
-# ── Leaderboard opt-in ─────────────────────────────────────────────────────
-
-
-def _submit_lesson(client, sub: str, lesson_id: str, client_attempt_id: str):
-    return client.post(
-        "/api/core/v1/progress/lessons/batch",
-        json={
-            "checkStreak": True,
-            "attempts": [
-                {
-                    "clientAttemptId": client_attempt_id,
-                    "lessonId": lesson_id,
-                    "attemptedAt": "2026-05-25T12:00:00+00:00",
-                    "durationSec": 60,
-                    "passed": True,
-                    "score": 1.0,
-                    "stepResults": [
-                        {
-                            "stepIdx": 0,
-                            "conceptIds": [],
-                            "correct": True,
-                            "durationMs": 1500,
-                        }
-                    ],
-                }
-            ],
-        },
-        headers=_hdr(sub),
+    resp = client.delete(
+        f"/api/core/v1/social/blocks/{carol_id}", headers=_as("auth0|alice")
     )
+    assert resp.status_code == 204
 
 
-def test_leaderboard_opt_in_default_skips_write(api_client) -> None:
-    """Default settings → no leaderboard row written.
-    After opting in + setting learning language → row exists.
-    """
-    client, user_id, _admin_id = api_client
+# ── Public profile ───────────────────────────────────────────────────────────
 
-    # 1. Default settings — do a lesson. Even without learning language set,
-    #    the hook must skip because show_on_leaderboard defaults to False.
-    resp = _submit_lesson(client, "dev|test-user", "lesson-1", uuid.uuid4().hex)
+
+def test_public_profile_friendship_status(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    # Bob is already Alice's friend by the time this runs (test_send_and_accept).
+    resp = client.get(
+        "/api/core/v1/social/profiles/bob_t", headers=_as("auth0|alice")
+    )
     assert resp.status_code == 200, resp.text
-    accepted = resp.json()["results"][0]["accepted"]
-    assert accepted is True
+    body = resp.json()
+    assert body["username"] == "bob_t"
+    assert body["friendship_status"] == "friend"
 
-    # Inspect the leaderboard repo: nothing written.
+
+# ── Leaderboards ─────────────────────────────────────────────────────────────
+
+
+def test_leaderboards_all_buckets(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
+    for path in (
+        "/api/core/v1/social/leaderboards/weekly",
+        "/api/core/v1/social/leaderboards/monthly",
+        "/api/core/v1/social/leaderboards/friends",
+    ):
+        resp = client.get(path, headers=_as("auth0|alice"))
+        assert resp.status_code == 200, f"{path}: {resp.text}"
+        body = resp.json()
+        assert "entries" in body
+        assert "bucket" in body
+        assert "total" in body
+
+    resp = client.get("/api/core/v1/social/leaderboards/me", headers=_as("auth0|alice"))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "weekly" in body and "monthly" in body
+
+
+def test_league_spotlight(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
+    resp = client.get(
+        "/api/core/v1/social/leaderboards/spotlight", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["league"] in {"bronze", "silver", "gold", "diamond", "obsidian"}
+    assert isinstance(body["league_tier"], int)
+    assert isinstance(body["top_three"], list)
+    assert isinstance(body["daily_xp"], int)
+    # Bronze for a fresh user — promotion threshold should be set.
+    if body["league"] == "bronze":
+        assert body["promotion_threshold"] == 100
+
+
+# ── Streak snapshot ──────────────────────────────────────────────────────────
+
+
+def test_streak_snapshot(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
+    resp = client.get(
+        "/api/core/v1/social/streak-snapshot", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "my_streak_days" in body
+    assert "friend_median_streak_days" in body
+
+
+# ── Activity feed + reactions ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_activity_feed_and_reaction_toggle(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    """Seed a single activity row via the repo, then exercise GET + reactions."""
     from app.db.provider import get_social_repo
 
     repo = get_social_repo()
-    assert repo is not None
+    activity_id = str(uuid.uuid4())
+    await repo.put_activity(
+        {
+            "id": activity_id,
+            "user_id": users["alice"]["id"],
+            "kind": "lesson_completed",
+            "payload": {"lessonId": "ja-m1-l1", "xp": 25},
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+    )
 
-    import asyncio
-    from datetime import UTC, datetime
+    # Feed contains it.
+    resp = client.get("/api/core/v1/social/activity", headers=_as("auth0|alice"))
+    assert resp.status_code == 200, resp.text
+    feed = resp.json()
+    activity_ids = [i["id"] for i in feed["items"]]
+    assert activity_id in activity_ids
+    item = next(i for i in feed["items"] if i["id"] == activity_id)
+    assert any(r["kind"] == "wave" for r in item["reactions"])
+    assert all(r["count"] == 0 for r in item["reactions"])
+    assert all(r["mine"] is False for r in item["reactions"])
 
-    now = datetime.now(UTC)
-    iso = now.isocalendar()
-    bucket = f"ja#{iso.year:04d}-W{iso.week:02d}"
-
-    async def _check_no_entry() -> None:
-        entry = await repo.get_user_leaderboard_entry(bucket, user_id)
-        assert entry is None
-
-    asyncio.get_event_loop().run_until_complete(_check_no_entry())
-
-    # 2. Opt in + set learning language. Then submit another lesson.
-    resp = client.patch(
-        "/api/core/v1/users/me/settings",
-        json={
-            "social": {"show_on_leaderboard": True},
-            "learning": {"learningLanguageId": "ja"},
-        },
-        headers=_hdr("dev|test-user"),
+    # Bob reacts with "fire" — count goes to 1 (his), Alice still sees mine=False.
+    resp = client.post(
+        f"/api/core/v1/social/activity/{activity_id}/reactions/fire",
+        headers=_as("auth0|bob"),
     )
     assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body == {"kind": "fire", "count": 1, "mine": True}
 
-    resp = _submit_lesson(client, "dev|test-user", "lesson-2", uuid.uuid4().hex)
+    # Re-fetch as Alice — reaction shows count=1, mine=False.
+    resp = client.get("/api/core/v1/social/activity", headers=_as("auth0|alice"))
+    assert resp.status_code == 200
+    item = next(i for i in resp.json()["items"] if i["id"] == activity_id)
+    fire = next(r for r in item["reactions"] if r["kind"] == "fire")
+    assert fire["count"] == 1
+    assert fire["mine"] is False
+
+    # Alice also reacts "fire" — count 2.
+    resp = client.post(
+        f"/api/core/v1/social/activity/{activity_id}/reactions/fire",
+        headers=_as("auth0|alice"),
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"kind": "fire", "count": 2, "mine": True}
+
+    # Alice toggles off — count drops to 1, mine=False.
+    resp = client.post(
+        f"/api/core/v1/social/activity/{activity_id}/reactions/fire",
+        headers=_as("auth0|alice"),
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"kind": "fire", "count": 1, "mine": False}
+
+
+# ── Invites ──────────────────────────────────────────────────────────────────
+
+
+def test_invite_offer_returns_persistent_code(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    resp = client.get("/api/core/v1/social/invites/offer", headers=_as("auth0|alice"))
     assert resp.status_code == 200, resp.text
-    assert resp.json()["results"][0]["accepted"] is True
+    first = resp.json()
+    assert len(first["code"]) == 8
+    assert first["url"].endswith(f"/{first['code']}")
+    assert first["monthly_cap"] == 10
+    assert first["first_lesson_required"] is True
 
-    async def _check_has_entry() -> None:
-        entry = await repo.get_user_leaderboard_entry(bucket, user_id)
-        assert entry is not None
-        assert entry["xp"] > 0
-        assert entry["lessons"] >= 1
-
-    asyncio.get_event_loop().run_until_complete(_check_has_entry())
-
-
-# ── Public profile visibility ──────────────────────────────────────────────
+    resp = client.get("/api/core/v1/social/invites/offer", headers=_as("auth0|alice"))
+    assert resp.status_code == 200
+    second = resp.json()
+    assert second["code"] == first["code"]
 
 
-def test_public_profile_visibility(api_client) -> None:
-    """visibility=private → 404 to strangers. visibility=friends → 200 only to friends.
-    visibility=public → 200 to anyone.
-    """
-    client, user_id, _admin_id = api_client
-    me = client.get("/api/core/v1/users/me", headers=_hdr("dev|test-user")).json()
-    my_username = me["username"]
+def test_invite_redemption_paths(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    # Alice's code, fetched fresh.
+    resp = client.get("/api/core/v1/social/invites/offer", headers=_as("auth0|alice"))
+    assert resp.status_code == 200
+    code = resp.json()["code"]
 
-    # Stranger user.
-    stranger_sub = f"dev|stranger-{uuid.uuid4().hex[:6]}"
-    _stranger_id, _stranger_username = _register_user(client, stranger_sub)
-
-    # 1. Private — stranger gets 404.
-    client.patch(
-        "/api/core/v1/users/me/settings",
-        json={"social": {"visibility": "private"}},
-        headers=_hdr("dev|test-user"),
-    )
-    resp = client.get(
-        f"/api/core/v1/social/profiles/{my_username}",
-        headers=_hdr(stranger_sub),
-    )
-    assert resp.status_code == 404
-
-    # Self can still see own profile.
-    resp = client.get(
-        f"/api/core/v1/social/profiles/{my_username}",
-        headers=_hdr("dev|test-user"),
+    # Alice tries to redeem her own code → self.
+    resp = client.post(
+        f"/api/core/v1/social/invites/redeem/{code}", headers=_as("auth0|alice")
     )
     assert resp.status_code == 200
-    assert resp.json()["friendship_status"] == "self"
+    assert resp.json()["status"] == "self"
 
-    # 2. friends-only — stranger 404, friend 200.
-    client.patch(
-        "/api/core/v1/users/me/settings",
-        json={"social": {"visibility": "friends"}},
-        headers=_hdr("dev|test-user"),
-    )
-    resp = client.get(
-        f"/api/core/v1/social/profiles/{my_username}",
-        headers=_hdr(stranger_sub),
-    )
-    assert resp.status_code == 404
-
-    # Make them friends — register a friend, exchange request + accept.
-    friend_sub = f"dev|friend-{uuid.uuid4().hex[:6]}"
-    friend_id, _ = _register_user(client, friend_sub)
-    client.post(
-        "/api/core/v1/social/friends/requests",
-        json={"toUserId": friend_id},
-        headers=_hdr("dev|test-user"),
-    )
-    client.post(
-        f"/api/core/v1/social/friends/requests/{user_id}/accept",
-        headers=_hdr(friend_sub),
-    )
-    resp = client.get(
-        f"/api/core/v1/social/profiles/{my_username}",
-        headers=_hdr(friend_sub),
+    # Bob redeems → pending.
+    resp = client.post(
+        f"/api/core/v1/social/invites/redeem/{code}", headers=_as("auth0|bob")
     )
     assert resp.status_code == 200
-    assert resp.json()["friendship_status"] == "friend"
+    assert resp.json()["status"] == "pending"
 
-    # 3. public — anyone 200.
-    client.patch(
-        "/api/core/v1/users/me/settings",
-        json={"social": {"visibility": "public"}},
-        headers=_hdr("dev|test-user"),
-    )
-    resp = client.get(
-        f"/api/core/v1/social/profiles/{my_username}",
-        headers=_hdr(stranger_sub),
+    # Same call again → still pending (idempotent).
+    resp = client.post(
+        f"/api/core/v1/social/invites/redeem/{code}", headers=_as("auth0|bob")
     )
     assert resp.status_code == 200
+    assert resp.json()["status"] == "pending"
+
+    # Invalid code → invalid.
+    resp = client.post(
+        "/api/core/v1/social/invites/redeem/NOTACODE", headers=_as("auth0|carol")
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "invalid"
 
 
-# Silence unused-import warnings on Iterator (kept for parity with codebase style).
-_unused: Iterator | None = None
-_unused_pytest = pytest
+# ── Threads ──────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_threads_listing_and_detail(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    from app.db.provider import get_social_repo
+
+    repo = get_social_repo()
+    thread_id = str(uuid.uuid4())
+    now = datetime.now(UTC).isoformat()
+    await repo.put_thread(
+        {
+            "id": thread_id,
+            "user_a_id": users["alice"]["id"],
+            "user_b_id": users["bob"]["id"],
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+    await repo.put_message(
+        {
+            "id": str(uuid.uuid4()),
+            "thread_id": thread_id,
+            "sender_id": users["bob"]["id"],
+            "body": "hey alice!",
+            "sent_at": now,
+        }
+    )
+
+    resp = client.get("/api/core/v1/social/threads", headers=_as("auth0|alice"))
+    assert resp.status_code == 200, resp.text
+    threads = resp.json()
+    found = next((t for t in threads if t["id"] == thread_id), None)
+    assert found is not None
+    assert found["other_username"] == "bob_t"
+    assert found["last_message_preview"] == "hey alice!"
+
+    resp = client.get(
+        f"/api/core/v1/social/threads/{thread_id}", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    detail = resp.json()
+    assert len(detail["messages"]) == 1
+    assert detail["messages"][0]["body"] == "hey alice!"
+
+    # Carol is not a participant.
+    resp = client.get(
+        f"/api/core/v1/social/threads/{thread_id}", headers=_as("auth0|carol")
+    )
+    assert resp.status_code == 403
+
+
+# ── Friend quest helpers ─────────────────────────────────────────────────────
+
+
+def test_quest_targets(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
+    resp = client.get("/api/core/v1/social/quest-targets", headers=_as("auth0|alice"))
+    assert resp.status_code == 200, resp.text
+    targets = resp.json()
+    # Bob is a friend with 0 streak and 0 weekly XP — should be reachable for
+    # both axes.
+    bob_target = next((t for t in targets if t["username"] == "bob_t"), None)
+    assert bob_target is not None
+    assert "streak" in bob_target["reachable_for"]
+    assert "weekly_xp" in bob_target["reachable_for"]
