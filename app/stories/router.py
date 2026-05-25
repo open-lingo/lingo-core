@@ -7,23 +7,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import TokenPayload
-from app.db.protocols import StoryRepository
 from app.db.provider import get_story_repo
+from app.db.protocols import StoryRepository
+from app.shared.errors import api_error
+from app.shared.repos import require_repo
 from app.stories.schemas import StoryCreate, StoryResponse, StoryUpdate
 
 router = APIRouter(tags=["stories"])
 
 StoryRepo = Annotated[StoryRepository | None, Depends(get_story_repo)]
 CurrentUser = Annotated[TokenPayload, Depends(get_current_user)]
-
-
-def _require_story_repo(repo: StoryRepository | None) -> StoryRepository:
-    if repo is None:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Story storage not configured",
-        )
-    return repo
 
 
 def _to_response(story: dict) -> StoryResponse:
@@ -48,12 +41,13 @@ async def list_browse_stories(
     language_id: str | None = Query(None, description="Filter by language"),
 ) -> list[StoryResponse]:
     """List published stories for browsing. Any authenticated user."""
-    r = _require_story_repo(repo)
-    stories = await r.list_stories(
-        author_id=None,
-        language_id=language_id,
-        status="published",
-    )
+    r = require_repo(repo, "stories")
+    with api_error("listing published stories"):
+        stories = await r.list_stories(
+            author_id=None,
+            language_id=language_id,
+            status="published",
+        )
     return [_to_response(s) for s in stories]
 
 
@@ -65,12 +59,13 @@ async def list_my_stories(
     story_status: str | None = Query(None, alias="status", description="Filter by status: draft, published"),
 ) -> list[StoryResponse]:
     """List stories owned by the current user."""
-    r = _require_story_repo(repo)
-    stories = await r.list_stories(
-        author_id=user.id,
-        language_id=language_id,
-        status=story_status,
-    )
+    r = require_repo(repo, "stories")
+    with api_error("listing user stories"):
+        stories = await r.list_stories(
+            author_id=user.id,
+            language_id=language_id,
+            status=story_status,
+        )
     return [_to_response(s) for s in stories]
 
 
@@ -81,7 +76,7 @@ async def create_story(
     user: CurrentUser,
 ) -> StoryResponse:
     """Create a new story."""
-    r = _require_story_repo(repo)
+    r = require_repo(repo, "stories")
     story_id = f"story-{uuid.uuid4().hex[:12]}"
     data = {
         "languageId": body.languageId,
@@ -92,8 +87,9 @@ async def create_story(
         "authorId": user.id,
         "status": "draft",
     }
-    await r.create_story(story_id, data)
-    story = await r.get_story(story_id)
+    with api_error("creating story"):
+        await r.create_story(story_id, data)
+        story = await r.get_story(story_id)
     if not story:
         raise HTTPException(status_code=500, detail="Story creation failed")
     return _to_response(story)
@@ -106,8 +102,9 @@ async def get_story(
     user: CurrentUser,
 ) -> StoryResponse:
     """Get a story by ID. User must own it (for drafts) or it must be published."""
-    r = _require_story_repo(repo)
-    story = await r.get_story(story_id)
+    r = require_repo(repo, "stories")
+    with api_error("fetching story"):
+        story = await r.get_story(story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     author = story.get("authorId")
@@ -125,15 +122,17 @@ async def update_story(
     user: CurrentUser,
 ) -> StoryResponse:
     """Update a story. User must be the author."""
-    r = _require_story_repo(repo)
-    existing = await r.get_story(story_id)
+    r = require_repo(repo, "stories")
+    with api_error("fetching story"):
+        existing = await r.get_story(story_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Story not found")
     if existing.get("authorId") and existing.get("authorId") != user.id:
         raise HTTPException(status_code=403, detail="Only the author can update this story")
     patch = body.model_dump(exclude_unset=True)
-    await r.update_story(story_id, patch)
-    story = await r.get_story(story_id)
+    with api_error("updating story"):
+        await r.update_story(story_id, patch)
+        story = await r.get_story(story_id)
     if not story:
         raise HTTPException(status_code=500, detail="Story update failed")
     return _to_response(story)
@@ -149,14 +148,16 @@ async def update_story_status(
     """Change story status. User must be the author."""
     if status not in ("draft", "published"):
         raise HTTPException(status_code=400, detail="status must be draft or published")
-    r = _require_story_repo(repo)
-    existing = await r.get_story(story_id)
+    r = require_repo(repo, "stories")
+    with api_error("fetching story"):
+        existing = await r.get_story(story_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Story not found")
     if existing.get("authorId") and existing.get("authorId") != user.id:
         raise HTTPException(status_code=403, detail="Only the author can update this story")
-    await r.update_story(story_id, {"status": status})
-    story = await r.get_story(story_id)
+    with api_error("updating story status"):
+        await r.update_story(story_id, {"status": status})
+        story = await r.get_story(story_id)
     if not story:
         raise HTTPException(status_code=500, detail="Story update failed")
     return _to_response(story)
