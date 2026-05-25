@@ -1,19 +1,16 @@
-"""SRS API tests — superseded.
-
-The merged-in `tests/test_srs_sync.py` (from origin's eacbf4a SRS migration)
-covers the same paths with the correct schema. These tests were built on an
-opaque-blob `lastReviewedAt` design that did not land; the merged schema
-uses per-modality `lastReviewDate` instead. Skipping the file rather than
-deleting so the maintainer can confirm before removal.
-"""
+"""SRS API tests — verifies FSRS-6 modal blob round-trips through the
+schema, router, and SQLite repo intact."""
 
 import pytest
 
-pytestmark = pytest.mark.skip(reason="superseded by tests/test_srs_sync.py post-merge")
 
+def _modal_state(last_review_date: str = "2026-05-25") -> dict:
+    """An FSRS-6 modal payload — the shape the FE actually ships.
 
-def _modal_state(last_reviewed_at: str = "2026-05-25T12:00:00+00:00") -> dict:
-    """An FSRS-6 modal payload — the shape the FE actually ships."""
+    The merge winner is derived from the per-modality ``lastReviewDate``
+    fields (see ``_max_last_review`` in the SQLite repo), not a redundant
+    top-level key.
+    """
     return {
         "recognition": {
             "stability": 1.5,
@@ -21,7 +18,7 @@ def _modal_state(last_reviewed_at: str = "2026-05-25T12:00:00+00:00") -> dict:
             "state": "learning",
             "interval": 1,
             "dueDate": "2026-05-26",
-            "lastReviewDate": "2026-05-25",
+            "lastReviewDate": last_review_date,
             "reps": 1,
             "lapses": 0,
             "learningSteps": 1,
@@ -32,11 +29,10 @@ def _modal_state(last_reviewed_at: str = "2026-05-25T12:00:00+00:00") -> dict:
             "state": "new",
             "interval": 0,
             "dueDate": "2026-05-26",
-            "lastReviewDate": "2026-05-25",
+            "lastReviewDate": last_review_date,
             "reps": 0,
             "lapses": 0,
         },
-        "lastReviewedAt": last_reviewed_at,
     }
 
 
@@ -50,10 +46,9 @@ def test_sync_round_trip(api_client) -> None:
     body = resp.json()
     assert "card-1" in body["cards"]
     returned = body["cards"]["card-1"]
-    # Modal blob keys must survive the trip.
     assert returned["recognition"]["stability"] == 1.5
+    assert returned["recognition"]["lastReviewDate"] == "2026-05-25"
     assert returned["production"]["state"] == "new"
-    assert returned["lastReviewedAt"] == "2026-05-25T12:00:00+00:00"
 
     # GET /srs/state must return the same payload.
     resp = client.get("/api/core/v1/srs/state")
@@ -65,17 +60,17 @@ def test_sync_round_trip(api_client) -> None:
     assert got["recognition"]["difficulty"] == 5.2
     assert got["recognition"]["state"] == "learning"
     assert got["production"]["state"] == "new"
-    assert got["lastReviewedAt"] == "2026-05-25T12:00:00+00:00"
+    assert got["production"]["lastReviewDate"] == "2026-05-25"
 
 
 def test_sync_last_write_wins(api_client) -> None:
-    """When the server has a newer lastReviewedAt, the server copy wins."""
+    """When the server has a newer lastReviewDate, the server copy wins."""
     client, _, _ = api_client
 
-    older = _modal_state("2026-05-24T12:00:00+00:00")
+    older = _modal_state("2026-05-24")
     older["recognition"]["stability"] = 99.0  # marker we should NOT see after merge
 
-    newer = _modal_state("2026-05-25T12:00:00+00:00")
+    newer = _modal_state("2026-05-25")
     newer["recognition"]["stability"] = 7.5  # marker we SHOULD see
 
     # Push newer first.
@@ -87,18 +82,14 @@ def test_sync_last_write_wins(api_client) -> None:
     assert resp.status_code == 200, resp.text
     merged = resp.json()["cards"]["c"]
     assert merged["recognition"]["stability"] == 7.5
-    assert merged["lastReviewedAt"] == "2026-05-25T12:00:00+00:00"
+    assert merged["recognition"]["lastReviewDate"] == "2026-05-25"
 
 
-def test_sync_rejects_payload_missing_last_reviewed_at(api_client) -> None:
-    """lastReviewedAt is the one required key; missing it must 422."""
+def test_sync_rejects_payload_missing_modalities(api_client) -> None:
+    """recognition and production are required; missing them must 422."""
     client, _, _ = api_client
 
-    bad = {
-        "recognition": {"state": "new"},
-        "production": {"state": "new"},
-        # no lastReviewedAt
-    }
+    bad = {"buriedUntil": "2026-06-01"}
     resp = client.post("/api/core/v1/srs/sync", json={"cards": {"c": bad}})
     assert resp.status_code == 422
 
@@ -113,4 +104,4 @@ async def test_sqlite_repo_payload_storage_round_trip(sqlite_srs_repo) -> None:
     state2 = await sqlite_srs_repo.get_all("user-x")
     assert state2["card-1"]["recognition"]["stability"] == 1.5
     assert state2["card-1"]["production"]["state"] == "new"
-    assert state2["card-1"]["lastReviewedAt"] == "2026-05-25T12:00:00+00:00"
+    assert state2["card-1"]["recognition"]["lastReviewDate"] == "2026-05-25"
