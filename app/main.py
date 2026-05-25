@@ -13,15 +13,26 @@ from app.v1.router import v1_router
 
 logger = logging.getLogger("lingo.access")
 
+# Third-party loggers that should stay quiet unless something breaks.
+_QUIET_LOGGERS = ("aiosqlite",)
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+
+def _configure_logging() -> None:
+    lingo_level = logging.DEBUG if settings.DEBUG else logging.INFO
     logging.basicConfig(
-        level=logging.DEBUG if settings.DEBUG else logging.INFO,
+        level=logging.INFO,
         format="%(asctime)s  %(name)s  %(message)s",
         datefmt="%H:%M:%S",
         force=True,
     )
+    logging.getLogger("lingo").setLevel(lingo_level)
+    for name in _QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    _configure_logging()
     startup = logging.getLogger("lingo.startup")
     startup.info(
         "DEBUG=%s  DB_BACKEND=%s  DEV_USER=%s",

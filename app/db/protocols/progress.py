@@ -138,3 +138,7 @@ class ProgressRepository(Protocol):
     ) -> None:
         """Persist a recomputed concept rollup. Clears ``staleAt``."""
         ...
+
+    async def delete_all_for_user(self, user_id: str) -> None:
+        """Remove all progress rows for the user (Start over / account reset)."""
+        ...

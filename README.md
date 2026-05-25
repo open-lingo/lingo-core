@@ -135,6 +135,18 @@ Subscription settings: `enabled`, `newCardsPerDay`, `newCardOrder` (`ordered` \|
 | DELETE | `/cards` | Bearer | Delete specific card states (body: `{cardIds: [...]}`) |
 | DELETE | `/all` | Bearer | Wipe all SRS state for the user |
 
+### Progress — `/api/core/v1/progress`
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/lessons/batch` | Bearer | Batch sync buffered lesson attempts (+ optional `checkStreak`) |
+| GET | `/me` | Bearer | Aggregate: user stats, lesson rollups, concepts, last 30 days |
+| DELETE | `/me` | Bearer | Wipe all progress for user + reset streak/XP/lingots (Start over) |
+| GET | `/me/attempts` | Bearer | Paginated attempt history (`?lessonId=`, `limit`, `cursor`) |
+| POST | `/me/touch` | Bearer | Session-start hook (stats + stale concepts) |
+
+See `docs/adr/0001-progress-api-hybrid-rollup.md` for buffer/draft sync on the client.
+
 ### Decks — `/api/core/decks/v1`
 
 | Method | Path | Auth | Description |

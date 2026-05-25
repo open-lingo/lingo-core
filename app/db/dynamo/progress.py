@@ -366,3 +366,15 @@ class DynamoProgressRepository:
         if rollup.get("lastCorrectAt"):
             item["lastCorrectAt"] = rollup["lastCorrectAt"]
         await self._table.put_item(Item=item)
+
+    async def delete_all_for_user(self, user_id: str) -> None:
+        items = await _paginate_query(
+            self._table,
+            KeyConditionExpression=Key("PK").eq(_pk(user_id)),
+            ProjectionExpression="PK, SK",
+        )
+        if not items:
+            return
+        async with self._table.batch_writer() as batch:
+            for item in items:
+                await batch.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})

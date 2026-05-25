@@ -126,6 +126,16 @@ class SqliteUserRepository:
         for k in ("status_expiration", "community_status", "community_status_expiration", "bio", "role"):
             current.setdefault(k)
 
+        for k in (
+            "xp",
+            "level",
+            "lingots",
+            "streak",
+            "best_streak",
+            "last_active_date",
+        ):
+            current.setdefault(k, 0 if k != "last_active_date" else None)
+
         await self._conn().execute(
             """UPDATE users
                SET username = :username,
@@ -137,6 +147,12 @@ class SqliteUserRepository:
                    community_status_expiration = :community_status_expiration,
                    bio = :bio,
                    role = :role,
+                   xp = :xp,
+                   level = :level,
+                   lingots = :lingots,
+                   streak = :streak,
+                   best_streak = :best_streak,
+                   last_active_date = :last_active_date,
                    updated_at = :updated_at
                WHERE id = :id""",
             current,

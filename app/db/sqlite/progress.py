@@ -383,3 +383,14 @@ class SqliteProgressRepository:
             ),
         )
         await self._conn().commit()
+
+    async def delete_all_for_user(self, user_id: str) -> None:
+        conn = self._conn()
+        for table in (
+            "progress_attempts",
+            "progress_lesson_rollups",
+            "progress_day_rollups",
+            "progress_concept_rollups",
+        ):
+            await conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+        await conn.commit()

@@ -303,6 +303,15 @@ async def get_my_progress(
     until = today.isoformat()
     day_rollups = await progress.get_day_rollups(user.id, since, until)
 
+    return _progress_summary_from_db(user_record, lesson_rollups, concept_rollups, day_rollups)
+
+
+def _progress_summary_from_db(
+    user_record: dict[str, Any],
+    lesson_rollups: list[dict[str, Any]],
+    concept_rollups: list[dict[str, Any]],
+    day_rollups: list[dict[str, Any]],
+) -> ProgressSummary:
     return ProgressSummary(
         user=_user_stats_from_record(user_record),
         lessons=[LessonRollup(**r) for r in lesson_rollups],
@@ -321,6 +330,27 @@ async def get_my_progress(
             for c in concept_rollups
         ],
         last30days=[DayActivity(**d) for d in day_rollups],
+    )
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_my_progress(
+    user: CurrentUser,
+    progress: ProgressRepo,
+    users: UserRepo,
+) -> None:
+    """Wipe lesson/concept/day progress and reset stats (Start over)."""
+    await progress.delete_all_for_user(user.id)
+    await users.update_user(
+        user.id,
+        {
+            "streak": 0,
+            "best_streak": 0,
+            "xp": 0,
+            "level": 1,
+            "lingots": 0,
+            "last_active_date": None,
+        },
     )
 
 

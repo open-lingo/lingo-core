@@ -276,6 +276,11 @@ POST /api/core/v1/progress/lessons/:lessonId/attempt  (single-attempt convenienc
 GET  /api/core/v1/progress/me
   Aggregate for page render. Includes lessons[], concepts[] (lazy-recomputed on this call if stale), last30days, user stats.
 
+DELETE /api/core/v1/progress/me
+  Wipe all progress rows for the user (attempts + lesson/day/concept rollups) and reset
+  user-row stats (streak, XP, level, lingots, lastActiveDate). Used by Learn **Start over**.
+  Client also calls `DELETE /api/core/v1/srs/all` in the same flow.
+
 GET  /api/core/v1/progress/me/attempts?lessonId=&limit=20&cursor=
   Paginated attempt history. Without lessonId → uses UserAttempts-Index sorted by recency.
 
@@ -287,16 +292,35 @@ POST /api/core/v1/progress/me/touch
 
 Mirrors `src/features/flashcards/engine/srsSync.ts`:
 
-- `src/features/lesson/engine/lessonSync.ts` — buffer in localStorage under
-  `lingo:lesson-attempts:v1`, dedupe by `clientAttemptId`, flush via `progress.batchAttempts(payload)`
-- `src/features/lesson/useLessonSyncSource.ts` — returns the `SyncSource`
-  config (id, label, lastSyncAt, nextSyncAt, dirtyCount, onSyncNow, visible)
-- `src/features/sync/SyncManagerTrigger.tsx` — register the new source
-  alongside `srsSource`
-- `src/shared/i18n/locales/{en,ko}.json` — add `syncManager.lessonsLabel`
+- `src/features/lesson/engine/lessonStorage.ts` — per-user keys:
+  `open-lingo-lesson-attempts:v1:{userId}`, `open-lingo-lesson-step-events:v1:{userId}`
+- `src/features/lesson/engine/lessonSync.ts` — step events + pending attempts;
+  mid-lesson **draft** attempts use stable id `draft:{lessonId}` (idempotent re-push)
+- `recordStepEvent()` — append step outcome, upsert draft, notify SyncManager
+- `getLessonDirtyCount()` / `isPendingAttemptDirty()` — drafts stay in the buffer
+  after a successful sync (`syncedAt`); dirty again when `bufferedAt > syncedAt`
+  (new graded step). Step events for a lesson with any pending row are not counted
+  as orphans.
+- `materializeOrphanDrafts()` — before building a batch, ensure step events have
+  a draft row so sync does not no-op while the UI still shows dirty
+- `performLessonSync()` — on accepted **draft**, mark `syncedAt` (do not remove);
+  on accepted **final** attempt, remove from buffer and clear step events for that lesson
+- `src/features/lesson/useLessonSyncSource.ts` — `SyncSource` for SyncManager
+- `src/features/lesson/useLessonSyncSession.ts` — 30s interval + unmount flush on
+  `LessonPage` / `AlphabetLessonPage`
+- `src/features/lesson/LessonProgressHydrate.tsx` — app-wide flush after `GET /progress/me`
+- `src/features/sync/SyncManagerTrigger.tsx` — registers lessons + SRS sources
+- `src/shared/components/sync/SyncManager.tsx` — dirty = warning + `cloudSync` on
+  hover; failure (`cloudAlert`) only when `onSyncNow` throws (not stale dirty count)
 
-Result: the existing Sync Manager panel grows a "Lessons" row showing
-unsynced count + last sync + next sync, with the same Sync Now button.
+Result: Sync Manager shows a **Lessons** row (when authenticated) with the same
+manual / periodic sync behavior as SRS.
+
+### Dev: inspect progress JSON
+
+With dev unlock (`?dev=1` or DEV panel), Learn page exposes **`</>` Progress JSON**:
+`GET /progress/me` payload plus local completion cache (`getLocalLessonProgressSnapshot`).
+Component: `src/features/learn/components/LearnProgressJsonOverlay.tsx`.
 
 ---
 
