@@ -23,6 +23,8 @@ from app.db.provider import (
 )
 from app.decks.router import _to_response
 from app.decks.schemas import DeckResponse
+from app.shared.errors import api_error
+from app.shared.repos import require_repo
 from app.srs.schemas import SRSCardState, SRSStateResponse
 from app.stories.schemas import StoryResponse
 from app.users.schemas import SubscriptionCreate, SubscriptionItem, UserResponse, UserUpdate
@@ -39,42 +41,6 @@ StoryRepo = Annotated[StoryRepository | None, Depends(get_story_repo)]
 SRSRepo = Annotated[SRSRepository, Depends(get_srs_repo)]
 
 
-def _require_user_repo(repo: UserRepository | None) -> UserRepository:
-    if repo is None:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="User storage not configured",
-        )
-    return repo
-
-
-def _require_sub_repo(repo: SubscriptionRepository | None) -> SubscriptionRepository:
-    if repo is None:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Subscription storage not configured",
-        )
-    return repo
-
-
-def _require_deck_repo(repo: DeckRepository | None) -> DeckRepository:
-    if repo is None:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Deck storage not configured",
-        )
-    return repo
-
-
-def _require_story_repo(repo: StoryRepository | None) -> StoryRepository:
-    if repo is None:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Story storage not configured",
-        )
-    return repo
-
-
 # ── User list ─────────────────────────────────────────────────
 
 
@@ -86,8 +52,9 @@ async def list_users(
     cursor: str | None = Query(None),
 ) -> dict[str, Any]:
     """List users for admin. Returns {items, nextCursor}."""
-    r = _require_user_repo(repo)
-    items, next_cursor = await r.list_users(limit=limit, cursor=cursor)
+    r = require_repo(repo, "user")
+    with api_error("listing users"):
+        items, next_cursor = await r.list_users(limit=limit, cursor=cursor)
     return {
         "items": [UserResponse(**u) for u in items],
         "nextCursor": next_cursor,
@@ -104,8 +71,9 @@ async def get_user(
     repo: UserRepo,
 ) -> Any:
     """Get user by ID (admin view)."""
-    r = _require_user_repo(repo)
-    record = await r.get_user_by_id(user_id)
+    r = require_repo(repo, "user")
+    with api_error("fetching user"):
+        record = await r.get_user_by_id(user_id)
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     return UserResponse(**record)
@@ -119,37 +87,38 @@ async def admin_update_user(
     repo: UserRepo,
 ) -> Any:
     """Update a user's profile (username, display_name, profile_picture_key, status)."""
-    r = _require_user_repo(repo)
-    record = await r.get_user_by_id(user_id)
-    if record is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    r = require_repo(repo, "user")
+    with api_error("updating user"):
+        record = await r.get_user_by_id(user_id)
+        if record is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
 
-    patch = body.model_dump(exclude_none=True)
-    if not patch:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty patch body")
+        patch = body.model_dump(exclude_none=True)
+        if not patch:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty patch body")
 
-    if "username" in patch:
-        taken = await r.get_user_by_username(patch["username"])
-        if taken is not None and taken["id"] != user_id:
-            raise HTTPException(status.HTTP_409_CONFLICT, "Username already taken")
+        if "username" in patch:
+            taken = await r.get_user_by_username(patch["username"])
+            if taken is not None and taken["id"] != user_id:
+                raise HTTPException(status.HTTP_409_CONFLICT, "Username already taken")
 
-    # Only admins can change roles; cannot demote self below admin
-    if "role" in patch:
-        from app.auth.roles import Role
+        # Only admins can change roles; cannot demote self below admin
+        if "role" in patch:
+            from app.auth.roles import Role
 
-        new_role = patch["role"]
-        if new_role not in {r.value for r in Role}:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid role: {new_role}")
-        if _admin.id == user_id and new_role not in ("admin", "super_admin"):
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN,
-                "Cannot demote your own admin role",
-            )
+            new_role = patch["role"]
+            if new_role not in {role.value for role in Role}:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid role: {new_role}")
+            if _admin.id == user_id and new_role not in ("admin", "super_admin"):
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    "Cannot demote your own admin role",
+                )
 
-    try:
-        updated = await r.update_user(user_id, patch)
-    except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+        try:
+            updated = await r.update_user(user_id, patch)
+        except LookupError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found") from exc
     return UserResponse(**updated)
 
 
@@ -162,9 +131,10 @@ async def get_user_subscriptions(
     content_type: str | None = Query(None),
 ) -> Any:
     """Get a user's subscriptions (admin)."""
-    _require_user_repo(repo)
-    r = _require_sub_repo(sub_repo)
-    items = await r.list(user_id, content_type=content_type)
+    require_repo(repo, "user")
+    r = require_repo(sub_repo, "subscription")
+    with api_error("listing user subscriptions"):
+        items = await r.list(user_id, content_type=content_type)
     return [SubscriptionItem(**x) for x in items]
 
 
@@ -176,17 +146,18 @@ async def get_user_content(
     deck_repo: DeckRepo,
 ) -> Any:
     """Get decks authored by this user (admin). Excludes personal vocab decks."""
-    _require_user_repo(repo)
-    deck_r = _require_deck_repo(deck_repo)
-    manifests = await deck_r.list_manifests(author_id=user_id)
-    result = []
-    for m in manifests:
-        deck_id = m.get("id", "")
-        if deck_id.startswith("vocab-"):
-            continue
-        deck = await deck_r.get_deck(deck_id)
-        if deck:
-            result.append(_to_response(deck, deck.get("cards", [])))
+    require_repo(repo, "user")
+    deck_r = require_repo(deck_repo, "deck")
+    with api_error("listing user authored decks"):
+        manifests = await deck_r.list_manifests(author_id=user_id)
+        result = []
+        for m in manifests:
+            deck_id = m.get("id", "")
+            if deck_id.startswith("vocab-"):
+                continue
+            deck = await deck_r.get_deck(deck_id)
+            if deck:
+                result.append(_to_response(deck, deck.get("cards", [])))
     return result
 
 
@@ -198,11 +169,12 @@ async def admin_get_user_srs(
     srs_repo: SRSRepo,
 ) -> Any:
     """Get SRS state for a user (admin)."""
-    _require_user_repo(repo)
-    existing = await repo.get_user_by_id(user_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    cards = await srs_repo.get_all(user_id)
+    r = require_repo(repo, "user")
+    with api_error("fetching user SRS state"):
+        existing = await r.get_user_by_id(user_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        cards = await srs_repo.get_all(user_id)
     return {"cards": cards}
 
 
@@ -221,16 +193,17 @@ async def admin_update_user_srs(
     srs_repo: SRSRepo,
 ) -> Any:
     """Update SRS state for a user (admin). Merges provided cards into existing state."""
-    _require_user_repo(repo)
-    existing = await repo.get_user_by_id(user_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    if not body.cards:
-        cards = await srs_repo.get_all(user_id)
-        return {"cards": cards}
-    # Why: SRSCardState is a RootModel; ``state.root`` is the opaque payload.
-    cards_dict = {cid: s.root for cid, s in body.cards.items()}
-    merged = await srs_repo.upsert_cards(user_id, cards_dict)
+    r = require_repo(repo, "user")
+    with api_error("updating user SRS state"):
+        existing = await r.get_user_by_id(user_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        if not body.cards:
+            cards = await srs_repo.get_all(user_id)
+            return {"cards": cards}
+        # Why: SRSCardState is a RootModel; ``state.root`` is the opaque payload.
+        cards_dict = {cid: s.root for cid, s in body.cards.items()}
+        merged = await srs_repo.upsert_cards(user_id, cards_dict)
     return {"cards": merged}
 
 
@@ -247,11 +220,12 @@ async def admin_delete_user_srs_cards(
     srs_repo: SRSRepo,
 ) -> dict:
     """Delete SRS state for specific cards (admin)."""
-    _require_user_repo(repo)
-    existing = await repo.get_user_by_id(user_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    count = await srs_repo.delete_cards(user_id, body.cardIds)
+    r = require_repo(repo, "user")
+    with api_error("deleting user SRS cards"):
+        existing = await r.get_user_by_id(user_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        count = await srs_repo.delete_cards(user_id, body.cardIds)
     return {"deleted": count}
 
 
@@ -267,11 +241,12 @@ async def delete_user(
             status.HTTP_403_FORBIDDEN,
             "Cannot delete your own account",
         )
-    r = _require_user_repo(repo)
-    existing = await r.get_user_by_id(user_id)
-    if existing is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
-    await r.delete_user(user_id)
+    r = require_repo(repo, "user")
+    with api_error("deleting user"):
+        existing = await r.get_user_by_id(user_id)
+        if existing is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+        await r.delete_user(user_id)
 
 
 # ── Admin: user subscriptions ─────────────────────────────────────
@@ -292,8 +267,8 @@ async def admin_add_subscription(
     story_repo: StoryRepo,
 ) -> Any:
     """Add a subscription for a user (admin)."""
-    _require_user_repo(repo)
-    r = _require_sub_repo(sub_repo)
+    require_repo(repo, "user")
+    r = require_repo(sub_repo, "subscription")
     if body.contentType not in [c.value for c in ContentType]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -303,16 +278,17 @@ async def admin_add_subscription(
         body.contentType,
         context={"deck_repo": deck_repo, "story_repo": story_repo},
     )
-    if not await handler.validate_subscription(body.contentId):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"{body.contentType} not found: {body.contentId}",
-        )
-    await r.add(user_id, body.contentType, body.contentId)
-    items = await r.list(user_id, content_type=body.contentType)
-    added = next((i for i in items if i["contentId"] == body.contentId), None)
-    if not added:
-        raise HTTPException(status_code=500, detail="Subscription add failed")
+    with api_error("adding user subscription"):
+        if not await handler.validate_subscription(body.contentId):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"{body.contentType} not found: {body.contentId}",
+            )
+        await r.add(user_id, body.contentType, body.contentId)
+        items = await r.list(user_id, content_type=body.contentType)
+        added = next((i for i in items if i["contentId"] == body.contentId), None)
+        if not added:
+            raise HTTPException(status_code=500, detail="Subscription add failed")
     return SubscriptionItem(**added)
 
 
@@ -329,14 +305,15 @@ async def admin_remove_subscription(
     sub_repo: SubRepo,
 ) -> None:
     """Remove a subscription for a user (admin)."""
-    _require_user_repo(repo)
-    r = _require_sub_repo(sub_repo)
+    require_repo(repo, "user")
+    r = require_repo(sub_repo, "subscription")
     if content_type not in [c.value for c in ContentType]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"contentType must be one of: {[c.value for c in ContentType]}",
         )
-    await r.remove(user_id, content_type, content_id)
+    with api_error("removing user subscription"):
+        await r.remove(user_id, content_type, content_id)
 
 
 # ── Admin: deck status and delete ──────────────────────────────────
@@ -352,15 +329,16 @@ async def admin_update_deck_status(
     """Unpublish (draft) or publish a deck. Admin only."""
     if status_param not in ("draft", "published"):
         raise HTTPException(status_code=400, detail="status must be draft or published")
-    r = _require_deck_repo(deck_repo)
-    existing = await r.get_deck(deck_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Deck not found")
-    manifest = {**existing, "status": status_param, "authorId": existing.get("authorId")}
-    await r.upsert_deck(deck_id, manifest, existing.get("cards", []))
-    deck = await r.get_deck(deck_id)
-    if not deck:
-        raise HTTPException(status_code=500, detail="Deck update failed")
+    r = require_repo(deck_repo, "deck")
+    with api_error("updating deck status"):
+        existing = await r.get_deck(deck_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        manifest = {**existing, "status": status_param, "authorId": existing.get("authorId")}
+        await r.upsert_deck(deck_id, manifest, existing.get("cards", []))
+        deck = await r.get_deck(deck_id)
+        if not deck:
+            raise HTTPException(status_code=500, detail="Deck update failed")
     return _to_response(deck, deck.get("cards", []))
 
 
@@ -371,11 +349,12 @@ async def admin_delete_deck(
     deck_repo: DeckRepo,
 ) -> None:
     """Delete a deck permanently. Admin only."""
-    r = _require_deck_repo(deck_repo)
-    existing = await r.get_deck(deck_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Deck not found")
-    await r.delete_deck(deck_id)
+    r = require_repo(deck_repo, "deck")
+    with api_error("deleting deck"):
+        existing = await r.get_deck(deck_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Deck not found")
+        await r.delete_deck(deck_id)
 
 
 # ── Admin: story list, status, delete ─────────────────────────────────
@@ -404,8 +383,9 @@ async def list_admin_stories(
     language_id: str | None = Query(None),
 ) -> Any:
     """List all stories for admin. Optional filters."""
-    r = _require_story_repo(story_repo)
-    stories = await r.list_stories(author_id=None, language_id=language_id, status=status)
+    r = require_repo(story_repo, "story")
+    with api_error("listing admin stories"):
+        stories = await r.list_stories(author_id=None, language_id=language_id, status=status)
     return [_story_to_response(s) for s in stories]
 
 
@@ -419,14 +399,15 @@ async def admin_update_story_status(
     """Unpublish (draft) or publish a story. Admin only."""
     if status_param not in ("draft", "published"):
         raise HTTPException(status_code=400, detail="status must be draft or published")
-    r = _require_story_repo(story_repo)
-    existing = await r.get_story(story_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Story not found")
-    await r.update_story(story_id, {"status": status_param})
-    story = await r.get_story(story_id)
-    if not story:
-        raise HTTPException(status_code=500, detail="Story update failed")
+    r = require_repo(story_repo, "story")
+    with api_error("updating story status"):
+        existing = await r.get_story(story_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Story not found")
+        await r.update_story(story_id, {"status": status_param})
+        story = await r.get_story(story_id)
+        if not story:
+            raise HTTPException(status_code=500, detail="Story update failed")
     return _story_to_response(story)
 
 
@@ -437,8 +418,9 @@ async def admin_delete_story(
     story_repo: StoryRepo,
 ) -> None:
     """Delete a story permanently. Admin only."""
-    r = _require_story_repo(story_repo)
-    existing = await r.get_story(story_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Story not found")
-    await r.delete_story(story_id)
+    r = require_repo(story_repo, "story")
+    with api_error("deleting story"):
+        existing = await r.get_story(story_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Story not found")
+        await r.delete_story(story_id)
