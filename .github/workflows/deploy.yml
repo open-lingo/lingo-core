@@ -32,7 +32,7 @@ jobs:
         run: |
           aws lambda update-function-code \
             --function-name "$FUNCTION_NAME" \
-            --zip-file fileb://dist/lingo-core.zip \
+            --zip-file fileb://lingo-core.zip \
             --publish
       - name: wait + smoke test
         run: |
