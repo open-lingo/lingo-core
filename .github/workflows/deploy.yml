@@ -1,0 +1,43 @@
+name: deploy
+
+# Auto-deploys lingo-core Lambda code on every push to main.
+# Requires org secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION.
+# Function name defaults to "lingo-core"; override via repo variable
+# LINGO_CORE_FUNCTION_NAME if your Lambda is named differently.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  FUNCTION_NAME: ${{ vars.LINGO_CORE_FUNCTION_NAME || 'lingo-core' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: build zip
+        run: ./scripts/build-zip.sh
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: update lambda code
+        run: |
+          aws lambda update-function-code \
+            --function-name "$FUNCTION_NAME" \
+            --zip-file fileb://dist/lingo-core.zip \
+            --publish
+      - name: wait + smoke test
+        run: |
+          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+          aws lambda invoke --function-name "$FUNCTION_NAME" \
+            --payload '{"rawPath":"/health","requestContext":{"http":{"method":"GET","path":"/health"}},"headers":{},"version":"2.0"}' \
+            /tmp/out.json
+          cat /tmp/out.json

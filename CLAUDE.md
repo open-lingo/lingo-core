@@ -115,6 +115,46 @@ ruff format .
 
 DynamoDB tables: `lingo_users`, `lingo_srs`, `lingo_decks` w/ GSIs — see README for `aws dynamodb create-table` commands.
 
+## Cost telemetry
+
+Spend tagging happens at two levels:
+
+1. **Per-table cost allocation tags** — `Project`, `Environment`, `Domain`
+   tags are applied to every `aws_dynamodb_table` in `lingo-infra/main.tf`.
+   `lingo-ops` then queries AWS Cost Explorer grouped by those tags and
+   exposes `/api/ops/v1/finance/costs/by-domain`. See
+   `lingo-infra/docs/cost-tags.md` for the tag set + the one-time AWS
+   Billing console activation step.
+2. **Per-callsite structured logs** — `app/db/dynamo/telemetry.py`
+   exposes `log_dynamo_op(table, operation, callsite)` which emits one
+   JSON line to the `lingo.dynamo` logger. CloudWatch Logs Insights then
+   answers "which router function is hammering which table?" — a
+   question AWS billing alone can't answer because tags don't attach to
+   individual API calls.
+
+**When you touch any Dynamo code path,** call `log_dynamo_op` once per
+boto3 op with the dotted callsite (e.g. `"social.router.list_friends"`).
+The helper is intentionally **not** wired everywhere yet — that's a
+large refactor — but every new Dynamo callsite SHOULD adopt it and any
+edit to an existing callsite is a good moment to add the line. Example:
+
+```python
+from app.db.dynamo.telemetry import log_dynamo_op
+
+log_dynamo_op(
+    table="lingo_social",
+    operation="Query",
+    callsite="social.router.list_friends",
+)
+await self._table.query(...)
+```
+
+CloudWatch Insights query example:
+
+```
+fields @timestamp, table, op, callsite | stats count() by table, callsite
+```
+
 ## Don't
 
 - **Don't use `datetime.utcnow()`** — deprecated in py3.13.
