@@ -9,6 +9,7 @@ re-export for backward compatibility:
 
 from app.db.protocols.community import CommunityRepository
 from app.db.protocols.deck import DeckRepository
+from app.db.protocols.platform_settings import PlatformSettingsRepository
 from app.db.protocols.progress import ProgressRepository
 from app.db.protocols.quests import QuestRepository
 from app.db.protocols.social import SocialRepository
@@ -27,4 +28,5 @@ __all__ = [
     "ProgressRepository",
     "SocialRepository",
     "QuestRepository",
+    "PlatformSettingsRepository",
 ]

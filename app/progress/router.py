@@ -16,7 +16,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.auth.dependencies import get_registered_user
 from app.auth.schemas import TokenPayload
 from app.db.protocols import ProgressRepository, UserRepository
-from app.db.provider import get_progress_repo, get_social_repo, get_user_repo
+from app.db.provider import (
+    get_platform_settings_repo,
+    get_progress_repo,
+    get_social_repo,
+    get_user_repo,
+)
+from app.platform_settings.schemas import XP_ECONOMY_KEY, XpEconomyConfig
 from app.progress.schemas import (
     AttemptList,
     BatchAttempt,
@@ -33,11 +39,7 @@ from app.progress.schemas import (
     UserStats,
 )
 from app.progress.shop_catalog import get_shop_item
-from app.progress.xp import (
-    level_for_xp,
-    lingots_for_attempt,
-    xp_for_attempt,
-)
+from app.progress.xp import level_for_xp
 
 router = APIRouter(tags=["progress"])
 
@@ -95,6 +97,11 @@ async def submit_attempt_batch(
     user_record = await users.get_user_by_id(user.id) or {}
     today_iso = date.today().isoformat()
 
+    # XP economy is admin-tunable; read it ONCE per batch (not per attempt).
+    # Falls back to the schema defaults when the settings repo is absent or
+    # the key hasn't been seeded yet.
+    xp_config = await _load_xp_config()
+
     results: list[BatchAttemptResult] = []
     total_xp_inc = 0
     total_lingots_inc = 0
@@ -104,6 +111,7 @@ async def submit_attempt_batch(
             user_id=user.id,
             item=item,
             progress=progress,
+            xp_config=xp_config,
         )
         results.append(result)
         total_xp_inc += xp_inc
@@ -175,11 +183,30 @@ async def submit_attempt_batch(
     return BatchAttemptResponse(results=results)
 
 
+async def _load_xp_config() -> XpEconomyConfig:
+    """Read the admin-tunable XP economy. Defaults to the schema baseline
+    when the repo isn't wired or the key is missing."""
+    repo = get_platform_settings_repo()
+    if repo is None:
+        return XpEconomyConfig()
+    try:
+        stored = await repo.get(XP_ECONOMY_KEY)
+    except Exception:  # noqa: BLE001 — degrade to defaults on any failure
+        return XpEconomyConfig()
+    if not stored:
+        return XpEconomyConfig()
+    try:
+        return XpEconomyConfig(**stored)
+    except Exception:  # noqa: BLE001 — bad stored data shouldn't break sync
+        return XpEconomyConfig()
+
+
 async def _process_one_attempt(
     *,
     user_id: str,
     item: BatchAttempt,
     progress: ProgressRepository,
+    xp_config: XpEconomyConfig,
 ) -> tuple[BatchAttemptResult, int, int]:
     """Persist one attempt + its day/lesson rollups.
 
@@ -236,9 +263,18 @@ async def _process_one_attempt(
     }
     await progress.put_attempt(user_id, attempt_row)  # type: ignore[arg-type]
 
-    # XP / lingot computation (server-authoritative)
-    xp_earned = xp_for_attempt(item.passed, item.score)
-    lingots_earned = lingots_for_attempt(item.passed)
+    # XP / lingot computation (server-authoritative, admin-tunable via
+    # PlatformSettings → xp_economy). Pre-config defaults match the legacy
+    # constants in app.progress.xp.
+    if not item.passed:
+        xp_earned = 0
+        lingots_earned = 0
+    else:
+        if item.score >= 0.999:
+            xp_earned = xp_config.lesson_perfect_xp
+        else:
+            xp_earned = xp_config.lesson_pass_xp
+        lingots_earned = xp_config.lingots_per_lesson
 
     # Eager rollup updates
     await progress.update_lesson_rollup(user_id, item.lessonId, attempt_row)

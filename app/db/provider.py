@@ -18,6 +18,7 @@ from typing import Any
 from app.config import settings
 from app.db.protocols import (
     DeckRepository,
+    PlatformSettingsRepository,
     ProgressRepository,
     QuestRepository,
     SocialRepository,
@@ -38,6 +39,7 @@ _story_repo: StoryRepository | None = None
 _progress_repo: ProgressRepository | None = None
 _social_repo: SocialRepository | None = None
 _quest_repo: QuestRepository | None = None
+_platform_settings_repo: PlatformSettingsRepository | None = None
 
 # Set of domain names whose connect() raised during startup.
 _degraded: set[str] = set()
@@ -60,12 +62,13 @@ async def _safe_connect(domain: str, repo: Any) -> Any | None:
 async def init_repositories() -> None:
     """Create and connect the repository singletons based on config."""
     global _user_repo, _srs_repo, _deck_repo, _subscription_repo, _story_repo, _progress_repo
-    global _social_repo, _quest_repo
+    global _social_repo, _quest_repo, _platform_settings_repo
 
     _degraded.clear()
 
     if settings.DB_BACKEND == "sqlite":
         from app.db.sqlite.deck import SqliteDeckRepository
+        from app.db.sqlite.platform_settings import SqlitePlatformSettingsRepository
         from app.db.sqlite.progress import SqliteProgressRepository
         from app.db.sqlite.quests import SqliteQuestRepository
         from app.db.sqlite.social import SqliteSocialRepository
@@ -86,6 +89,10 @@ async def init_repositories() -> None:
         )
         _social_repo = await _safe_connect("social", SqliteSocialRepository(settings.SQLITE_PATH))
         _quest_repo = await _safe_connect("quest", SqliteQuestRepository(settings.SQLITE_PATH))
+        _platform_settings_repo = await _safe_connect(
+            "platform_settings",
+            SqlitePlatformSettingsRepository(settings.SQLITE_PATH),
+        )
 
     elif settings.DB_BACKEND == "dynamodb":
         from app.db.dynamo.deck import DynamoDeckRepository
@@ -123,6 +130,14 @@ async def init_repositories() -> None:
             "quest", DynamoQuestRepository(f"{prefix}quests", region)
         )
 
+        # Platform settings — SQLite-first too; Dynamo stub raises on use.
+        from app.db.dynamo.platform_settings import DynamoPlatformSettingsRepository
+
+        _platform_settings_repo = await _safe_connect(
+            "platform_settings",
+            DynamoPlatformSettingsRepository(f"{prefix}platform_settings", region),
+        )
+
     else:
         raise ValueError(f"Unknown DB_BACKEND: {settings.DB_BACKEND!r}")
 
@@ -153,6 +168,8 @@ async def shutdown_repositories() -> None:
         await _social_repo.close()  # type: ignore[union-attr]
     if _quest_repo and hasattr(_quest_repo, "close"):
         await _quest_repo.close()  # type: ignore[union-attr]
+    if _platform_settings_repo and hasattr(_platform_settings_repo, "close"):
+        await _platform_settings_repo.close()  # type: ignore[union-attr]
 
 
 def _raise_degraded(domain: str) -> None:
@@ -206,6 +223,10 @@ def get_social_repo() -> SocialRepository | None:
 
 def get_quest_repo() -> QuestRepository | None:
     return _quest_repo
+
+
+def get_platform_settings_repo() -> PlatformSettingsRepository | None:
+    return _platform_settings_repo
 
 
 def degraded_domains() -> set[str]:
