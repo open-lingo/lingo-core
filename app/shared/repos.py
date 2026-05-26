@@ -1,13 +1,9 @@
 """Shared helper for asserting a repository is initialized."""
 
-from typing import TypeVar
-
 from fastapi import HTTPException, status
 
-T = TypeVar("T")
 
-
-def require_repo(repo: T | None, name: str) -> T:
+def require_repo[T](repo: T | None, name: str) -> T:
     """Return the repo or raise 503 with a clear message if not initialized.
 
     Usage:

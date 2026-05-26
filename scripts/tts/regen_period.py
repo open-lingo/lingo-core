@@ -25,7 +25,6 @@ import argparse
 import asyncio
 import hashlib
 import json
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -42,7 +41,7 @@ TRAILING_SILENCE = 0.30
 
 
 def primary_hash(text: str, lang: str = "ja") -> str:
-    return hashlib.sha256(f"{lang}:{text}".encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(f"{lang}:{text}".encode()).hexdigest()[:16]
 
 
 async def synth(text: str, out: Path) -> None:

@@ -48,7 +48,7 @@ def save_manifest(manifest: dict[str, object]) -> None:
 
 
 def alt_hash(lang: str, text: str, voice: str) -> str:
-    return hashlib.sha256(f"{lang}:{text}::{voice}".encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(f"{lang}:{text}::{voice}".encode()).hexdigest()[:16]
 
 
 def main() -> int:

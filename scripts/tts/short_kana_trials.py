@@ -50,9 +50,9 @@ async def edge_synth(
 
 def kokoro_synth(text: str, out: Path) -> None:
     """Kokoro local neural TTS — alternative engine, no server trimming."""
-    from kokoro import KPipeline  # noqa: PLC0415
     import numpy as np  # noqa: PLC0415
     import soundfile as sf  # noqa: PLC0415
+    from kokoro import KPipeline  # noqa: PLC0415
 
     pipe = KPipeline(lang_code="j", repo_id="hexgrad/Kokoro-82M")
     chunks = []
@@ -167,21 +167,21 @@ def main() -> int:
     # `(lang, text)` hashing; alt voices use `(lang, text, voice)`.
     import hashlib
     if voice == "ja-JP-NanamiNeural":
-        h = hashlib.sha256(f"ja:{target}".encode("utf-8")).hexdigest()[:16]
+        h = hashlib.sha256(f"ja:{target}".encode()).hexdigest()[:16]
     else:
-        h = hashlib.sha256(f"ja:{target}::{voice}".encode("utf-8")).hexdigest()[:16]
+        h = hashlib.sha256(f"ja:{target}::{voice}".encode()).hexdigest()[:16]
     prod_path = LINGO_FE / "src" / "pub" / "tts" / "ja" / f"{h}.mp3"
     if prod_path.exists():
         import shutil
         shutil.copy(prod_path, slug(target, voice, "carrier"))
-        print(f"  ✓ carrier      Current production (carrier-wrap + silencedetect trim)")
+        print("  ✓ carrier      Current production (carrier-wrap + silencedetect trim)")
     else:
         print(f"  ! carrier      no production file at {prod_path}", file=sys.stderr)
 
     if not args.skip_kokoro:
         try:
             kokoro_synth(target, slug(target, voice, "kokoro"))
-            print(f"  ✓ kokoro       Kokoro neural (local, jf_alpha voice)")
+            print("  ✓ kokoro       Kokoro neural (local, jf_alpha voice)")
         except Exception as e:  # noqa: BLE001
             print(f"  ✗ kokoro       {e}", file=sys.stderr)
 

@@ -4,7 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_current_user, get_registered_user
 from app.auth.schemas import TokenPayload
-from app.db.protocols import ProgressRepository, SocialRepository, SubscriptionRepository, UserRepository
+from app.db.protocols import (
+    ProgressRepository,
+    SocialRepository,
+    SubscriptionRepository,
+    UserRepository,
+)
 from app.db.provider import (
     get_deck_repo,
     get_progress_repo,
@@ -297,7 +302,7 @@ def _learning_language_from_settings(settings_blob: dict[str, Any] | None) -> st
 async def _weekly_xp(progress: ProgressRepository | None, user_id: str) -> int:
     if progress is None:
         return 0
-    from datetime import UTC, date, datetime, timedelta
+    from datetime import UTC, datetime, timedelta
 
     today = datetime.now(UTC).date()
     since = (today - timedelta(days=6)).isoformat()

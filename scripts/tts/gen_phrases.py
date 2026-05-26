@@ -30,7 +30,7 @@ TRAILING_SILENCE = 0.30
 
 
 def primary_hash(text: str, lang: str = "ja") -> str:
-    return hashlib.sha256(f"{lang}:{text}".encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(f"{lang}:{text}".encode()).hexdigest()[:16]
 
 
 async def synth(text: str, out: Path, attempts: int = 5) -> None:

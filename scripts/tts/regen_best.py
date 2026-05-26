@@ -47,7 +47,7 @@ CATEGORY_RANK = {"exact": 0, "partial": 1, "doubled": 2, "wrong": 3, "empty": 4}
 
 
 def primary_hash(text: str, lang: str = "ja") -> str:
-    return hashlib.sha256(f"{lang}:{text}".encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(f"{lang}:{text}".encode()).hexdigest()[:16]
 
 
 async def synth(text: str, voice: str, out: Path, rate: str = "+0%", attempts: int = 5) -> None:
@@ -84,10 +84,10 @@ def main() -> int:
 
     # Reload current whisper results so we know which kana to fix.
     sys.path.insert(0, str(LINGO_CORE / "scripts" / "tts"))
-    from whisper_audit import normalize, categorize  # type: ignore
-    from faster_whisper import WhisperModel  # noqa: PLC0415
-
     import csv
+
+    from faster_whisper import WhisperModel  # noqa: PLC0415
+    from whisper_audit import categorize  # type: ignore
     csv_path = Path(args.csv)
     if not csv_path.exists():
         print(f"No {csv_path} — run whisper_audit first.", file=sys.stderr)

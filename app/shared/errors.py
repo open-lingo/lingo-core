@@ -6,9 +6,9 @@ Wrap blocks that talk to repos / external services with `api_error("doing X")`.
   generic detail string. No exception internals leak to the client.
 """
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-import logging
 
 from fastapi import HTTPException
 

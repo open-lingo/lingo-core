@@ -30,8 +30,12 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py312"
-line-length = 100
+target-version = "py313"
+line-length = 200
+# Scripts are utility tooling (TTS pipeline, audits, seeders) — not
+# the app surface CI should police. They run by hand on the maintainer's
+# machine, not on Lambda.
+extend-exclude = ["scripts/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

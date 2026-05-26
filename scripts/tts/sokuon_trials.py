@@ -57,8 +57,8 @@ def main() -> int:
 
     print("\nTranscribing with Whisper (small)...")
     sys.path.insert(0, str(Path(__file__).parent))
-    from whisper_audit import normalize, categorize  # type: ignore
     from faster_whisper import WhisperModel  # noqa: PLC0415
+    from whisper_audit import categorize  # type: ignore
 
     model = WhisperModel("small", device="cpu", compute_type="int8")
     results: dict[str, dict[str, tuple[str, str]]] = {}

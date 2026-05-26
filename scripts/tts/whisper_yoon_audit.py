@@ -34,13 +34,13 @@ YOON_ROWS = [
 
 
 def primary_hash(text: str, lang: str = "ja") -> str:
-    return hashlib.sha256(f"{lang}:{text}".encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(f"{lang}:{text}".encode()).hexdigest()[:16]
 
 
 def main() -> int:
     sys.path.insert(0, str(Path(__file__).parent))
-    from whisper_audit import normalize, categorize  # type: ignore
     from faster_whisper import WhisperModel  # noqa: PLC0415
+    from whisper_audit import categorize  # type: ignore
 
     print("Loading whisper model=small...", file=sys.stderr)
     model = WhisperModel("small", device="cpu", compute_type="int8")

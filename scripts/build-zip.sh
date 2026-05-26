@@ -17,7 +17,10 @@ while getopts "f:" opt; do
   esac
 done
 
-if [ -z "$LAMBDA_ARN" ]; then
+if [ -z "$LAMBDA_ARN" ] && [ -t 0 ]; then
+  # Only prompt when running interactively. CI (no tty on stdin) skips
+  # the push and just produces the zip — the deploy workflow runs
+  # aws lambda update-function-code separately.
   echo -n "Lambda ARN or function name (empty to skip push): "
   read -r LAMBDA_ARN
 fi

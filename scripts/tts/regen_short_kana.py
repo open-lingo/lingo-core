@@ -54,11 +54,11 @@ TRAILING_SILENCE = 0.30
 
 
 def primary_hash(text: str, lang: str = "ja") -> str:
-    return hashlib.sha256(f"{lang}:{text}".encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(f"{lang}:{text}".encode()).hexdigest()[:16]
 
 
 def alt_hash(text: str, voice: str, lang: str = "ja") -> str:
-    return hashlib.sha256(f"{lang}:{text}::{voice}".encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(f"{lang}:{text}::{voice}".encode()).hexdigest()[:16]
 
 
 def carrier_text(target: str) -> str:
