@@ -23,6 +23,7 @@ from app.auth.schemas import TokenPayload
 from app.db.protocols import DeckRepository, ProgressRepository, SocialRepository, UserRepository
 from app.db.provider import get_deck_repo, get_progress_repo, get_social_repo, get_user_repo
 from app.shared.errors import api_error
+from app.social.leagues import league_for_xp
 from app.social.schemas import (
     DEFAULT_AD_FREE_MINUTES_INVITEE,
     DEFAULT_AD_FREE_MINUTES_INVITER,
@@ -663,6 +664,7 @@ async def get_public_profile(
         except Exception:  # pragma: no cover - defensive; don't fail the profile
             authored_count = 0
             authored_sample = []
+    target_xp = int(target.get("xp") or 0)
     return PublicProfileResponse(
         user_id=target["id"],
         username=target["username"],
@@ -672,13 +674,14 @@ async def get_public_profile(
         learning_language=learning_language,
         joined_at=target.get("created_at") or _now_iso(),
         streak=int(target.get("streak") or 0),
-        xp=int(target.get("xp") or 0),
+        xp=target_xp,
         friendship_status=fs,
         lingots=int(target.get("lingots") or 0),
         level=int(target.get("level") or 1),
         last_active_date=target.get("last_active_date"),
         authored_deck_count=authored_count,
         authored_decks_sample=authored_sample,
+        league=league_for_xp(target_xp),
     )
 
 

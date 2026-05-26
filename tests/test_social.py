@@ -166,6 +166,58 @@ def test_public_profile_enriched_fields(
     assert isinstance(body["authored_decks_sample"], list)
     # Sample respects the 5-deck cap defined in the handler.
     assert len(body["authored_decks_sample"]) <= 5
+    # Task 7 — league key always present (may be None for zero-XP users).
+    assert "league" in body
+
+
+def test_public_profile_league_none_for_zero_xp(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    """Bob has 0 XP at this point in the session — league must be None."""
+    resp = client.get(
+        "/api/core/v1/social/profiles/bob_t", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # Bob hasn't earned XP in the test fixtures.
+    assert body["xp"] == 0
+    assert body["league"] is None
+
+
+def test_public_profile_league_derived_from_xp(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    """When a user has accumulated XP, the league badge is filled in.
+
+    Carol is a fresh user — we award her some XP via the admin endpoint
+    (gated by ADMIN_USER_IDS) and confirm the league climbs accordingly.
+    """
+    # Promote alice to admin so she can use the award-xp endpoint.
+    from app.config import settings as cfg
+
+    prior_admins = list(cfg.ADMIN_USER_IDS)
+    cfg.ADMIN_USER_IDS = [users["alice"]["id"]]
+    try:
+        award = client.post(
+            f"/api/core/v1/admin/users/{users['carol']['id']}/award-xp",
+            json={"amount": 800, "reason": "league test"},
+            headers=_as("auth0|alice"),
+        )
+        assert award.status_code == 200, award.text
+    finally:
+        cfg.ADMIN_USER_IDS = prior_admins
+
+    resp = client.get(
+        "/api/core/v1/social/profiles/carol_t", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    league = body["league"]
+    assert league is not None
+    # 800 XP clears the Gold (750) threshold → tier_index 2.
+    assert league["tier_index"] == 2
+    assert league["name"] == "Gold League"
+    assert league["emoji"]  # non-empty emoji
 
 
 # ── Leaderboards ─────────────────────────────────────────────────────────────

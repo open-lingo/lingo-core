@@ -136,6 +136,15 @@ class AuthoredDeckSample(BaseModel):
     language: str | None = None
 
 
+class LeagueBadge(BaseModel):
+    """Lightweight league info for public profile rendering. Mirrors the
+    FE ``LeagueInfo`` shape but only the fields a stranger needs to see."""
+
+    name: str
+    tier_index: int
+    emoji: str
+
+
 class PublicProfileResponse(BaseModel):
     user_id: str
     username: str
@@ -154,6 +163,8 @@ class PublicProfileResponse(BaseModel):
     last_active_date: str | None = None
     authored_deck_count: int = 0
     authored_decks_sample: list[AuthoredDeckSample] = []
+    # Optional league badge — None when the user has no XP yet.
+    league: LeagueBadge | None = None
 
 
 # ─── Activity feed ───────────────────────────────────────────────────────────
