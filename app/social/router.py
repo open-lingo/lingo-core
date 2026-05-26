@@ -20,8 +20,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_registered_user
 from app.auth.schemas import TokenPayload
-from app.db.protocols import ProgressRepository, SocialRepository, UserRepository
-from app.db.provider import get_progress_repo, get_social_repo, get_user_repo
+from app.db.protocols import DeckRepository, ProgressRepository, SocialRepository, UserRepository
+from app.db.provider import get_deck_repo, get_progress_repo, get_social_repo, get_user_repo
 from app.shared.errors import api_error
 from app.social.schemas import (
     DEFAULT_AD_FREE_MINUTES_INVITEE,
@@ -67,6 +67,7 @@ CurrentUser = Annotated[TokenPayload, Depends(get_registered_user)]
 SocialRepo = Annotated[SocialRepository, Depends(get_social_repo)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 ProgressRepo = Annotated[ProgressRepository, Depends(get_progress_repo)]
+DeckRepo = Annotated[DeckRepository | None, Depends(get_deck_repo)]
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -631,6 +632,7 @@ async def get_public_profile(
     user: CurrentUser,
     social: SocialRepo,
     users: UserRepo,
+    decks: DeckRepo,
 ) -> Any:
     target = await users.get_user_by_username(username)
     if target is None:
@@ -640,6 +642,27 @@ async def get_public_profile(
         "learningLanguageId"
     )
     fs = await _friendship_status(social, user.id, target["id"])
+    # Authored-decks enrichment — best-effort: fall back to an empty list if
+    # the deck repo isn't wired (Dynamo backend in degraded mode, etc.).
+    authored_count = 0
+    authored_sample: list[dict[str, Any]] = []
+    if decks is not None:
+        try:
+            owned = await decks.list_owned_manifests(
+                target["id"], status="published", exclude_companion=True
+            )
+            authored_count = len(owned)
+            authored_sample = [
+                {
+                    "id": m["id"],
+                    "name": m.get("name", ""),
+                    "language": m.get("languageId"),
+                }
+                for m in owned[:5]
+            ]
+        except Exception:  # pragma: no cover - defensive; don't fail the profile
+            authored_count = 0
+            authored_sample = []
     return PublicProfileResponse(
         user_id=target["id"],
         username=target["username"],
@@ -651,6 +674,11 @@ async def get_public_profile(
         streak=int(target.get("streak") or 0),
         xp=int(target.get("xp") or 0),
         friendship_status=fs,
+        lingots=int(target.get("lingots") or 0),
+        level=int(target.get("level") or 1),
+        last_active_date=target.get("last_active_date"),
+        authored_deck_count=authored_count,
+        authored_decks_sample=authored_sample,
     )
 
 

@@ -130,6 +130,12 @@ FriendshipStatus = Literal[
 ]
 
 
+class AuthoredDeckSample(BaseModel):
+    id: str
+    name: str
+    language: str | None = None
+
+
 class PublicProfileResponse(BaseModel):
     user_id: str
     username: str
@@ -141,6 +147,13 @@ class PublicProfileResponse(BaseModel):
     streak: int = 0
     xp: int = 0
     friendship_status: FriendshipStatus | None = None
+    # Enriched profile fields. Appended (Pydantic v2 ignores unknown fields by
+    # default so older callers reading this shape remain compatible).
+    lingots: int = 0
+    level: int = 1
+    last_active_date: str | None = None
+    authored_deck_count: int = 0
+    authored_decks_sample: list[AuthoredDeckSample] = []
 
 
 # ─── Activity feed ───────────────────────────────────────────────────────────

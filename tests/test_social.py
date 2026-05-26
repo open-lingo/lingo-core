@@ -147,6 +147,27 @@ def test_public_profile_friendship_status(
     assert body["friendship_status"] == "friend"
 
 
+def test_public_profile_enriched_fields(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    """Enriched fields are present + typed correctly even when zero-valued."""
+    resp = client.get(
+        "/api/core/v1/social/profiles/bob_t", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # Enrichment fields appended in Task 2.
+    assert "lingots" in body and isinstance(body["lingots"], int)
+    assert "level" in body and isinstance(body["level"], int)
+    assert "last_active_date" in body  # may be None
+    assert "authored_deck_count" in body
+    assert isinstance(body["authored_deck_count"], int)
+    assert "authored_decks_sample" in body
+    assert isinstance(body["authored_decks_sample"], list)
+    # Sample respects the 5-deck cap defined in the handler.
+    assert len(body["authored_decks_sample"]) <= 5
+
+
 # ── Leaderboards ─────────────────────────────────────────────────────────────
 
 
