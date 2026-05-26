@@ -11,7 +11,11 @@ on:
   workflow_dispatch:
 
 env:
-  FUNCTION_NAME: ${{ vars.LINGO_CORE_FUNCTION_NAME || 'lingo-core' }}
+  # Default 'lingo-test' matches the current manually-provisioned function.
+  # Will switch to 'lingo-core' when we cut over to the greenfield AWS
+  # account + Terraform-managed Lambda. Override via repo variable
+  # LINGO_CORE_FUNCTION_NAME if you don't want to edit the workflow.
+  FUNCTION_NAME: ${{ vars.LINGO_CORE_FUNCTION_NAME || 'lingo-test' }}
 
 jobs:
   deploy:
