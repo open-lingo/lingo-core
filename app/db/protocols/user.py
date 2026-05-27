@@ -28,8 +28,31 @@ class UserRepository(Protocol):
         self,
         limit: int = 100,
         cursor: str | None = None,
+        *,
+        search: str | None = None,
+        status: str | None = None,
+        community_status: str | None = None,
+        sort: str = "created_at",
+        order: str = "desc",
     ) -> tuple[list[dict[str, Any]], str | None]:
-        """List users for admin. Returns (items, next_cursor). next_cursor is None when no more."""
+        """List users for admin. Returns (items, next_cursor). next_cursor is None when no more.
+
+        Optional filters:
+          - ``search`` matches against username/display_name (case-insensitive substring)
+          - ``status`` filters by ``status`` column
+          - ``community_status`` filters by ``community_status`` column
+          - ``sort`` one of ``created_at`` | ``last_active_date`` | ``xp``
+          - ``order`` one of ``asc`` | ``desc``
+        """
+        ...
+
+    async def user_stats(self, *, since_days: int = 7) -> dict[str, int]:
+        """Return aggregate user counts: {"total", "new_since", "active_since"}.
+
+        ``new_since`` counts users created within the last ``since_days`` days;
+        ``active_since`` counts users whose ``last_active_date`` falls in the
+        same window.
+        """
         ...
 
     async def delete_user(self, user_id: str) -> None:

@@ -164,16 +164,63 @@ class SqliteUserRepository:
         self,
         limit: int = 100,
         cursor: str | None = None,
+        *,
+        search: str | None = None,
+        status: str | None = None,
+        community_status: str | None = None,
+        sort: str = "created_at",
+        order: str = "desc",
     ) -> tuple[list[dict[str, Any]], str | None]:
+        # Whitelist sort/order to keep the SQL injection surface flat.
+        sort_col = sort if sort in {"created_at", "last_active_date", "xp"} else "created_at"
+        order_kw = "ASC" if order.lower() == "asc" else "DESC"
         offset = int(cursor) if cursor else 0
-        cur = await self._conn().execute(
-            "SELECT * FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (limit + 1, offset),
+
+        clauses: list[str] = []
+        params: list[Any] = []
+        if search and search.strip():
+            clauses.append("(LOWER(username) LIKE ? OR LOWER(display_name) LIKE ?)")
+            needle = f"%{search.strip().lower()}%"
+            params.extend([needle, needle])
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if community_status:
+            clauses.append("community_status = ?")
+            params.append(community_status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+        sql = (
+            f"SELECT * FROM users {where} ORDER BY {sort_col} {order_kw} LIMIT ? OFFSET ?"
         )
+        params.extend([limit + 1, offset])
+        cur = await self._conn().execute(sql, params)
         rows = await cur.fetchall()
         items = [dict(r) for r in rows[:limit]]
         next_cursor = str(offset + limit) if len(rows) > limit else None
         return items, next_cursor
+
+    async def user_stats(self, *, since_days: int = 7) -> dict[str, int]:
+        from datetime import UTC, datetime, timedelta
+
+        cutoff = (datetime.now(UTC) - timedelta(days=since_days)).isoformat()
+        total_cur = await self._conn().execute("SELECT COUNT(*) AS n FROM users")
+        total_row = await total_cur.fetchone()
+        new_cur = await self._conn().execute(
+            "SELECT COUNT(*) AS n FROM users WHERE created_at >= ?",
+            (cutoff,),
+        )
+        new_row = await new_cur.fetchone()
+        active_cur = await self._conn().execute(
+            "SELECT COUNT(*) AS n FROM users WHERE last_active_date >= ?",
+            (cutoff,),
+        )
+        active_row = await active_cur.fetchone()
+        return {
+            "total": int(total_row["n"]) if total_row else 0,
+            "new_since": int(new_row["n"]) if new_row else 0,
+            "active_since": int(active_row["n"]) if active_row else 0,
+        }
 
     async def delete_user(self, user_id: str) -> None:
         await self._conn().execute("DELETE FROM user_settings WHERE user_id = ?", (user_id,))

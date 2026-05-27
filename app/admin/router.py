@@ -50,15 +50,49 @@ async def list_users(
     repo: UserRepo,
     limit: int = Query(50, ge=1, le=100),
     cursor: str | None = Query(None),
+    search: str | None = Query(None, max_length=100),
+    status: str | None = Query(None, max_length=32),
+    community_status: str | None = Query(None, max_length=32),
+    sort: str = Query("created_at", pattern=r"^(created_at|last_active_date|xp)$"),
+    order: str = Query("desc", pattern=r"^(asc|desc)$"),
 ) -> dict[str, Any]:
-    """List users for admin. Returns {items, nextCursor}."""
+    """List users for admin. Returns {items, nextCursor}.
+
+    Filters: search (substring on username/display_name), status, community_status.
+    Sort: ``created_at`` (default) | ``last_active_date`` | ``xp``.
+    """
     r = require_repo(repo, "user")
     with api_error("listing users"):
-        items, next_cursor = await r.list_users(limit=limit, cursor=cursor)
+        items, next_cursor = await r.list_users(
+            limit=limit,
+            cursor=cursor,
+            search=search,
+            status=status,
+            community_status=community_status,
+            sort=sort,
+            order=order,
+        )
     return {
         "items": [UserResponse(**u) for u in items],
         "nextCursor": next_cursor,
     }
+
+
+@router.get("/stats/users")
+async def get_user_stats(
+    _admin: AdminUser,
+    repo: UserRepo,
+    since_days: int = Query(7, ge=1, le=365),
+) -> dict[str, int]:
+    """Aggregate user counts for the admin home dashboard.
+
+    Returns total users, plus the number created and the number active
+    within the last ``since_days`` window (default 7).
+    """
+    r = require_repo(repo, "user")
+    with api_error("computing user stats"):
+        stats = await r.user_stats(since_days=since_days)
+    return {**stats, "since_days": since_days}
 
 
 # ── User detail ───────────────────────────────────────────────

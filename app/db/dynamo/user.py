@@ -141,15 +141,26 @@ class DynamoUserRepository:
         self,
         limit: int = 100,
         cursor: str | None = None,
+        *,
+        search: str | None = None,
+        status: str | None = None,
+        community_status: str | None = None,
+        sort: str = "created_at",
+        order: str = "desc",
     ) -> tuple[list[dict[str, Any]], str | None]:
-        """Scan user records. cursor is last_evaluated_key as base64 JSON."""
+        """Scan user records. cursor is last_evaluated_key as base64 JSON.
+
+        Filters + sort are applied client-side: Dynamo Scan doesn't support
+        ORDER BY and the dataset is small enough to post-process. Real
+        production should denormalize to a GSI per sort axis.
+        """
         import base64
         import json
 
         params: dict[str, Any] = {
             "FilterExpression": "SK = :sk",
             "ExpressionAttributeValues": {":sk": _RECORD_SK},
-            "Limit": (limit + 1) * 2,  # Scan Limit is items read; we filter so overfetch
+            "Limit": (limit + 1) * 4,
         }
         if cursor:
             try:
@@ -158,10 +169,55 @@ class DynamoUserRepository:
                 pass
         resp = await self._table.scan(**params)
         raw = [self._strip_keys(i) for i in resp.get("Items", [])]
+
+        # Post-filter.
+        needle = (search or "").strip().lower()
+        if needle:
+            raw = [
+                r for r in raw
+                if needle in (r.get("username") or "").lower()
+                or needle in (r.get("display_name") or "").lower()
+            ]
+        if status:
+            raw = [r for r in raw if r.get("status") == status]
+        if community_status:
+            raw = [r for r in raw if r.get("community_status") == community_status]
+
+        # Post-sort.
+        sort_key = sort if sort in {"created_at", "last_active_date", "xp"} else "created_at"
+        reverse = order.lower() != "asc"
+        raw.sort(key=lambda r: (r.get(sort_key) is None, r.get(sort_key)), reverse=reverse)
+
         items = raw[:limit]
         lek = resp.get("LastEvaluatedKey")
         next_cursor = base64.urlsafe_b64encode(json.dumps(lek, default=str).encode()).decode().rstrip("=") if lek else None
         return items, next_cursor
+
+    async def user_stats(self, *, since_days: int = 7) -> dict[str, int]:
+        """Stub stats — counts via Scan. Replace with a denormalized counter
+        item per day before this scales beyond ~10k users."""
+        from datetime import UTC, datetime, timedelta
+
+        cutoff = (datetime.now(UTC) - timedelta(days=since_days)).isoformat()
+        total = 0
+        new_since = 0
+        active_since = 0
+        params: dict[str, Any] = {
+            "FilterExpression": "SK = :sk",
+            "ExpressionAttributeValues": {":sk": _RECORD_SK},
+        }
+        # Single-shot scan — sufficient for the current small user base. If
+        # the dataset outgrows one scan page we'd paginate here.
+        resp = await self._table.scan(**params)
+        for item in resp.get("Items", []):
+            total += 1
+            created = item.get("created_at") or ""
+            last_active = item.get("last_active_date") or ""
+            if created >= cutoff:
+                new_since += 1
+            if last_active >= cutoff:
+                active_since += 1
+        return {"total": total, "new_since": new_since, "active_since": active_since}
 
     async def delete_user(self, user_id: str) -> None:
         await self._table.delete_item(Key={"PK": self._pk(user_id), "SK": _RECORD_SK})
