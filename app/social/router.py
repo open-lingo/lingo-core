@@ -14,7 +14,7 @@ import string
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from statistics import median
-from typing import Annotated, Any, get_args
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -34,7 +34,6 @@ from app.social.schemas import (
     REACTION_KINDS,
     ActivityFeedResponse,
     ActivityItem,
-    ActivityKind,
     ActivityReaction,
     BlockedUserItem,
     FriendItem,
@@ -705,58 +704,91 @@ def _summarize_reactions(rows: list[dict[str, Any]], me_id: str) -> list[Activit
     return [ActivityReaction(**by_kind[k]) for k in REACTION_KINDS]
 
 
-_ACTIVITY_KINDS: frozenset[str] = frozenset(get_args(ActivityKind))
-
-
 @router.get("/activity", response_model=ActivityFeedResponse)
 async def list_activity(
     user: CurrentUser,
     social: SocialRepo,
     users: UserRepo,
-    limit: int = Query(50, ge=1, le=100),
-    cursor: str | None = None,
+    progress: ProgressRepo,
+    limit: int = Query(20, ge=1, le=50),
+    cursor: str | None = None,  # noqa: ARG001 — accepted for FE forward-compat
 ) -> Any:
+    """Real activity feed sourced from each friend's recent progress attempts.
+
+    Per ADR-0001 § Phase 2 (pull-based): query each friend's recent
+    ``progress.list_attempts`` via the ``UserAttempts-Index`` GSI on
+    ``lingo_progress``, merge + sort desc by ``attemptedAt``, cap at the
+    caller's limit (max 50). The activity ``id`` is the underlying
+    ``attemptId`` so the existing reactions table (keyed on
+    ``activity_id``) keeps working — a friend's "👏" on an attempt reuses
+    the same storage path as before.
+
+    Cursor pagination is not yet implemented for this pull-based flow —
+    cap acts as the page boundary. Returning a null cursor matches the
+    FE contract documented in the task.
+    """
     with api_error("listing activity feed"):
         edges = await social.list_friends(user.id)
-        friend_ids = [e["friend_id"] for e in edges]
-        items, next_cursor = await social.list_activity(user.id, friend_ids, limit=limit, cursor=cursor)
-        if not items:
+        # Include the caller's own attempts so they see what they just did
+        # alongside their friends — mirrors the legacy activity feed.
+        actor_ids = [e["friend_id"] for e in edges] + [user.id]
+        # Per-actor cap matches the response cap so a single very active
+        # friend can't crowd everyone out of the feed.
+        per_actor_limit = limit
+
+        merged: list[dict[str, Any]] = []
+        for actor_id in actor_ids:
+            try:
+                attempts, _next = await progress.list_attempts(
+                    actor_id, lesson_id=None, limit=per_actor_limit
+                )
+            except Exception as exc:  # noqa: BLE001 — defensive against missing progress backend
+                logger.warning("activity: list_attempts failed for %s: %s", actor_id, exc)
+                continue
+            for a in attempts:
+                merged.append({"actor_id": actor_id, "attempt": a})
+
+        if not merged:
             return ActivityFeedResponse(items=[], cursor=None)
 
-        actor_ids = list({i["user_id"] for i in items})
-        actor_map = await _users_by_ids(users, actor_ids)
-        reactions_by_aid = await social.list_reactions_bulk([i["id"] for i in items])
+        # Sort newest first; cap at limit.
+        merged.sort(key=lambda m: m["attempt"]["attemptedAt"], reverse=True)
+        merged = merged[:limit]
+
+        # Hydrate actor metadata + reactions in a single bulk pass.
+        unique_actor_ids = list({m["actor_id"] for m in merged})
+        actor_map = await _users_by_ids(users, unique_actor_ids)
+        activity_ids = [m["attempt"]["attemptId"] for m in merged]
+        reactions_by_aid = await social.list_reactions_bulk(activity_ids)
 
         out: list[ActivityItem] = []
-        for row in items:
-            actor = actor_map.get(row["user_id"])
+        for m in merged:
+            actor = actor_map.get(m["actor_id"])
             if not actor:
                 continue
-            # Skip rows whose persisted kind is not in the current enum — these
-            # are stale seed/migration artifacts. Logging once helps spot them
-            # without 500-ing the whole feed (which suppresses CORS headers).
-            if row.get("kind") not in _ACTIVITY_KINDS:
-                logger.warning(
-                    "Skipping activity %s with unknown kind=%r",
-                    row.get("id"),
-                    row.get("kind"),
-                )
-                continue
-            rxn_rows = reactions_by_aid.get(row["id"], [])
+            attempt = m["attempt"]
+            attempt_id = attempt["attemptId"]
+            rxn_rows = reactions_by_aid.get(attempt_id, [])
+            payload: dict[str, Any] = {
+                "lessonId": attempt.get("lessonId"),
+                "score": attempt.get("score"),
+                "passed": bool(attempt.get("passed")),
+                "durationSec": attempt.get("durationSec"),
+            }
             out.append(
                 ActivityItem(
-                    id=row["id"],
+                    id=attempt_id,
                     user_id=actor["id"],
                     username=actor["username"],
                     display_name=actor["display_name"],
                     profile_picture_key=actor.get("profile_picture_key"),
-                    kind=row["kind"],
-                    payload=row.get("payload") or {},
-                    created_at=row["created_at"],
+                    kind="lesson_completed",
+                    payload=payload,
+                    created_at=attempt["attemptedAt"],
                     reactions=_summarize_reactions(rxn_rows, user.id),
                 )
             )
-        return ActivityFeedResponse(items=out, cursor=next_cursor)
+        return ActivityFeedResponse(items=out, cursor=None)
 
 
 @router.post(
@@ -769,11 +801,18 @@ async def toggle_activity_reaction(
     user: CurrentUser,
     social: SocialRepo,
 ) -> Any:
+    """Toggle a reaction on an activity item.
+
+    With the pull-based ``/activity`` (sourced from progress attempts),
+    the ``activity_id`` is the underlying ``attemptId``. We no longer
+    require the id to exist in the legacy ``social_activity`` table —
+    the reactions table is keyed on ``activity_id`` regardless, and a
+    stale reaction simply never surfaces if its parent attempt is
+    deleted (e.g. via Learn → Start over). This matches the
+    "rollups are derived" stance from ADR-0001.
+    """
     if kind not in REACTION_KINDS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown reaction kind")
-    activity = await social.get_activity(activity_id)
-    if activity is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Activity not found")
     mine, count = await social.toggle_reaction(activity_id, user.id, kind)
     return ActivityReaction(kind=kind, count=count, mine=mine)
 
