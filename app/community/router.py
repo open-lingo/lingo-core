@@ -29,13 +29,13 @@ from app.community.schemas import (
     ThreadResponse,
     VoteRequest,
 )
-from app.db.mock.community import MockCommunityRepository
+from app.db.protocols import CommunityRepository
 from app.db.provider import get_community_repo
 from app.shared.errors import api_error
 
 router = APIRouter(tags=["community"])
 
-CommunityRepo = Annotated[MockCommunityRepository, Depends(get_community_repo)]
+CommunityRepo = Annotated[CommunityRepository, Depends(get_community_repo)]
 CurrentUser = Annotated[TokenPayload | None, Depends(get_community_user_optional)]
 
 

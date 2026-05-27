@@ -4,8 +4,12 @@ At startup the app calls ``init_repositories()`` which reads ``DB_BACKEND``
 from config and instantiates the right concrete class.  FastAPI dependencies
 (``get_user_repo``, etc.) return the singleton for the lifetime of the app.
 
-Community uses a separate table; it always uses MockCommunityRepository
-until SqliteCommunityRepository / DynamoCommunityRepository are promoted.
+Community uses a separate table. ``SqliteCommunityRepository`` is the real
+SQLite-backed impl. Dynamo doesn't have a real impl yet — the stub raises on
+every method, so for ``DB_BACKEND=dynamodb`` we fall back to
+``MockCommunityRepository`` so the routers stay alive while we wait for the
+prod impl. (The mock is in-memory and resets every Lambda cold start — that's
+documented in ARCHITECTURE_REVIEW.md.)
 
 Fix 6 — repository init is fault-tolerant. If a connect() raises we log
 the failure, record the domain in ``_degraded`` and keep going. Routers
@@ -17,6 +21,7 @@ from typing import Any
 
 from app.config import settings
 from app.db.protocols import (
+    CommunityRepository,
     DeckRepository,
     PlatformSettingsRepository,
     ProgressRepository,
@@ -31,7 +36,7 @@ from app.db.protocols import (
 logger = logging.getLogger("lingo.startup")
 
 _user_repo: UserRepository | None = None
-_community_repo: Any = None
+_community_repo: CommunityRepository | None = None
 _srs_repo: SRSRepository | None = None
 _deck_repo: DeckRepository | None = None
 _subscription_repo: SubscriptionRepository | None = None
@@ -142,9 +147,24 @@ async def init_repositories() -> None:
         raise ValueError(f"Unknown DB_BACKEND: {settings.DB_BACKEND!r}")
 
     global _community_repo
-    from app.db.mock.community import MockCommunityRepository
+    if settings.DB_BACKEND == "sqlite":
+        from app.db.sqlite.community import SqliteCommunityRepository
 
-    _community_repo = MockCommunityRepository()
+        _community_repo = await _safe_connect(
+            "community", SqliteCommunityRepository(settings.SQLITE_PATH)
+        )
+        if _community_repo is None:
+            # SQLite connect failed — fall back to the in-memory mock so the
+            # router stays alive rather than 503'ing every community request.
+            from app.db.mock.community import MockCommunityRepository
+
+            _community_repo = MockCommunityRepository()
+            _degraded.discard("community")
+    else:
+        # No real Dynamo impl yet — use the in-memory mock as a fallback.
+        from app.db.mock.community import MockCommunityRepository
+
+        _community_repo = MockCommunityRepository()
 
     if _degraded:
         logger.warning("Provider booted in degraded mode: %s", sorted(_degraded))
@@ -170,6 +190,8 @@ async def shutdown_repositories() -> None:
         await _quest_repo.close()  # type: ignore[union-attr]
     if _platform_settings_repo and hasattr(_platform_settings_repo, "close"):
         await _platform_settings_repo.close()  # type: ignore[union-attr]
+    if _community_repo and hasattr(_community_repo, "close"):
+        await _community_repo.close()
 
 
 def _raise_degraded(domain: str) -> None:
@@ -194,7 +216,7 @@ def get_srs_repo() -> SRSRepository:
     return _srs_repo  # type: ignore[return-value]
 
 
-def get_community_repo() -> Any:
+def get_community_repo() -> CommunityRepository:
     assert _community_repo is not None, "repositories not initialised (call init_repositories first)"
     return _community_repo
 

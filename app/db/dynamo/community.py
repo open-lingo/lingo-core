@@ -149,6 +149,8 @@ class DynamoCommunityRepository:
         *,
         kind: str | None = None,
         language_id: str | None = None,
+        status: str | None = None,
+        author_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
