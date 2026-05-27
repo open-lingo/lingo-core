@@ -40,6 +40,17 @@ class MeUpdate(BaseModel):
     bio: str | None = Field(default=None, max_length=500, description="Profile bio/status text")
 
 
+class BanRecord(BaseModel):
+    """A single ban entry on a user record. See project-moderation-history."""
+
+    reason: str
+    started_at: str
+    expires_at: str | None = None
+    ended_at: str | None = None
+    moderator_id: str
+    notes: str | None = None
+
+
 class UserResponse(BaseModel):
     """Public-facing user representation."""
 
@@ -61,6 +72,9 @@ class UserResponse(BaseModel):
     streak: int = 0
     best_streak: int = 0
     last_active_date: str | None = None
+    # Moderation history (max 2 entries each, see project-moderation-history).
+    account_ban_history: list[BanRecord] = Field(default_factory=list)
+    community_ban_history: list[BanRecord] = Field(default_factory=list)
     created_at: str
     updated_at: str
 

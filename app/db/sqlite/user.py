@@ -25,6 +25,11 @@ _MIGRATION_COLS = [
     ("streak", "INTEGER NOT NULL DEFAULT 0"),
     ("best_streak", "INTEGER NOT NULL DEFAULT 0"),
     ("last_active_date", "TEXT"),
+    # Moderation history per project-moderation-history memory: JSON
+    # arrays capped at 2 entries each, stored on the user row to keep
+    # cost discipline (no separate ban-events table).
+    ("account_ban_history", "TEXT NOT NULL DEFAULT '[]'"),
+    ("community_ban_history", "TEXT NOT NULL DEFAULT '[]'"),
 ]
 
 _INIT_SQL = """
@@ -101,20 +106,35 @@ class SqliteUserRepository:
         await self._conn().commit()
         return row
 
+    @staticmethod
+    def _row_to_dict(row: Any) -> dict[str, Any]:
+        """Materialize a row, deserializing JSON columns (ban_history)."""
+        d = dict(row)
+        for key in ("account_ban_history", "community_ban_history"):
+            raw = d.get(key)
+            if isinstance(raw, str):
+                try:
+                    d[key] = json.loads(raw or "[]")
+                except json.JSONDecodeError:
+                    d[key] = []
+            elif raw is None:
+                d[key] = []
+        return d
+
     async def get_user_by_auth0_id(self, auth0_id: str) -> dict[str, Any] | None:
         cur = await self._conn().execute("SELECT * FROM users WHERE auth0_id = ?", (auth0_id,))
         row = await cur.fetchone()
-        return dict(row) if row else None
+        return self._row_to_dict(row) if row else None
 
     async def get_user_by_id(self, user_id: str) -> dict[str, Any] | None:
         cur = await self._conn().execute("SELECT * FROM users WHERE id = ?", (user_id,))
         row = await cur.fetchone()
-        return dict(row) if row else None
+        return self._row_to_dict(row) if row else None
 
     async def get_user_by_username(self, username: str) -> dict[str, Any] | None:
         cur = await self._conn().execute("SELECT * FROM users WHERE username = ?", (username,))
         row = await cur.fetchone()
-        return dict(row) if row else None
+        return self._row_to_dict(row) if row else None
 
     async def update_user(self, user_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         current = await self.get_user_by_id(user_id)
@@ -136,6 +156,15 @@ class SqliteUserRepository:
         ):
             current.setdefault(k, 0 if k != "last_active_date" else None)
 
+        for k in ("account_ban_history", "community_ban_history"):
+            current.setdefault(k, [])
+        # JSON-encode the list columns for the UPDATE bind; ``current``
+        # is returned to the caller with the Python list intact so we
+        # take a copy for the write.
+        write_row = dict(current)
+        write_row["account_ban_history"] = json.dumps(current.get("account_ban_history") or [])
+        write_row["community_ban_history"] = json.dumps(current.get("community_ban_history") or [])
+
         await self._conn().execute(
             """UPDATE users
                SET username = :username,
@@ -153,9 +182,11 @@ class SqliteUserRepository:
                    streak = :streak,
                    best_streak = :best_streak,
                    last_active_date = :last_active_date,
+                   account_ban_history = :account_ban_history,
+                   community_ban_history = :community_ban_history,
                    updated_at = :updated_at
                WHERE id = :id""",
-            current,
+            write_row,
         )
         await self._conn().commit()
         return current
@@ -196,7 +227,7 @@ class SqliteUserRepository:
         params.extend([limit + 1, offset])
         cur = await self._conn().execute(sql, params)
         rows = await cur.fetchall()
-        items = [dict(r) for r in rows[:limit]]
+        items = [self._row_to_dict(r) for r in rows[:limit]]
         next_cursor = str(offset + limit) if len(rows) > limit else None
         return items, next_cursor
 
