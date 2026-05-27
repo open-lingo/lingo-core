@@ -38,10 +38,19 @@ jobs:
             --function-name "$FUNCTION_NAME" \
             --zip-file fileb://lingo-core.zip \
             --publish
+      - name: write smoke-test payload
+        # Write payload to a file rather than inline JSON in --payload to dodge
+        # YAML quoting / hidden-character gotchas (a soft-hyphen, U+00AD, snuck
+        # into the previous inline payload and broke aws lambda invoke).
+        run: |
+          cat > /tmp/payload.json <<'EOF'
+          {"rawPath":"/health","requestContext":{"http":{"method":"GET","path":"/health"}},"headers":{},"version":"2.0"}
+          EOF
       - name: wait + smoke test
         run: |
           aws lambda wait function-updated --function-name "$FUNCTION_NAME"
-          aws lambda invoke --function-name "$FUNCTION_NAME" \
-            --payload '{"rawPath":"/health","requestContext":{"http":{"method":"GET","path":"/health"}},"headers":{},"version":"2.0"}' \
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --payload file:///tmp/payload.json \
             /tmp/out.json
           cat /tmp/out.json
