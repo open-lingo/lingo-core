@@ -1101,6 +1101,8 @@ async def reset(db: aiosqlite.Connection) -> None:
         "social_friends",
         "social",
         "subscriptions",
+        "deck_tags",
+        "tags",
         "deck_content",
         "deck_manifests",
         "user_settings",
@@ -1668,6 +1670,79 @@ async def seed(db_path: str, do_reset: bool) -> None:
     print("Done.")
 
 
+# ── Tags ────────────────────────────────────────────────────────────────────
+# Admin-curated, canonical tag dictionary. Slug pattern: ``^[a-z][a-z0-9-]{1,40}$``
+# (lowercase, starts with a letter, dashes for word breaks). Display name is
+# the human-readable label the FE shows on facet chips + the deck card meta
+# row. The starter set covers JLPT levels, writing systems, and the broad
+# topical buckets the community browse + create-deck pickers need on day one.
+
+SEED_TAGS: list[dict] = [
+    {"slug": "jlpt-n5", "display_name": "JLPT N5", "description": "Beginner Japanese", "color": "#3b82f6"},
+    {"slug": "jlpt-n4", "display_name": "JLPT N4", "description": "Upper beginner Japanese", "color": "#6366f1"},
+    {"slug": "hiragana", "display_name": "Hiragana", "description": "Japanese phonetic script", "color": "#f97316"},
+    {"slug": "katakana", "display_name": "Katakana", "description": "Japanese phonetic script (loanwords)", "color": "#fb923c"},
+    {"slug": "kanji", "display_name": "Kanji", "description": "Japanese logographic characters", "color": "#ef4444"},
+    {"slug": "vocabulary", "display_name": "Vocabulary", "description": "Word lists and meanings", "color": "#22c55e"},
+    {"slug": "grammar", "display_name": "Grammar", "description": "Sentence patterns and rules", "color": "#14b8a6"},
+    {"slug": "kdrama", "display_name": "K-Drama", "description": "Korean drama phrases", "color": "#ec4899"},
+    {"slug": "anime", "display_name": "Anime", "description": "Anime / manga language", "color": "#a855f7"},
+    {"slug": "travel", "display_name": "Travel", "description": "Travel phrases and survival language", "color": "#0ea5e9"},
+    {"slug": "business", "display_name": "Business", "description": "Workplace and formal language", "color": "#64748b"},
+    {"slug": "food", "display_name": "Food", "description": "Food, drinks, restaurants", "color": "#f59e0b"},
+    {"slug": "culture", "display_name": "Culture", "description": "Cultural notes and context", "color": "#84cc16"},
+]
+
+
+TAGS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS tags (
+    slug         TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    description  TEXT,
+    color        TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS deck_tags (
+    deck_id   TEXT NOT NULL,
+    tag_slug  TEXT NOT NULL,
+    PRIMARY KEY (deck_id, tag_slug)
+);
+CREATE INDEX IF NOT EXISTS idx_deck_tags_deck ON deck_tags (deck_id);
+CREATE INDEX IF NOT EXISTS idx_deck_tags_tag  ON deck_tags (tag_slug);
+"""
+
+
+async def seed_tags(db_path: str) -> None:
+    """Idempotent — INSERT OR IGNORE so re-running the seed is a no-op once
+    the starter tags exist. Safe to call independent of the main seed."""
+    db = await aiosqlite.connect(db_path)
+    try:
+        await db.executescript(TAGS_TABLE_SQL)
+        now = datetime.now(UTC).isoformat()
+        inserted = 0
+        for tag in SEED_TAGS:
+            cur = await db.execute("SELECT 1 FROM tags WHERE slug = ?", (tag["slug"],))
+            if await cur.fetchone():
+                continue
+            await db.execute(
+                """INSERT INTO tags (slug, display_name, description, color, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    tag["slug"],
+                    tag["display_name"],
+                    tag.get("description"),
+                    tag.get("color"),
+                    now,
+                ),
+            )
+            inserted += 1
+        await db.commit()
+        print(f"  Tags:         {inserted} created, {len(SEED_TAGS) - inserted} skipped")
+    finally:
+        await db.close()
+
+
 if __name__ == "__main__":
     do_reset = "--reset" in sys.argv
     asyncio.run(seed(settings.SQLITE_PATH, do_reset))
+    asyncio.run(seed_tags(settings.SQLITE_PATH))

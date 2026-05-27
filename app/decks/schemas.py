@@ -15,6 +15,8 @@ class DeckCreate(BaseModel):
     cards: list[dict] = Field(default_factory=list)
     """If set, deck is a companion deck (tied to a story). Excluded from community browse."""
     companionToStoryId: str | None = Field(default=None, description="Story ID or 'pending' for draft companion")
+    """Admin-curated tag slugs. Each slug must exist in the canonical `tags` table."""
+    tags: list[str] | None = Field(default=None, description="Canonical tag slugs to attach")
 
 
 class DeckUpdate(BaseModel):
@@ -28,6 +30,8 @@ class DeckUpdate(BaseModel):
     status: str | None = Field(default=None, description="draft | published")
     cards: list[dict] | None = None  # None = keep existing cards
     companionToStoryId: str | None = None
+    """Replace the deck's tag list. ``None`` = keep existing tags."""
+    tags: list[str] | None = None
 
 
 class AddCardsRequest(BaseModel):
@@ -56,6 +60,8 @@ class DeckResponse(BaseModel):
     companionToStoryId: str | None = None
     cards: list[dict] = Field(default_factory=list)
     voteCount: int = 0
+    """Canonical tag slugs attached to this deck (admin-curated dictionary)."""
+    tags: list[str] = Field(default_factory=list)
 
 
 class DeckVoteState(BaseModel):

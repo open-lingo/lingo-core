@@ -25,6 +25,8 @@ from app.quests.router import router as quests_router
 from app.social.router import router as social_router
 from app.srs.router import router as srs_router
 from app.stories.router import router as stories_router
+from app.tags.router import admin_router as tags_admin_router
+from app.tags.router import public_router as tags_public_router
 from app.users.router import router as users_router
 
 v1_router = APIRouter()
@@ -42,3 +44,5 @@ v1_router.include_router(progress_router, prefix="/progress")
 v1_router.include_router(social_router, prefix="/social")
 v1_router.include_router(quests_router, prefix="/quests")
 v1_router.include_router(platform_settings_router, prefix="/admin/platform-settings")
+v1_router.include_router(tags_public_router, prefix="/tags")
+v1_router.include_router(tags_admin_router, prefix="/admin/tags")

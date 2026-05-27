@@ -15,8 +15,8 @@ from app.auth.dependencies import (
     require_admin,
 )
 from app.auth.schemas import TokenPayload
-from app.db.protocols import DeckRepository, SubscriptionRepository
-from app.db.provider import get_deck_repo, get_subscription_repo
+from app.db.protocols import DeckRepository, SubscriptionRepository, TagRepository
+from app.db.provider import get_deck_repo, get_subscription_repo, get_tag_repo
 from app.decks.schemas import (
     AddCardsRequest,
     DeckCreate,
@@ -31,6 +31,7 @@ router = APIRouter(tags=["decks"])
 
 DeckRepo = Annotated[DeckRepository | None, Depends(get_deck_repo)]
 SubRepo = Annotated[SubscriptionRepository | None, Depends(get_subscription_repo)]
+TagRepo = Annotated[TagRepository | None, Depends(get_tag_repo)]
 CurrentUser = Annotated[TokenPayload, Depends(get_current_user)]
 OptionalUser = Annotated[TokenPayload | None, Depends(get_current_user_optional)]
 RegisteredUser = Annotated[TokenPayload, Depends(get_registered_user)]
@@ -57,6 +58,7 @@ def _to_response(
     manifest: dict[str, Any],
     cards: list[dict[str, Any]],
     vote_count: int = 0,
+    tags: list[str] | None = None,
 ) -> DeckResponse:
     return DeckResponse(
         id=manifest["id"],
@@ -76,7 +78,88 @@ def _to_response(
         companionToStoryId=manifest.get("companionToStoryId"),
         cards=cards,
         voteCount=vote_count,
+        tags=list(tags or []),
     )
+
+
+async def _safe_tags_for_deck(repo: TagRepository | None, deck_id: str) -> list[str]:
+    """Best-effort list of tag slugs for a deck. Swallows NotImplementedError
+    so the response shape stays stable on backends that don't implement tags
+    yet (e.g. the Dynamo stub)."""
+    if repo is None:
+        return []
+    try:
+        return await repo.list_tags_for_deck(deck_id)
+    except NotImplementedError:
+        return []
+
+
+async def _safe_tags_for_decks(
+    repo: TagRepository | None,
+    deck_ids: list[str],
+) -> dict[str, list[str]]:
+    if repo is None or not deck_ids:
+        return {did: [] for did in deck_ids}
+    try:
+        out = await repo.list_tags_for_decks(deck_ids)
+        # Ensure all requested ids are present so callers don't need to
+        # null-check on the lookup side.
+        return {did: out.get(did, []) for did in deck_ids}
+    except NotImplementedError:
+        return {did: [] for did in deck_ids}
+
+
+async def _resolve_and_set_tags(
+    repo: TagRepository | None,
+    deck_id: str,
+    requested: list[str] | None,
+) -> None:
+    """If ``requested`` is non-None, validate every slug exists and write the
+    set. None means "leave existing tags alone". Empty list clears tags.
+
+    Raises HTTPException 404 listing unknown slugs (so the FE can highlight
+    which inputs failed).
+    """
+    if requested is None:
+        return
+    if repo is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="tags repository not available",
+        )
+    # Dedupe + preserve order for the validation pass.
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for slug in requested:
+        if slug not in seen:
+            seen.add(slug)
+            ordered.append(slug)
+
+    missing: list[str] = []
+    for slug in ordered:
+        try:
+            row = await repo.get_tag(slug)
+        except NotImplementedError as exc:
+            # Backend can't validate — fail loud rather than silently
+            # accepting unknown slugs.
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="tag validation not supported on this backend",
+            ) from exc
+        if row is None:
+            missing.append(slug)
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "unknown tag slug(s)", "missing": missing},
+        )
+    try:
+        await repo.set_deck_tags(deck_id, ordered)
+    except NotImplementedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="set_deck_tags not supported on this backend",
+        ) from exc
 
 
 async def _safe_vote_count(repo: DeckRepository, deck_id: str) -> int:
@@ -101,6 +184,7 @@ async def _safe_vote_counts(repo: DeckRepository, deck_ids: list[str]) -> dict[s
 @router.get("", response_model=list[DeckResponse])
 async def list_my_decks(
     repo: DeckRepo,
+    tag_repo: TagRepo,
     user: CurrentUser,
     language_id: str | None = None,
     deck_status: str | None = None,
@@ -117,11 +201,19 @@ async def list_my_decks(
         )
         deck_ids = [m["id"] for m in manifests]
         counts = await _safe_vote_counts(r, deck_ids)
+        tags_map = await _safe_tags_for_decks(tag_repo, deck_ids)
         result = []
         for m in manifests:
             deck = await r.get_deck(m["id"])
             if deck:
-                result.append(_to_response(deck, deck.get("cards", []), counts.get(m["id"], 0)))
+                result.append(
+                    _to_response(
+                        deck,
+                        deck.get("cards", []),
+                        counts.get(m["id"], 0),
+                        tags_map.get(m["id"], []),
+                    )
+                )
     return result
 
 
@@ -129,6 +221,7 @@ async def list_my_decks(
 async def create_deck(
     body: DeckCreate,
     repo: DeckRepo,
+    tag_repo: TagRepo,
     user: CurrentUser,
 ) -> Any:
     """Create a new community deck (draft by default) or companion deck."""
@@ -138,17 +231,22 @@ async def create_deck(
     manifest["authorId"] = user.id
     manifest["id"] = deck_id
     manifest["status"] = body.status if hasattr(body, "status") else "draft"
+    # Validate the tag set *before* persisting the deck — surfacing 404
+    # cleanly is preferable to a half-written deck with a missing tag.
+    await _resolve_and_set_tags(tag_repo, deck_id, body.tags)
     with api_error("creating deck"):
         await r.upsert_deck(deck_id, manifest, body.cards)
         deck = await r.get_deck(deck_id)
     if not deck:
         raise HTTPException(status_code=500, detail="Deck creation failed")
-    return _to_response(deck, deck.get("cards", []))
+    tags = await _safe_tags_for_deck(tag_repo, deck_id)
+    return _to_response(deck, deck.get("cards", []), 0, tags)
 
 
 @router.get("/batch", response_model=list[DeckResponse])
 async def get_decks_batch(
     repo: DeckRepo,
+    tag_repo: TagRepo,
     user: CurrentUser,
     ids: str = Query(..., description="Comma-separated deck IDs"),
 ) -> Any:
@@ -169,19 +267,28 @@ async def get_decks_batch(
     with api_error("fetching deck batch"):
         decks = await r.get_decks_batch(deck_ids)
         counts = await _safe_vote_counts(r, [d["id"] for d in decks])
+        tags_map = await _safe_tags_for_decks(tag_repo, [d["id"] for d in decks])
         result = []
         for deck in decks:
             author = deck.get("authorId")
             deck_status = deck.get("status", "published")
             if author and author != user.id and deck_status == "draft":
                 continue
-            result.append(_to_response(deck, deck.get("cards", []), counts.get(deck["id"], 0)))
+            result.append(
+                _to_response(
+                    deck,
+                    deck.get("cards", []),
+                    counts.get(deck["id"], 0),
+                    tags_map.get(deck["id"], []),
+                )
+            )
     return result
 
 
 @router.get("/admin", response_model=list[DeckResponse])
 async def list_admin_decks(
     repo: DeckRepo,
+    tag_repo: TagRepo,
     user: CurrentUser,
     status: str | None = Query(None, description="Filter by status: draft, published"),
     language_id: str | None = Query(None, description="Filter by language"),
@@ -197,6 +304,7 @@ async def list_admin_decks(
         )
         eligible_ids = [m.get("id", "") for m in manifests if not m.get("id", "").startswith("vocab-")]
         counts = await _safe_vote_counts(r, eligible_ids)
+        tags_map = await _safe_tags_for_decks(tag_repo, eligible_ids)
         result = []
         for m in manifests:
             deck_id = m.get("id", "")
@@ -204,7 +312,14 @@ async def list_admin_decks(
                 continue
             deck = await r.get_deck(deck_id)
             if deck:
-                result.append(_to_response(deck, deck.get("cards", []), counts.get(deck_id, 0)))
+                result.append(
+                    _to_response(
+                        deck,
+                        deck.get("cards", []),
+                        counts.get(deck_id, 0),
+                        tags_map.get(deck_id, []),
+                    )
+                )
     return result
 
 
@@ -212,6 +327,7 @@ async def list_admin_decks(
 async def admin_update_deck_status(
     deck_id: str,
     repo: DeckRepo,
+    tag_repo: TagRepo,
     _admin: AdminUser,
     status: str = Query(..., description="draft | published"),
 ) -> Any:
@@ -229,7 +345,8 @@ async def admin_update_deck_status(
         deck = await r.get_deck(deck_id)
     if not deck:
         raise HTTPException(status_code=500, detail="Deck update failed")
-    return _to_response(deck, deck.get("cards", []))
+    tags = await _safe_tags_for_deck(tag_repo, deck_id)
+    return _to_response(deck, deck.get("cards", []), 0, tags)
 
 
 def _dedupe_cards(existing: list[dict], new_cards: list[dict]) -> list[dict]:
@@ -253,6 +370,7 @@ def _dedupe_cards(existing: list[dict], new_cards: list[dict]) -> list[dict]:
 async def get_my_vocab_deck(
     repo: DeckRepo,
     sub_repo: SubRepo,
+    tag_repo: TagRepo,
     user: RegisteredUser,
     language_id: str = Query(..., description="Language ID for the vocab deck"),
 ) -> Any:
@@ -277,7 +395,8 @@ async def get_my_vocab_deck(
                 if deck_id and sub_repo:
                     with api_error("subscribing vocab deck"):
                         await sub_repo.add(user.id, "deck", deck_id)
-                return _to_response(deck, deck.get("cards", []))
+                tags = await _safe_tags_for_deck(tag_repo, deck["id"])
+                return _to_response(deck, deck.get("cards", []), 0, tags)
     deck_id = f"vocab-{user.id[:8]}-{language_id}-{uuid.uuid4().hex[:6]}"
     manifest = {
         "id": deck_id,
@@ -294,7 +413,7 @@ async def get_my_vocab_deck(
         deck = await r.get_deck(deck_id)
     if not deck:
         raise HTTPException(status_code=500, detail="Vocab deck creation failed")
-    return _to_response(deck, deck.get("cards", []))
+    return _to_response(deck, deck.get("cards", []), 0, [])
 
 
 @router.post("/{deck_id}/cards", response_model=DeckResponse)
@@ -302,6 +421,7 @@ async def add_cards_to_deck(
     deck_id: str,
     body: AddCardsRequest,
     repo: DeckRepo,
+    tag_repo: TagRepo,
     user: CurrentUser,
 ) -> Any:
     """Append cards to a deck. User must own the deck. Dedupes by front+back."""
@@ -322,13 +442,15 @@ async def add_cards_to_deck(
         deck = await r.get_deck(deck_id)
     if not deck:
         raise HTTPException(status_code=500, detail="Deck update failed")
-    return _to_response(deck, deck.get("cards", []))
+    tags = await _safe_tags_for_deck(tag_repo, deck_id)
+    return _to_response(deck, deck.get("cards", []), 0, tags)
 
 
 @router.get("/{deck_id}", response_model=DeckResponse)
 async def get_deck(
     deck_id: str,
     repo: DeckRepo,
+    tag_repo: TagRepo,
     user: CurrentUser,
 ) -> Any:
     """Get a deck by id. User must own it (for drafts) or it must be published."""
@@ -342,7 +464,8 @@ async def get_deck(
     if author and author != user.id and deck_status == "draft":
         raise HTTPException(status_code=404, detail="Deck not found")
     count = await _safe_vote_count(r, deck_id)
-    return _to_response(deck, deck.get("cards", []), count)
+    tags = await _safe_tags_for_deck(tag_repo, deck_id)
+    return _to_response(deck, deck.get("cards", []), count, tags)
 
 
 # ── Voting ──────────────────────────────────────────────────────────────────
@@ -418,6 +541,7 @@ async def update_deck(
     deck_id: str,
     body: DeckUpdate,
     repo: DeckRepo,
+    tag_repo: TagRepo,
     user: CurrentUser,
 ) -> Any:
     """Update a deck. User must be the author."""
@@ -444,18 +568,24 @@ async def update_deck(
     manifest["authorId"] = author or user.id
     manifest["id"] = deck_id
     cards = patch["cards"] if "cards" in patch else existing.get("cards", [])
+    # Validate tags before the upsert so we can 404 without partial state.
+    requested_tags = patch.get("tags") if "tags" in patch else None
+    await _resolve_and_set_tags(tag_repo, deck_id, requested_tags)
     with api_error("updating deck"):
         await r.upsert_deck(deck_id, manifest, cards)
         deck = await r.get_deck(deck_id)
     if not deck:
         raise HTTPException(status_code=500, detail="Deck update failed")
-    return _to_response(deck, deck.get("cards", []))
+    count = await _safe_vote_count(r, deck_id)
+    tags = await _safe_tags_for_deck(tag_repo, deck_id)
+    return _to_response(deck, deck.get("cards", []), count, tags)
 
 
 @router.patch("/{deck_id}/status", response_model=DeckResponse)
 async def update_deck_status(
     deck_id: str,
     repo: DeckRepo,
+    tag_repo: TagRepo,
     user: CurrentUser,
     status: str = Query(..., description="draft | published"),
 ) -> Any:
@@ -476,4 +606,6 @@ async def update_deck_status(
         deck = await r.get_deck(deck_id)
     if not deck:
         raise HTTPException(status_code=500, detail="Deck update failed")
-    return _to_response(deck, deck.get("cards", []))
+    count = await _safe_vote_count(r, deck_id)
+    tags = await _safe_tags_for_deck(tag_repo, deck_id)
+    return _to_response(deck, deck.get("cards", []), count, tags)

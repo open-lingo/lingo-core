@@ -30,6 +30,7 @@ from app.db.protocols import (
     SRSRepository,
     StoryRepository,
     SubscriptionRepository,
+    TagRepository,
     UserRepository,
 )
 
@@ -45,6 +46,7 @@ _progress_repo: ProgressRepository | None = None
 _social_repo: SocialRepository | None = None
 _quest_repo: QuestRepository | None = None
 _platform_settings_repo: PlatformSettingsRepository | None = None
+_tag_repo: TagRepository | None = None
 
 # Set of domain names whose connect() raised during startup.
 _degraded: set[str] = set()
@@ -67,7 +69,7 @@ async def _safe_connect(domain: str, repo: Any) -> Any | None:
 async def init_repositories() -> None:
     """Create and connect the repository singletons based on config."""
     global _user_repo, _srs_repo, _deck_repo, _subscription_repo, _story_repo, _progress_repo
-    global _social_repo, _quest_repo, _platform_settings_repo
+    global _social_repo, _quest_repo, _platform_settings_repo, _tag_repo
 
     _degraded.clear()
 
@@ -80,6 +82,7 @@ async def init_repositories() -> None:
         from app.db.sqlite.srs import SqliteSRSRepository
         from app.db.sqlite.story import SqliteStoryRepository
         from app.db.sqlite.subscription import SqliteSubscriptionRepository
+        from app.db.sqlite.tag import SqliteTagRepository
         from app.db.sqlite.user import SqliteUserRepository
 
         _user_repo = await _safe_connect("user", SqliteUserRepository(settings.SQLITE_PATH))
@@ -94,6 +97,7 @@ async def init_repositories() -> None:
             "platform_settings",
             SqlitePlatformSettingsRepository(settings.SQLITE_PATH),
         )
+        _tag_repo = await _safe_connect("tag", SqliteTagRepository(settings.SQLITE_PATH))
 
     elif settings.DB_BACKEND == "dynamodb":
         from app.db.dynamo.deck import DynamoDeckRepository
@@ -130,6 +134,11 @@ async def init_repositories() -> None:
             "platform_settings",
             DynamoPlatformSettingsRepository(f"{prefix}platform_settings", region),
         )
+
+        # Tags — SQLite-first; Dynamo stub raises on use until the cut-over.
+        from app.db.dynamo.tag import DynamoTagRepository
+
+        _tag_repo = await _safe_connect("tag", DynamoTagRepository(f"{prefix}tags", region))
 
     else:
         raise ValueError(f"Unknown DB_BACKEND: {settings.DB_BACKEND!r}")
@@ -176,6 +185,8 @@ async def shutdown_repositories() -> None:
         await _quest_repo.close()  # type: ignore[union-attr]
     if _platform_settings_repo and hasattr(_platform_settings_repo, "close"):
         await _platform_settings_repo.close()  # type: ignore[union-attr]
+    if _tag_repo and hasattr(_tag_repo, "close"):
+        await _tag_repo.close()  # type: ignore[union-attr]
     if _community_repo and hasattr(_community_repo, "close"):
         await _community_repo.close()
 
@@ -235,6 +246,10 @@ def get_quest_repo() -> QuestRepository | None:
 
 def get_platform_settings_repo() -> PlatformSettingsRepository | None:
     return _platform_settings_repo
+
+
+def get_tag_repo() -> TagRepository | None:
+    return _tag_repo
 
 
 def degraded_domains() -> set[str]:

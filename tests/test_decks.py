@@ -106,3 +106,151 @@ def test_vote_state_other_user_voted_false(api_client) -> None:
     body = resp.json()
     assert body["count"] == 1
     assert body["voted"] is False
+
+
+# ── Tags on decks ────────────────────────────────────────────────────────
+
+
+def _make_admin(monkeypatch, admin_user_id: str) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ADMIN_USER_IDS", [admin_user_id])
+
+
+def _seed_tag(client, slug: str, display: str = "") -> None:
+    resp = client.post(
+        "/api/core/v1/admin/tags",
+        json={"slug": slug, "display_name": display or slug},
+        headers={"X-Dev-User": "dev|admin-user"},
+    )
+    assert resp.status_code == 201, resp.text
+
+
+def test_deck_with_tags_round_trips(api_client, monkeypatch) -> None:
+    """Create a deck with tags → GET surfaces them; PUT can replace; GET reflects."""
+    client, _user_id, admin_user_id = api_client
+    _make_admin(monkeypatch, admin_user_id)
+
+    _seed_tag(client, "jlpt-n5")
+    _seed_tag(client, "vocabulary")
+    _seed_tag(client, "kdrama")
+
+    # Create with two tags.
+    resp = client.post(
+        "/api/core/v1/decks",
+        json={
+            "languageId": "ja",
+            "name": "Tagged Deck",
+            "status": "published",
+            "cards": [],
+            "tags": ["jlpt-n5", "vocabulary"],
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert sorted(body["tags"]) == ["jlpt-n5", "vocabulary"]
+    deck_id = body["id"]
+
+    # GET reflects the tags.
+    resp = client.get(f"/api/core/v1/decks/{deck_id}")
+    assert resp.status_code == 200
+    assert sorted(resp.json()["tags"]) == ["jlpt-n5", "vocabulary"]
+
+    # PUT replaces the tag set.
+    resp = client.put(
+        f"/api/core/v1/decks/{deck_id}",
+        json={"tags": ["kdrama"]},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["tags"] == ["kdrama"]
+
+    # PUT with no tags field leaves tags untouched.
+    resp = client.put(
+        f"/api/core/v1/decks/{deck_id}",
+        json={"description": "no tag change"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["tags"] == ["kdrama"]
+
+    # PUT with empty list clears tags.
+    resp = client.put(
+        f"/api/core/v1/decks/{deck_id}",
+        json={"tags": []},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["tags"] == []
+
+
+def test_deck_create_with_unknown_tag_404s(api_client, monkeypatch) -> None:
+    client, _user_id, admin_user_id = api_client
+    _make_admin(monkeypatch, admin_user_id)
+
+    _seed_tag(client, "jlpt-n5")
+
+    resp = client.post(
+        "/api/core/v1/decks",
+        json={
+            "languageId": "ja",
+            "name": "Bad Tag Deck",
+            "status": "published",
+            "cards": [],
+            "tags": ["jlpt-n5", "made-up-slug"],
+        },
+    )
+    assert resp.status_code == 404, resp.text
+    detail = resp.json()["detail"]
+    # detail is a dict {error, missing} — assert the missing slug shows up.
+    assert "made-up-slug" in str(detail)
+
+
+def test_deck_update_with_unknown_tag_404s(api_client, monkeypatch) -> None:
+    client, _user_id, admin_user_id = api_client
+    _make_admin(monkeypatch, admin_user_id)
+
+    _seed_tag(client, "jlpt-n5")
+    resp = client.post(
+        "/api/core/v1/decks",
+        json={"languageId": "ja", "name": "x", "status": "published", "cards": []},
+    )
+    deck_id = resp.json()["id"]
+
+    resp = client.put(
+        f"/api/core/v1/decks/{deck_id}",
+        json={"tags": ["jlpt-n5", "not-a-real-tag"]},
+    )
+    assert resp.status_code == 404, resp.text
+
+
+def test_admin_can_promote_and_demote_tag(api_client, monkeypatch) -> None:
+    """Verifies the full admin tag lifecycle: create, attach to deck, remove."""
+    client, _user_id, admin_user_id = api_client
+    _make_admin(monkeypatch, admin_user_id)
+
+    # Admin promotes a tag.
+    _seed_tag(client, "business", "Business")
+
+    # User attaches it to a deck.
+    resp = client.post(
+        "/api/core/v1/decks",
+        json={
+            "languageId": "ja",
+            "name": "Business JA",
+            "status": "published",
+            "cards": [],
+            "tags": ["business"],
+        },
+    )
+    deck_id = resp.json()["id"]
+    assert resp.json()["tags"] == ["business"]
+
+    # Admin demotes (deletes) the tag — cascades to the deck.
+    resp = client.delete(
+        "/api/core/v1/admin/tags/business",
+        headers={"X-Dev-User": "dev|admin-user"},
+    )
+    assert resp.status_code == 204, resp.text
+
+    # Deck no longer reports the deleted tag.
+    resp = client.get(f"/api/core/v1/decks/{deck_id}")
+    assert resp.status_code == 200
+    assert resp.json()["tags"] == []

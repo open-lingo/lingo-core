@@ -16,6 +16,7 @@ from app.db.protocols.social import SocialRepository
 from app.db.protocols.srs import SRSRepository
 from app.db.protocols.story import StoryRepository
 from app.db.protocols.subscription import SubscriptionRepository
+from app.db.protocols.tag import TagRepository
 from app.db.protocols.user import UserRepository
 
 __all__ = [
@@ -29,4 +30,5 @@ __all__ = [
     "SocialRepository",
     "QuestRepository",
     "PlatformSettingsRepository",
+    "TagRepository",
 ]
