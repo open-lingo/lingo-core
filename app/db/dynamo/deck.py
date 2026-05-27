@@ -91,9 +91,7 @@ class DynamoDeckRepository:
         self._resource_ctx: Any = None
 
     async def connect(self) -> None:
-        self._resource_ctx = self._session.resource(
-            "dynamodb", region_name=self._region
-        )
+        self._resource_ctx = self._session.resource("dynamodb", region_name=self._region)
         resource = await self._resource_ctx.__aenter__()
         self._table = await resource.Table(self._table_name)
 
@@ -238,16 +236,12 @@ class DynamoDeckRepository:
                 result[item["id"]] = item.get("version", "1.0")
         return result
 
-    async def upsert_deck(
-        self, deck_id: str, manifest: dict[str, Any], cards: list[dict[str, Any]]
-    ) -> None:
+    async def upsert_deck(self, deck_id: str, manifest: dict[str, Any], cards: list[dict[str, Any]]) -> None:
         now = datetime.now(UTC).isoformat()
 
         # Preserve existing authorId if not supplied in the new manifest
         existing = await self.get_manifest(deck_id)
-        author_id = manifest.get("authorId") or (
-            existing.get("authorId") if existing else None
-        )
+        author_id = manifest.get("authorId") or (existing.get("authorId") if existing else None)
         created_at = existing.get("createdAt", now) if existing else now
 
         default_ease = _to_decimal(manifest.get("defaultEase"))
@@ -302,9 +296,7 @@ class DynamoDeckRepository:
     async def remove_vote(self, deck_id: str, user_id: str) -> None:
         raise NotImplementedError("Deck votes not yet implemented for Dynamo")
 
-    async def get_vote_state(
-        self, deck_id: str, user_id: str | None
-    ) -> dict[str, Any]:
+    async def get_vote_state(self, deck_id: str, user_id: str | None) -> dict[str, Any]:
         raise NotImplementedError("Deck votes not yet implemented for Dynamo")
 
     async def get_vote_count(self, deck_id: str) -> int:

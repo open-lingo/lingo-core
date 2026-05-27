@@ -1,4 +1,5 @@
 """Story repository protocol."""
+
 from typing import Any, Protocol
 
 

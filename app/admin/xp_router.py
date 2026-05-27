@@ -76,9 +76,7 @@ async def award_xp(
         # any failure (method missing, repo degraded, lang missing) is
         # swallowed so the admin gets a clean response.
         if body.amount != 0:
-            await _mirror_to_leaderboard(
-                users=users, user_id=user_id, amount=body.amount
-            )
+            await _mirror_to_leaderboard(users=users, user_id=user_id, amount=body.amount)
 
     return AwardXpResponse(
         user_id=user_id,
@@ -89,9 +87,7 @@ async def award_xp(
     )
 
 
-async def _mirror_to_leaderboard(
-    *, users: UserRepository, user_id: str, amount: int
-) -> None:
+async def _mirror_to_leaderboard(*, users: UserRepository, user_id: str, amount: int) -> None:
     """Apply the same XP delta to the user's leaderboard row when they're
     opted in. Failures are silent — leaderboard mirroring must never break
     the admin write."""
@@ -106,9 +102,7 @@ async def _mirror_to_leaderboard(
         if not social_cfg.get("show_on_leaderboard"):
             return
         learning = settings_blob.get("learning") or {}
-        lang = learning.get("learningLanguageId") or settings_blob.get(
-            "learningLanguage"
-        )
+        lang = learning.get("learningLanguageId") or settings_blob.get("learningLanguage")
         if not lang:
             return
         await social_repo.add_xp_to_leaderboard(user_id, str(lang), amount)

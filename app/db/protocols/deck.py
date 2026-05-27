@@ -46,9 +46,7 @@ class DeckRepository(Protocol):
         """Return {deck_id: version} for the given deck ids."""
         ...
 
-    async def upsert_deck(
-        self, deck_id: str, manifest: dict[str, Any], cards: list[dict[str, Any]]
-    ) -> None:
+    async def upsert_deck(self, deck_id: str, manifest: dict[str, Any], cards: list[dict[str, Any]]) -> None:
         """Insert or update a deck (manifest + content)."""
         ...
 
@@ -66,9 +64,7 @@ class DeckRepository(Protocol):
         """Remove ``user_id``'s upvote on ``deck_id``. No-op if not voted."""
         ...
 
-    async def get_vote_state(
-        self, deck_id: str, user_id: str | None
-    ) -> dict[str, Any]:
+    async def get_vote_state(self, deck_id: str, user_id: str | None) -> dict[str, Any]:
         """Return ``{count, voted}`` for ``deck_id``. ``voted=False`` if user is None."""
         ...
 

@@ -21,9 +21,7 @@ class ProgressRepository(Protocol):
 
     # ── Attempt log ──────────────────────────────────────────────────────────
 
-    async def put_attempt(
-        self, user_id: str, attempt: dict[str, Any]
-    ) -> None:
+    async def put_attempt(self, user_id: str, attempt: dict[str, Any]) -> None:
         """Append an immutable attempt row.
 
         ``attempt`` shape:
@@ -43,9 +41,7 @@ class ProgressRepository(Protocol):
         """
         ...
 
-    async def attempt_exists(
-        self, user_id: str, client_attempt_id: str
-    ) -> dict[str, Any] | None:
+    async def attempt_exists(self, user_id: str, client_attempt_id: str) -> dict[str, Any] | None:
         """Return the existing attempt if ``client_attempt_id`` was already stored."""
         ...
 
@@ -81,9 +77,7 @@ class ProgressRepository(Protocol):
 
     # ── Eager rollups (cheap to maintain) ───────────────────────────────────
 
-    async def update_lesson_rollup(
-        self, user_id: str, lesson_id: str, attempt: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def update_lesson_rollup(self, user_id: str, lesson_id: str, attempt: dict[str, Any]) -> dict[str, Any]:
         """Update or create the per-lesson rollup atomically.
 
         Bumps ``attemptCount``, conditionally raises ``bestScore`` and
@@ -92,9 +86,7 @@ class ProgressRepository(Protocol):
         """
         ...
 
-    async def get_lesson_rollups(
-        self, user_id: str
-    ) -> list[dict[str, Any]]:
+    async def get_lesson_rollups(self, user_id: str) -> list[dict[str, Any]]:
         """Return all per-lesson rollups for the user."""
         ...
 
@@ -109,9 +101,7 @@ class ProgressRepository(Protocol):
         """Atomically increment a day rollup. Creates the row if absent."""
         ...
 
-    async def get_day_rollups(
-        self, user_id: str, since: str, until: str
-    ) -> list[dict[str, Any]]:
+    async def get_day_rollups(self, user_id: str, since: str, until: str) -> list[dict[str, Any]]:
         """Return day rollups in the ``since..until`` (inclusive) range."""
         ...
 
@@ -120,25 +110,19 @@ class ProgressRepository(Protocol):
     # ``invalidate_concepts`` plumbing below is no longer called from the hot
     # write path (Fix 11) but kept on the protocol for when phase 2 ships.
 
-    async def invalidate_concepts(
-        self, user_id: str, concept_ids: list[str], staleAt: str
-    ) -> None:
+    async def invalidate_concepts(self, user_id: str, concept_ids: list[str], staleAt: str) -> None:
         """Mark concept rollups as stale. Cheap operation — just updates
         ``staleAt`` on each row (creates the row with staleAt set if missing).
         """
         ...
 
-    async def get_concept_rollups(
-        self, user_id: str
-    ) -> list[dict[str, Any]]:
+    async def get_concept_rollups(self, user_id: str) -> list[dict[str, Any]]:
         """Return all concept rollups for the user. Caller is responsible for
         recomputing any with ``staleAt != None`` via ``put_concept_rollup``.
         """
         ...
 
-    async def put_concept_rollup(
-        self, user_id: str, rollup: dict[str, Any]
-    ) -> None:
+    async def put_concept_rollup(self, user_id: str, rollup: dict[str, Any]) -> None:
         """Persist a recomputed concept rollup. Clears ``staleAt``."""
         ...
 

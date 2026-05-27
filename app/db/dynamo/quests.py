@@ -35,15 +35,11 @@ class DynamoQuestRepository:
     async def put_quest(self, quest: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError("DynamoQuestRepository.put_quest")
 
-    async def update_progress(
-        self, user_id: str, quest_id: str, delta: int
-    ) -> dict[str, Any] | None:
+    async def update_progress(self, user_id: str, quest_id: str, delta: int) -> dict[str, Any] | None:
         raise NotImplementedError("DynamoQuestRepository.update_progress")
 
     async def claim(self, user_id: str, quest_id: str) -> dict[str, Any] | None:
         raise NotImplementedError("DynamoQuestRepository.claim")
 
-    async def delete_user_quests(
-        self, user_id: str, types: list[str] | None = None
-    ) -> int:
+    async def delete_user_quests(self, user_id: str, types: list[str] | None = None) -> int:
         raise NotImplementedError("DynamoQuestRepository.delete_user_quests")

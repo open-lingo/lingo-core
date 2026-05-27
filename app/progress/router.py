@@ -132,18 +132,14 @@ async def submit_attempt_batch(
     streak_after = int(user_record.get("streak") or 0)
     streak_touched = False
     if body.checkStreak and any(r.accepted for r in results):
-        last_active = user_record.get("last_active_date") or user_record.get(
-            "lastActiveDate"
-        )
+        last_active = user_record.get("last_active_date") or user_record.get("lastActiveDate")
         if last_active != today_iso:
             yesterday_iso = (date.today() - timedelta(days=1)).isoformat()
             if last_active == yesterday_iso:
                 streak_after = streak_after + 1
             else:
                 streak_after = 1
-            best = int(
-                user_record.get("best_streak") or user_record.get("bestStreak") or 0
-            )
+            best = int(user_record.get("best_streak") or user_record.get("bestStreak") or 0)
             patch["streak"] = streak_after
             patch["best_streak"] = max(best, streak_after)
             patch["last_active_date"] = today_iso
@@ -163,14 +159,9 @@ async def submit_attempt_batch(
                 social_cfg = settings_blob.get("social") or {}
                 if social_cfg.get("show_on_leaderboard"):
                     learning = settings_blob.get("learning") or {}
-                    lang = (
-                        learning.get("learningLanguageId")
-                        or settings_blob.get("learningLanguage")
-                    )
+                    lang = learning.get("learningLanguageId") or settings_blob.get("learningLanguage")
                     if lang:
-                        await social_repo.add_xp_to_leaderboard(
-                            user.id, str(lang), total_xp_inc
-                        )
+                        await social_repo.add_xp_to_leaderboard(user.id, str(lang), total_xp_inc)
             except Exception:
                 # Leaderboard write failures must never break a lesson sync.
                 pass
@@ -398,8 +389,7 @@ def _user_stats_from_record(record: dict[str, Any]) -> UserStats:
     return UserStats(
         streak=int(record.get("streak") or 0),
         bestStreak=int(record.get("best_streak") or record.get("bestStreak") or 0),
-        lastActiveDate=record.get("last_active_date")
-        or record.get("lastActiveDate"),
+        lastActiveDate=record.get("last_active_date") or record.get("lastActiveDate"),
         xp=int(record.get("xp") or 0),
         level=int(record.get("level") or 1),
         lingots=int(record.get("lingots") or 0),
@@ -419,9 +409,7 @@ async def list_my_attempts(
     - With ``lessonId``: main-table query, sorted newest first by SK suffix
     - Without ``lessonId``: ``UserAttempts-Index`` GSI query, sorted by ``attemptedAt`` desc
     """
-    items, next_cursor = await progress.list_attempts(
-        user_id=user.id, lesson_id=lesson_id, limit=limit, cursor=cursor
-    )
+    items, next_cursor = await progress.list_attempts(user_id=user.id, lesson_id=lesson_id, limit=limit, cursor=cursor)
     return AttemptList(
         items=[
             {
@@ -478,11 +466,7 @@ async def purchase_shop_item(
     settings = await users.get_settings(user.id) or {}
     shop_state = dict(settings.get("shop") or {})
     purchases: list[str] = list(shop_state.get("purchases") or [])
-    inventory: dict[str, int] = {
-        str(k): int(v)
-        for k, v in (shop_state.get("inventory") or {}).items()
-        if isinstance(v, (int, float))
-    }
+    inventory: dict[str, int] = {str(k): int(v) for k, v in (shop_state.get("inventory") or {}).items() if isinstance(v, (int, float))}
 
     consumable = bool(item.get("consumable"))
     if not consumable and body.itemId in purchases:

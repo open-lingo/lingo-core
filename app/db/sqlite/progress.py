@@ -219,19 +219,13 @@ class SqliteProgressRepository:
         concept_set = set(concept_ids)
         for row in rows:
             attempt = _attempt_row_to_dict(row)
-            if any(
-                cid in concept_set
-                for step in attempt["steps"]
-                for cid in (step.get("conceptIds") or [])
-            ):
+            if any(cid in concept_set for step in attempt["steps"] for cid in (step.get("conceptIds") or [])):
                 out.append(attempt)
         return out
 
     # ── Lesson rollups ──────────────────────────────────────────────────────
 
-    async def update_lesson_rollup(
-        self, user_id: str, lesson_id: str, attempt: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def update_lesson_rollup(self, user_id: str, lesson_id: str, attempt: dict[str, Any]) -> dict[str, Any]:
         score = float(attempt["score"])
         attempted_at = attempt["attemptedAt"]
         passed = bool(attempt["passed"])
@@ -305,9 +299,7 @@ class SqliteProgressRepository:
         assert row is not None
         return _day_row_to_dict(row)
 
-    async def get_day_rollups(
-        self, user_id: str, since: str, until: str
-    ) -> list[dict[str, Any]]:
+    async def get_day_rollups(self, user_id: str, since: str, until: str) -> list[dict[str, Any]]:
         cur = await self._conn().execute(
             """
             SELECT * FROM progress_day_rollups
@@ -321,9 +313,7 @@ class SqliteProgressRepository:
 
     # ── Concept rollups ─────────────────────────────────────────────────────
 
-    async def invalidate_concepts(
-        self, user_id: str, concept_ids: list[str], staleAt: str
-    ) -> None:
+    async def invalidate_concepts(self, user_id: str, concept_ids: list[str], staleAt: str) -> None:
         for cid in concept_ids:
             await self._conn().execute(
                 """
@@ -348,9 +338,7 @@ class SqliteProgressRepository:
         rows = await cur.fetchall()
         return [_concept_row_to_dict(r) for r in rows]
 
-    async def put_concept_rollup(
-        self, user_id: str, rollup: dict[str, Any]
-    ) -> None:
+    async def put_concept_rollup(self, user_id: str, rollup: dict[str, Any]) -> None:
         await self._conn().execute(
             """
             INSERT INTO progress_concept_rollups (

@@ -28,17 +28,13 @@ class QuestRepository(Protocol):
         """Upsert a quest row. Returns the persisted row."""
         ...
 
-    async def update_progress(
-        self, user_id: str, quest_id: str, delta: int
-    ) -> dict[str, Any] | None:
+    async def update_progress(self, user_id: str, quest_id: str, delta: int) -> dict[str, Any] | None:
         """Bump ``progress_current`` by ``delta`` (capped at target). Flips
         status to ``claimable`` if the new value crosses the target. Returns
         the updated row, or None if the quest doesn't exist."""
         ...
 
-    async def claim(
-        self, user_id: str, quest_id: str
-    ) -> dict[str, Any] | None:
+    async def claim(self, user_id: str, quest_id: str) -> dict[str, Any] | None:
         """Mark the quest ``completed`` and stamp ``reward_granted`` true.
         No-op + return current row if already completed. Returns None if the
         quest doesn't exist or isn't yet claimable."""

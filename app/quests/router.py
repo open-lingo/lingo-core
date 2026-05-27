@@ -78,11 +78,7 @@ def _row_to_quest(row: dict[str, Any]) -> Quest:
     )
     status_str = row.get("status") or "active"
     expires_at_ms = _expires_to_ms(row.get("expires_at"))
-    if (
-        status_str not in ("completed",)
-        and expires_at_ms is not None
-        and expires_at_ms < int(datetime.now(UTC).timestamp() * 1000)
-    ):
+    if status_str not in ("completed",) and expires_at_ms is not None and expires_at_ms < int(datetime.now(UTC).timestamp() * 1000):
         status_str = "expired"
     return Quest(
         id=row["id"],
@@ -180,9 +176,7 @@ async def bump_progress(
     """Bump quest progress by ``delta``. Flips to claimable when target hit."""
     quests_repo = require_repo(repo, "quests")
     with api_error("updating quest progress"):
-        updated = await quests_repo.update_progress(
-            user.id or "", quest_id, int(body.delta)
-        )
+        updated = await quests_repo.update_progress(user.id or "", quest_id, int(body.delta))
         if updated is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Quest not found")
         return _row_to_quest(updated)
@@ -222,9 +216,7 @@ async def claim_quest(
 
         claimed = await quests_repo.claim(user_id, quest_id)
         if claimed is None:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT, "Quest could not be claimed"
-            )
+            raise HTTPException(status.HTTP_409_CONFLICT, "Quest could not be claimed")
 
         lingots_inc = int(current.get("reward_lingots") or 0)
         xp_inc = int(current.get("reward_xp") or 0)

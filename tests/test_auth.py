@@ -100,7 +100,6 @@ def test_user_id_cache_hits(api_client, monkeypatch: pytest.MonkeyPatch) -> None
     lookup. The second call must NOT hit the user repo's get_user_by_auth0_id."""
     client, _user_id, _ = api_client
 
-
     # First call primes the cache (test conftest already did some requests).
     resp = client.get("/api/core/v1/users/me")
     assert resp.status_code == 200

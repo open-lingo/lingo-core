@@ -26,9 +26,7 @@ os.environ["DEV_USER"] = "auth0|trevor_t"
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _register_user(
-    client: TestClient, sub: str, username: str, display_name: str
-) -> dict[str, Any]:
+def _register_user(client: TestClient, sub: str, username: str, display_name: str) -> dict[str, Any]:
     resp = client.post(
         "/api/core/v1/users/me",
         json={"username": username, "display_name": display_name},
@@ -111,12 +109,8 @@ def users(client: TestClient) -> dict[str, dict[str, Any]]:
 # ── /users/discover — happy path ─────────────────────────────────────────────
 
 
-def test_discover_default_excludes_self(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
-    resp = client.get(
-        "/api/core/v1/users/discover", headers=_as("auth0|trevor_t")
-    )
+def test_discover_default_excludes_self(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
+    resp = client.get("/api/core/v1/users/discover", headers=_as("auth0|trevor_t"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert "users" in body and "total" in body and "has_more" in body
@@ -139,9 +133,7 @@ def test_discover_default_excludes_self(
         }
 
 
-def test_discover_filters_by_substring(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+def test_discover_filters_by_substring(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     resp = client.get(
         "/api/core/v1/users/discover",
         params={"q": "ken"},
@@ -153,9 +145,7 @@ def test_discover_filters_by_substring(
     assert usernames == {"kenji_t"}, usernames
 
 
-def test_discover_filters_by_lang(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+def test_discover_filters_by_lang(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     resp = client.get(
         "/api/core/v1/users/discover",
         params={"lang": "es"},
@@ -178,9 +168,7 @@ def test_discover_filters_by_lang(
     assert usernames == {"kenji_t", "sora_t", "mai_t"}, usernames
 
 
-def test_discover_q_allows_self(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+def test_discover_q_allows_self(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     resp = client.get(
         "/api/core/v1/users/discover",
         params={"q": "trevor"},
@@ -194,9 +182,7 @@ def test_discover_q_allows_self(
     assert me["friendship_status"] == "self"
 
 
-def test_discover_excludes_blocked(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+def test_discover_excludes_blocked(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     diego_id = users["diego"]["id"]
     resp = client.post(
         f"/api/core/v1/social/blocks/{diego_id}",
@@ -204,9 +190,7 @@ def test_discover_excludes_blocked(
     )
     assert resp.status_code == 200, resp.text
 
-    resp = client.get(
-        "/api/core/v1/users/discover", headers=_as("auth0|trevor_t")
-    )
+    resp = client.get("/api/core/v1/users/discover", headers=_as("auth0|trevor_t"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     usernames = {u["username"] for u in body["users"]}
@@ -220,9 +204,7 @@ def test_discover_excludes_blocked(
     assert resp.status_code == 204
 
 
-def test_discover_pagination(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+def test_discover_pagination(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     resp = client.get(
         "/api/core/v1/users/discover",
         params={"limit": 2, "offset": 0},

@@ -183,9 +183,7 @@ class SqliteUserRepository:
     # -- User settings --
 
     async def get_settings(self, user_id: str) -> dict[str, Any] | None:
-        cur = await self._conn().execute(
-            "SELECT data FROM user_settings WHERE user_id = ?", (user_id,)
-        )
+        cur = await self._conn().execute("SELECT data FROM user_settings WHERE user_id = ?", (user_id,))
         row = await cur.fetchone()
         return json.loads(row["data"]) if row else None
 

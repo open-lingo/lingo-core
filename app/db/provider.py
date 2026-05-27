@@ -85,13 +85,9 @@ async def init_repositories() -> None:
         _user_repo = await _safe_connect("user", SqliteUserRepository(settings.SQLITE_PATH))
         _srs_repo = await _safe_connect("srs", SqliteSRSRepository(settings.SQLITE_PATH))
         _deck_repo = await _safe_connect("deck", SqliteDeckRepository(settings.SQLITE_PATH))
-        _subscription_repo = await _safe_connect(
-            "subscription", SqliteSubscriptionRepository(settings.SQLITE_PATH)
-        )
+        _subscription_repo = await _safe_connect("subscription", SqliteSubscriptionRepository(settings.SQLITE_PATH))
         _story_repo = await _safe_connect("story", SqliteStoryRepository(settings.SQLITE_PATH))
-        _progress_repo = await _safe_connect(
-            "progress", SqliteProgressRepository(settings.SQLITE_PATH)
-        )
+        _progress_repo = await _safe_connect("progress", SqliteProgressRepository(settings.SQLITE_PATH))
         _social_repo = await _safe_connect("social", SqliteSocialRepository(settings.SQLITE_PATH))
         _quest_repo = await _safe_connect("quest", SqliteQuestRepository(settings.SQLITE_PATH))
         _platform_settings_repo = await _safe_connect(
@@ -114,26 +110,18 @@ async def init_repositories() -> None:
         _user_repo = await _safe_connect("user", DynamoUserRepository(f"{prefix}users", region))
         _srs_repo = await _safe_connect("srs", DynamoSRSRepository(f"{prefix}srs", region))
         _deck_repo = await _safe_connect("deck", DynamoDeckRepository(f"{prefix}decks", region))
-        _subscription_repo = await _safe_connect(
-            "subscription", DynamoSubscriptionRepository(f"{prefix}subscriptions", region)
-        )
+        _subscription_repo = await _safe_connect("subscription", DynamoSubscriptionRepository(f"{prefix}subscriptions", region))
 
         _story_repo = None  # Stories not yet supported for DynamoDB
 
-        _progress_repo = await _safe_connect(
-            "progress", DynamoProgressRepository(f"{prefix}progress", region)
-        )
+        _progress_repo = await _safe_connect("progress", DynamoProgressRepository(f"{prefix}progress", region))
 
         # SQLite-first per maintainer instruction 2026-05-25 — the Dynamo
         # social repo is a stub that raises NotImplementedError on use.
-        _social_repo = await _safe_connect(
-            "social", DynamoSocialRepository(f"{prefix}social", region)
-        )
+        _social_repo = await _safe_connect("social", DynamoSocialRepository(f"{prefix}social", region))
 
         # Same story for quests: SQLite-first; Dynamo stub raises on every method.
-        _quest_repo = await _safe_connect(
-            "quest", DynamoQuestRepository(f"{prefix}quests", region)
-        )
+        _quest_repo = await _safe_connect("quest", DynamoQuestRepository(f"{prefix}quests", region))
 
         # Platform settings — SQLite-first too; Dynamo stub raises on use.
         from app.db.dynamo.platform_settings import DynamoPlatformSettingsRepository
@@ -150,9 +138,7 @@ async def init_repositories() -> None:
     if settings.DB_BACKEND == "sqlite":
         from app.db.sqlite.community import SqliteCommunityRepository
 
-        _community_repo = await _safe_connect(
-            "community", SqliteCommunityRepository(settings.SQLITE_PATH)
-        )
+        _community_repo = await _safe_connect("community", SqliteCommunityRepository(settings.SQLITE_PATH))
         if _community_repo is None:
             # SQLite connect failed — fall back to the in-memory mock so the
             # router stays alive rather than 503'ing every community request.

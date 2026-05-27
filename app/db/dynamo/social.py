@@ -70,9 +70,7 @@ class DynamoSocialRepository:
         return [_strip_keys(i) for i in resp.get("Items", [])]
 
     async def is_friend(self, user_id: str, other_id: str) -> bool:
-        resp = await self._table.get_item(
-            Key={"PK": f"USER#{user_id}", "SK": f"FRIEND#{other_id}"}
-        )
+        resp = await self._table.get_item(Key={"PK": f"USER#{user_id}", "SK": f"FRIEND#{other_id}"})
         return resp.get("Item") is not None
 
     async def add_friend_edge(self, a_id: str, b_id: str) -> None:
@@ -92,15 +90,11 @@ class DynamoSocialRepository:
 
     async def remove_friend_edge(self, a_id: str, b_id: str) -> None:
         for x, y in ((a_id, b_id), (b_id, a_id)):
-            await self._table.delete_item(
-                Key={"PK": f"USER#{x}", "SK": f"FRIEND#{y}"}
-            )
+            await self._table.delete_item(Key={"PK": f"USER#{x}", "SK": f"FRIEND#{y}"})
 
     # ── Friend requests ──────────────────────────────────────────────────────
 
-    async def list_friend_requests(
-        self, user_id: str
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    async def list_friend_requests(self, user_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         in_resp = await self._table.query(
             KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
             ExpressionAttributeValues={":pk": f"USER#{user_id}", ":sk": "REQUEST_IN#"},
@@ -113,12 +107,8 @@ class DynamoSocialRepository:
         outgoing = [_strip_keys(i) for i in out_resp.get("Items", [])]
         return incoming, outgoing
 
-    async def get_friend_request(
-        self, from_id: str, to_id: str
-    ) -> dict[str, Any] | None:
-        resp = await self._table.get_item(
-            Key={"PK": f"USER#{to_id}", "SK": f"REQUEST_IN#{from_id}"}
-        )
+    async def get_friend_request(self, from_id: str, to_id: str) -> dict[str, Any] | None:
+        resp = await self._table.get_item(Key={"PK": f"USER#{to_id}", "SK": f"REQUEST_IN#{from_id}"})
         item = resp.get("Item")
         return _strip_keys(item) if item else None
 
@@ -126,21 +116,13 @@ class DynamoSocialRepository:
         now = _now_iso()
         item = {"from_id": from_id, "to_id": to_id, "requested_at": now}
         # Two rows — sender sees outgoing, receiver sees incoming.
-        await self._table.put_item(
-            Item={"PK": f"USER#{to_id}", "SK": f"REQUEST_IN#{from_id}", **item}
-        )
-        await self._table.put_item(
-            Item={"PK": f"USER#{from_id}", "SK": f"REQUEST_OUT#{to_id}", **item}
-        )
+        await self._table.put_item(Item={"PK": f"USER#{to_id}", "SK": f"REQUEST_IN#{from_id}", **item})
+        await self._table.put_item(Item={"PK": f"USER#{from_id}", "SK": f"REQUEST_OUT#{to_id}", **item})
         return item
 
     async def delete_friend_request(self, from_id: str, to_id: str) -> None:
-        await self._table.delete_item(
-            Key={"PK": f"USER#{to_id}", "SK": f"REQUEST_IN#{from_id}"}
-        )
-        await self._table.delete_item(
-            Key={"PK": f"USER#{from_id}", "SK": f"REQUEST_OUT#{to_id}"}
-        )
+        await self._table.delete_item(Key={"PK": f"USER#{to_id}", "SK": f"REQUEST_IN#{from_id}"})
+        await self._table.delete_item(Key={"PK": f"USER#{from_id}", "SK": f"REQUEST_OUT#{to_id}"})
 
     # ── Blocks ───────────────────────────────────────────────────────────────
 
@@ -152,9 +134,7 @@ class DynamoSocialRepository:
         return [_strip_keys(i) for i in resp.get("Items", [])]
 
     async def is_blocked(self, blocker_id: str, blocked_id: str) -> bool:
-        resp = await self._table.get_item(
-            Key={"PK": f"USER#{blocker_id}", "SK": f"BLOCK#{blocked_id}"}
-        )
+        resp = await self._table.get_item(Key={"PK": f"USER#{blocker_id}", "SK": f"BLOCK#{blocked_id}"})
         return resp.get("Item") is not None
 
     async def block_user(self, blocker_id: str, blocked_id: str) -> None:
@@ -171,9 +151,7 @@ class DynamoSocialRepository:
         )
 
     async def unblock_user(self, blocker_id: str, blocked_id: str) -> None:
-        await self._table.delete_item(
-            Key={"PK": f"USER#{blocker_id}", "SK": f"BLOCK#{blocked_id}"}
-        )
+        await self._table.delete_item(Key={"PK": f"USER#{blocker_id}", "SK": f"BLOCK#{blocked_id}"})
 
     # ── Activity feed ────────────────────────────────────────────────────────
 
@@ -201,9 +179,7 @@ class DynamoSocialRepository:
         return items[:limit], next_cursor
 
     async def get_activity(self, activity_id: str) -> dict[str, Any] | None:
-        resp = await self._table.get_item(
-            Key={"PK": f"ACTIVITY#{activity_id}", "SK": "META"}
-        )
+        resp = await self._table.get_item(Key={"PK": f"ACTIVITY#{activity_id}", "SK": "META"})
         item = resp.get("Item")
         return _strip_keys(item) if item else None
 
@@ -217,14 +193,10 @@ class DynamoSocialRepository:
             "created_at": created_at,
         }
         # ACTIVITY#<id> META row for direct lookup.
-        await self._table.put_item(
-            Item={"PK": f"ACTIVITY#{activity['id']}", "SK": "META", **meta}
-        )
+        await self._table.put_item(Item={"PK": f"ACTIVITY#{activity['id']}", "SK": "META", **meta})
         # USER#<id> ACTIVITY#<ts>#<id> row for the per-user feed query.
         sk = f"ACTIVITY#{created_at}#{activity['id']}"
-        await self._table.put_item(
-            Item={"PK": f"USER#{activity['user_id']}", "SK": sk, **meta}
-        )
+        await self._table.put_item(Item={"PK": f"USER#{activity['user_id']}", "SK": sk, **meta})
         return meta
 
     async def list_reactions(self, activity_id: str) -> list[dict[str, Any]]:
@@ -237,17 +209,13 @@ class DynamoSocialRepository:
         )
         return [_strip_keys(i) for i in resp.get("Items", [])]
 
-    async def list_reactions_bulk(
-        self, activity_ids: list[str]
-    ) -> dict[str, list[dict[str, Any]]]:
+    async def list_reactions_bulk(self, activity_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
         out: dict[str, list[dict[str, Any]]] = {aid: [] for aid in activity_ids}
         for aid in activity_ids:
             out[aid] = await self.list_reactions(aid)
         return out
 
-    async def toggle_reaction(
-        self, activity_id: str, user_id: str, kind: str
-    ) -> tuple[bool, int]:
+    async def toggle_reaction(self, activity_id: str, user_id: str, kind: str) -> tuple[bool, int]:
         sk = f"REACTION#{activity_id}#{kind}#{user_id}"
         key = {"PK": f"ACTIVITY#{activity_id}", "SK": sk}
         existing = await self._table.get_item(Key=key)
@@ -280,9 +248,7 @@ class DynamoSocialRepository:
     # ── Invite codes / redemptions ───────────────────────────────────────────
 
     async def get_invite_code_for_owner(self, owner_id: str) -> dict[str, Any] | None:
-        resp = await self._table.get_item(
-            Key={"PK": f"INVITE_OWNER#{owner_id}", "SK": "META"}
-        )
+        resp = await self._table.get_item(Key={"PK": f"INVITE_OWNER#{owner_id}", "SK": "META"})
         item = resp.get("Item")
         return _strip_keys(item) if item else None
 
@@ -292,24 +258,16 @@ class DynamoSocialRepository:
             return existing
         now = _now_iso()
         row = {"code": code, "owner_id": owner_id, "created_at": now}
-        await self._table.put_item(
-            Item={"PK": f"INVITE_OWNER#{owner_id}", "SK": "META", **row}
-        )
-        await self._table.put_item(
-            Item={"PK": f"INVITE#{code}", "SK": "META", **row}
-        )
+        await self._table.put_item(Item={"PK": f"INVITE_OWNER#{owner_id}", "SK": "META", **row})
+        await self._table.put_item(Item={"PK": f"INVITE#{code}", "SK": "META", **row})
         return row
 
     async def get_invite_code(self, code: str) -> dict[str, Any] | None:
-        resp = await self._table.get_item(
-            Key={"PK": f"INVITE#{code}", "SK": "META"}
-        )
+        resp = await self._table.get_item(Key={"PK": f"INVITE#{code}", "SK": "META"})
         item = resp.get("Item")
         return _strip_keys(item) if item else None
 
-    async def count_redemptions_for_owner_in_month(
-        self, owner_id: str, year_month: str
-    ) -> int:
+    async def count_redemptions_for_owner_in_month(self, owner_id: str, year_month: str) -> int:
         resp = await self._table.query(
             KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
             ExpressionAttributeValues={
@@ -320,12 +278,8 @@ class DynamoSocialRepository:
         )
         return int(resp.get("Count", 0))
 
-    async def get_redemption(
-        self, code: str, invitee_id: str
-    ) -> dict[str, Any] | None:
-        resp = await self._table.get_item(
-            Key={"PK": f"INVITE#{code}", "SK": f"REDEMPTION#{invitee_id}"}
-        )
+    async def get_redemption(self, code: str, invitee_id: str) -> dict[str, Any] | None:
+        resp = await self._table.get_item(Key={"PK": f"INVITE#{code}", "SK": f"REDEMPTION#{invitee_id}"})
         item = resp.get("Item")
         return _strip_keys(item) if item else None
 
@@ -360,9 +314,7 @@ class DynamoSocialRepository:
         return [_strip_keys(i) for i in resp.get("Items", [])]
 
     async def get_thread(self, thread_id: str) -> dict[str, Any] | None:
-        resp = await self._table.get_item(
-            Key={"PK": f"THREAD#{thread_id}", "SK": "META"}
-        )
+        resp = await self._table.get_item(Key={"PK": f"THREAD#{thread_id}", "SK": "META"})
         item = resp.get("Item")
         return _strip_keys(item) if item else None
 
@@ -375,13 +327,9 @@ class DynamoSocialRepository:
             "created_at": thread.get("created_at") or now,
             "updated_at": thread.get("updated_at") or now,
         }
-        await self._table.put_item(
-            Item={"PK": f"THREAD#{thread['id']}", "SK": "META", **row}
-        )
+        await self._table.put_item(Item={"PK": f"THREAD#{thread['id']}", "SK": "META", **row})
         for uid in (thread["user_a_id"], thread["user_b_id"]):
-            await self._table.put_item(
-                Item={"PK": f"USER#{uid}", "SK": f"THREAD#{thread['id']}", **row}
-            )
+            await self._table.put_item(Item={"PK": f"USER#{uid}", "SK": f"THREAD#{thread['id']}", **row})
         return row
 
     async def list_messages(self, thread_id: str) -> list[dict[str, Any]]:
@@ -401,7 +349,5 @@ class DynamoSocialRepository:
             "body": message["body"],
             "sent_at": ts,
         }
-        await self._table.put_item(
-            Item={"PK": f"THREAD#{message['thread_id']}", "SK": sk, **row}
-        )
+        await self._table.put_item(Item={"PK": f"THREAD#{message['thread_id']}", "SK": sk, **row})
         return row

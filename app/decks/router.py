@@ -91,9 +91,7 @@ async def _safe_vote_count(repo: DeckRepository, deck_id: str) -> int:
         return 0
 
 
-async def _safe_vote_counts(
-    repo: DeckRepository, deck_ids: list[str]
-) -> dict[str, int]:
+async def _safe_vote_counts(repo: DeckRepository, deck_ids: list[str]) -> dict[str, int]:
     try:
         return await repo.get_vote_counts(deck_ids)
     except NotImplementedError:
@@ -123,9 +121,7 @@ async def list_my_decks(
         for m in manifests:
             deck = await r.get_deck(m["id"])
             if deck:
-                result.append(
-                    _to_response(deck, deck.get("cards", []), counts.get(m["id"], 0))
-                )
+                result.append(_to_response(deck, deck.get("cards", []), counts.get(m["id"], 0)))
     return result
 
 
@@ -179,9 +175,7 @@ async def get_decks_batch(
             deck_status = deck.get("status", "published")
             if author and author != user.id and deck_status == "draft":
                 continue
-            result.append(
-                _to_response(deck, deck.get("cards", []), counts.get(deck["id"], 0))
-            )
+            result.append(_to_response(deck, deck.get("cards", []), counts.get(deck["id"], 0)))
     return result
 
 
@@ -201,9 +195,7 @@ async def list_admin_decks(
             status=status,
             exclude_companion=True,
         )
-        eligible_ids = [
-            m.get("id", "") for m in manifests if not m.get("id", "").startswith("vocab-")
-        ]
+        eligible_ids = [m.get("id", "") for m in manifests if not m.get("id", "").startswith("vocab-")]
         counts = await _safe_vote_counts(r, eligible_ids)
         result = []
         for m in manifests:
@@ -212,9 +204,7 @@ async def list_admin_decks(
                 continue
             deck = await r.get_deck(deck_id)
             if deck:
-                result.append(
-                    _to_response(deck, deck.get("cards", []), counts.get(deck_id, 0))
-                )
+                result.append(_to_response(deck, deck.get("cards", []), counts.get(deck_id, 0)))
     return result
 
 
@@ -245,10 +235,7 @@ async def admin_update_deck_status(
 def _dedupe_cards(existing: list[dict], new_cards: list[dict]) -> list[dict]:
     """Merge new cards into existing, deduping by front+back. Assigns new ids to added cards."""
     existing_ids = {c.get("id") for c in existing if c.get("id")}
-    seen: set[tuple[str, str]] = {
-        (str(c.get("front", "")).strip(), str(c.get("back", "")).strip())
-        for c in existing
-    }
+    seen: set[tuple[str, str]] = {(str(c.get("front", "")).strip(), str(c.get("back", "")).strip()) for c in existing}
     merged = list(existing)
     for c in new_cards:
         key = (str(c.get("front", "")).strip(), str(c.get("back", "")).strip())

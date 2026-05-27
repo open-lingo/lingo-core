@@ -13,9 +13,7 @@ import pytest
 # ── users router ──────────────────────────────────────────────────────────
 
 
-def test_users_patch_settings_repo_failure_returns_500_with_context(
-    api_client, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_users_patch_settings_repo_failure_returns_500_with_context(api_client, monkeypatch: pytest.MonkeyPatch) -> None:
     """``PATCH /users/me/settings`` wraps the repo call in
     ``api_error("updating user settings")``; a repo blow-up must surface as
     500 with that label.
@@ -46,9 +44,7 @@ def test_users_patch_settings_repo_failure_returns_500_with_context(
 # ── admin router ──────────────────────────────────────────────────────────
 
 
-def test_admin_list_users_repo_failure_returns_500_with_context(
-    api_client, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_admin_list_users_repo_failure_returns_500_with_context(api_client, monkeypatch: pytest.MonkeyPatch) -> None:
     """``GET /admin/users`` wraps ``list_users`` in ``api_error("listing
     users")``; a repo blow-up must surface as 500 with that label."""
     client, _user_id, admin_user_id = api_client
@@ -76,9 +72,7 @@ def test_admin_list_users_repo_failure_returns_500_with_context(
 # ── community router ─────────────────────────────────────────────────────
 
 
-def test_community_list_categories_repo_failure_returns_500_with_context(
-    api_client, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_community_list_categories_repo_failure_returns_500_with_context(api_client, monkeypatch: pytest.MonkeyPatch) -> None:
     """``GET /community/categories`` wraps the repo call in
     ``api_error("listing categories")``; a repo blow-up must surface as 500
     with that label."""

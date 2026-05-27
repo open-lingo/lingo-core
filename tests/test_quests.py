@@ -34,12 +34,14 @@ def _as(sub: str) -> dict[str, str]:
 def client() -> Any:
     # Lazy-import after env mutation so settings see DEBUG=true + temp DB.
     from app.config import settings
+
     settings.DB_BACKEND = "sqlite"
     settings.SQLITE_PATH = TMP_DB
     settings.DEBUG = True
     settings.DEV_USER = "auth0|trevor-quests"
 
     from app.main import app
+
     with TestClient(app) as c:
         yield c
 
@@ -105,9 +107,7 @@ async def seeded_quest(trevor: dict[str, Any]) -> dict[str, Any]:
     return {"id": quest_id, "target": 50}
 
 
-def test_list_quests_includes_seeded_row(
-    client: TestClient, trevor: dict[str, Any], seeded_quest: dict[str, Any]
-) -> None:
+def test_list_quests_includes_seeded_row(client: TestClient, trevor: dict[str, Any], seeded_quest: dict[str, Any]) -> None:
     resp = client.get("/api/core/v1/quests", headers=_as("auth0|trevor-quests"))
     assert resp.status_code == 200, resp.text
     payload = resp.json()
@@ -119,9 +119,7 @@ def test_list_quests_includes_seeded_row(
     assert target["status"] == "active"
 
 
-def test_progress_bumps_and_flips_to_claimable(
-    client: TestClient, seeded_quest: dict[str, Any]
-) -> None:
+def test_progress_bumps_and_flips_to_claimable(client: TestClient, seeded_quest: dict[str, Any]) -> None:
     # Bump halfway — stays active.
     resp = client.post(
         f"/api/core/v1/quests/{seeded_quest['id']}/progress",
@@ -145,9 +143,7 @@ def test_progress_bumps_and_flips_to_claimable(
     assert quest["status"] == "claimable"
 
 
-def test_claim_grants_rewards_and_marks_completed(
-    client: TestClient, seeded_quest: dict[str, Any]
-) -> None:
+def test_claim_grants_rewards_and_marks_completed(client: TestClient, seeded_quest: dict[str, Any]) -> None:
     # Bring the quest to claimable first.
     client.post(
         f"/api/core/v1/quests/{seeded_quest['id']}/progress",
@@ -155,9 +151,7 @@ def test_claim_grants_rewards_and_marks_completed(
         headers=_as("auth0|trevor-quests"),
     )
 
-    me_before = client.get(
-        "/api/core/v1/users/me", headers=_as("auth0|trevor-quests")
-    ).json()
+    me_before = client.get("/api/core/v1/users/me", headers=_as("auth0|trevor-quests")).json()
     lingots_before = int(me_before.get("lingots") or 0)
     xp_before = int(me_before.get("xp") or 0)
 
@@ -172,9 +166,7 @@ def test_claim_grants_rewards_and_marks_completed(
     assert payload["lingotsGranted"] >= 0
     assert payload["xpGranted"] >= 0
 
-    me_after = client.get(
-        "/api/core/v1/users/me", headers=_as("auth0|trevor-quests")
-    ).json()
+    me_after = client.get("/api/core/v1/users/me", headers=_as("auth0|trevor-quests")).json()
     assert int(me_after.get("lingots") or 0) >= lingots_before
     assert int(me_after.get("xp") or 0) >= xp_before
 
@@ -187,20 +179,14 @@ def test_claim_grants_rewards_and_marks_completed(
     assert resp2.json()["quest"]["status"] == "completed"
 
 
-def test_refresh_reseeds_default_catalog(
-    client: TestClient, trevor: dict[str, Any]
-) -> None:
-    resp = client.post(
-        "/api/core/v1/quests/refresh", headers=_as("auth0|trevor-quests")
-    )
+def test_refresh_reseeds_default_catalog(client: TestClient, trevor: dict[str, Any]) -> None:
+    resp = client.post("/api/core/v1/quests/refresh", headers=_as("auth0|trevor-quests"))
     assert resp.status_code == 200, resp.text
     payload = resp.json()
     assert payload["seeded"] >= 1
 
     # The list endpoint should now reflect the new catalog.
-    list_resp = client.get(
-        "/api/core/v1/quests", headers=_as("auth0|trevor-quests")
-    )
+    list_resp = client.get("/api/core/v1/quests", headers=_as("auth0|trevor-quests"))
     assert list_resp.status_code == 200, list_resp.text
     items = list_resp.json()["items"]
     assert any(q["type"] == "daily" for q in items)

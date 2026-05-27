@@ -2,7 +2,6 @@
 seeded admin must pass."""
 
 
-
 def test_non_admin_blocked(api_client) -> None:
     """A regular authenticated user must get 403 on admin routes."""
     client, _user_id, _admin_user_id = api_client
@@ -18,6 +17,7 @@ def test_admin_allowed_with_env_allowlist(api_client, monkeypatch) -> None:
     # Mutate settings.ADMIN_USER_IDS in place (the conftest already booted
     # the app; settings is a singleton). The dependency reads it per-call.
     from app.config import settings
+
     monkeypatch.setattr(settings, "ADMIN_USER_IDS", [admin_user_id])
 
     resp = client.get(

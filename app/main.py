@@ -36,7 +36,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     startup = logging.getLogger("lingo.startup")
     startup.info(
         "DEBUG=%s  DB_BACKEND=%s  DEV_USER=%s",
-        settings.DEBUG, settings.DB_BACKEND, settings.DEV_USER,
+        settings.DEBUG,
+        settings.DB_BACKEND,
+        settings.DEV_USER,
     )
     if settings.DEBUG:
         # Fix 5 — the hard guard in config.py refuses DEBUG=true when

@@ -115,12 +115,10 @@ class DynamoSRSRepository:
         for item in items:
             state = _item_to_state(item)
             if state:
-                result[item["SK"][len(_CARD_SK_PREFIX):]] = state
+                result[item["SK"][len(_CARD_SK_PREFIX) :]] = state
         return result
 
-    async def get_due_cards(
-        self, user_id: str, on_or_before: str
-    ) -> dict[str, dict[str, Any]]:
+    async def get_due_cards(self, user_id: str, on_or_before: str) -> dict[str, dict[str, Any]]:
         items = await _paginate_query(
             self._table,
             IndexName="DueDate-Index",
@@ -134,22 +132,18 @@ class DynamoSRSRepository:
         for item in items:
             state = _item_to_state(item)
             if state:
-                result[item["SK"][len(_CARD_SK_PREFIX):]] = state
+                result[item["SK"][len(_CARD_SK_PREFIX) :]] = state
         return result
 
     async def get_card(self, user_id: str, card_id: str) -> dict[str, Any] | None:
-        resp = await self._table.get_item(
-            Key={"PK": f"USER#{user_id}", "SK": f"{_CARD_SK_PREFIX}{card_id}"}
-        )
+        resp = await self._table.get_item(Key={"PK": f"USER#{user_id}", "SK": f"{_CARD_SK_PREFIX}{card_id}"})
         item = resp.get("Item")
         if not item:
             return None
         state = _item_to_state(item)
         return state if state else None
 
-    async def upsert_cards(
-        self, user_id: str, cards: dict[str, dict[str, Any]]
-    ) -> dict[str, dict[str, Any]]:
+    async def upsert_cards(self, user_id: str, cards: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
         card_ids = list(cards.keys())
         existing_list = await asyncio.gather(
             *[self.get_card(user_id, cid) for cid in card_ids],
@@ -169,11 +163,7 @@ class DynamoSRSRepository:
             existing_review = _max_last_review(existing) if existing else ""
             core_win = existing and existing_review >= incoming_review
 
-            bury_changed = (
-                existing
-                and "buriedUntil" in incoming
-                and incoming.get("buriedUntil") != existing.get("buriedUntil")
-            )
+            bury_changed = existing and "buriedUntil" in incoming and incoming.get("buriedUntil") != existing.get("buriedUntil")
 
             if core_win and not bury_changed:
                 result[card_id] = existing
@@ -197,9 +187,7 @@ class DynamoSRSRepository:
 
     async def delete_cards(self, user_id: str, card_ids: list[str]) -> int:
         for card_id in card_ids:
-            await self._table.delete_item(
-                Key={"PK": f"USER#{user_id}", "SK": f"{_CARD_SK_PREFIX}{card_id}"}
-            )
+            await self._table.delete_item(Key={"PK": f"USER#{user_id}", "SK": f"{_CARD_SK_PREFIX}{card_id}"})
         return len(card_ids)
 
     async def clear_all(self, user_id: str) -> int:

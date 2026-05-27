@@ -20,17 +20,13 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     """Partial update for the user record (admin PATCH). Includes ban fields."""
 
-    username: str | None = Field(
-        default=None, min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_-]+$"
-    )
+    username: str | None = Field(default=None, min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_-]+$")
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     profile_picture_key: str | None = None
     status: AccountStatus | None = None
     status_expiration: str | None = Field(default=None, description="ISO datetime when ban expires")
     community_status: CommunityStatus | None = None
-    community_status_expiration: str | None = Field(
-        default=None, description="ISO datetime when community ban expires"
-    )
+    community_status_expiration: str | None = Field(default=None, description="ISO datetime when community ban expires")
     bio: str | None = Field(default=None, max_length=500, description="Profile bio/status text")
     role: Role | None = Field(default=None, description="user | trusted_creator | moderator | admin | super_admin")
 
@@ -38,9 +34,7 @@ class UserUpdate(BaseModel):
 class MeUpdate(BaseModel):
     """Partial update for own profile (PATCH /me). No ban-related fields."""
 
-    username: str | None = Field(
-        default=None, min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_-]+$"
-    )
+    username: str | None = Field(default=None, min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_-]+$")
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     profile_picture_key: str | None = None
     bio: str | None = Field(default=None, max_length=500, description="Profile bio/status text")
@@ -169,9 +163,7 @@ class SubscriptionSettingsPatch(BaseModel):
 # -- Public discovery (find-friends / contributors browse) --
 
 
-PublicFriendshipStatus = Literal[
-    "self", "friend", "request_in", "request_out", "blocked", "none"
-]
+PublicFriendshipStatus = Literal["self", "friend", "request_in", "request_out", "blocked", "none"]
 
 
 class PublicUserSummary(BaseModel):

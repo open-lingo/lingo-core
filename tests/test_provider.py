@@ -27,6 +27,7 @@ def boot_partial_init_failure(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("DEBUG", "true")
 
     from app import config as config_mod
+
     importlib.reload(config_mod)
 
     from app.db.sqlite import progress as progress_mod
@@ -34,15 +35,16 @@ def boot_partial_init_failure(monkeypatch: pytest.MonkeyPatch):
     async def failing_connect(self) -> None:  # noqa: ANN001
         raise RuntimeError("simulated progress repo init failure")
 
-    monkeypatch.setattr(
-        progress_mod.SqliteProgressRepository, "connect", failing_connect
-    )
+    monkeypatch.setattr(progress_mod.SqliteProgressRepository, "connect", failing_connect)
 
     from app.db import provider as provider_mod
+
     importlib.reload(provider_mod)
     from app.auth import dependencies as auth_dep_mod
+
     importlib.reload(auth_dep_mod)
     from app import main as main_mod
+
     importlib.reload(main_mod)
 
     try:

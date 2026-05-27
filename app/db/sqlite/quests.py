@@ -155,9 +155,7 @@ class SqliteQuestRepository:
         assert got is not None
         return got
 
-    async def update_progress(
-        self, user_id: str, quest_id: str, delta: int
-    ) -> dict[str, Any] | None:
+    async def update_progress(self, user_id: str, quest_id: str, delta: int) -> dict[str, Any] | None:
         current = await self.get_quest(user_id, quest_id)
         if current is None:
             return None
@@ -176,9 +174,7 @@ class SqliteQuestRepository:
         await self._conn().commit()
         return await self.get_quest(user_id, quest_id)
 
-    async def claim(
-        self, user_id: str, quest_id: str
-    ) -> dict[str, Any] | None:
+    async def claim(self, user_id: str, quest_id: str) -> dict[str, Any] | None:
         current = await self.get_quest(user_id, quest_id)
         if current is None:
             return None
@@ -195,9 +191,7 @@ class SqliteQuestRepository:
         await self._conn().commit()
         return await self.get_quest(user_id, quest_id)
 
-    async def delete_user_quests(
-        self, user_id: str, types: list[str] | None = None
-    ) -> int:
+    async def delete_user_quests(self, user_id: str, types: list[str] | None = None) -> int:
         if types:
             placeholders = ",".join("?" * len(types))
             cur = await self._conn().execute(

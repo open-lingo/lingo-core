@@ -13,9 +13,7 @@ class BaseContentType(ABC):
         """The content type string (e.g. 'deck', 'addon')."""
         ...
 
-    async def validate_subscription(
-        self, content_id: str, context: dict[str, Any] | None = None
-    ) -> bool:
+    async def validate_subscription(self, content_id: str, context: dict[str, Any] | None = None) -> bool:
         """Validate that the content exists and can be subscribed to.
         Override in subclasses. Returns True if valid."""
         return True

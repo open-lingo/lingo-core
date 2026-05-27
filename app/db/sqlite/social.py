@@ -177,9 +177,7 @@ class SqliteSocialRepository:
 
     # ── Friend requests ──────────────────────────────────────────────────────
 
-    async def list_friend_requests(
-        self, user_id: str
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    async def list_friend_requests(self, user_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         cur = await self._conn().execute(
             "SELECT from_id, to_id, requested_at FROM social_friend_requests WHERE to_id = ?",
             (user_id,),
@@ -192,9 +190,7 @@ class SqliteSocialRepository:
         outgoing = [dict(r) for r in await cur.fetchall()]
         return incoming, outgoing
 
-    async def get_friend_request(
-        self, from_id: str, to_id: str
-    ) -> dict[str, Any] | None:
+    async def get_friend_request(self, from_id: str, to_id: str) -> dict[str, Any] | None:
         cur = await self._conn().execute(
             """SELECT from_id, to_id, requested_at FROM social_friend_requests
                WHERE from_id = ? AND to_id = ?""",
@@ -321,9 +317,7 @@ class SqliteSocialRepository:
         )
         return [dict(r) for r in await cur.fetchall()]
 
-    async def list_reactions_bulk(
-        self, activity_ids: list[str]
-    ) -> dict[str, list[dict[str, Any]]]:
+    async def list_reactions_bulk(self, activity_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
         out: dict[str, list[dict[str, Any]]] = {aid: [] for aid in activity_ids}
         if not activity_ids:
             return out
@@ -338,9 +332,7 @@ class SqliteSocialRepository:
             out.setdefault(row["activity_id"], []).append(dict(row))
         return out
 
-    async def toggle_reaction(
-        self, activity_id: str, user_id: str, kind: str
-    ) -> tuple[bool, int]:
+    async def toggle_reaction(self, activity_id: str, user_id: str, kind: str) -> tuple[bool, int]:
         cur = await self._conn().execute(
             """SELECT 1 FROM social_activity_reactions
                WHERE activity_id = ? AND user_id = ? AND kind = ?""",
@@ -401,9 +393,7 @@ class SqliteSocialRepository:
         row = await cur.fetchone()
         return dict(row) if row else None
 
-    async def count_redemptions_for_owner_in_month(
-        self, owner_id: str, year_month: str
-    ) -> int:
+    async def count_redemptions_for_owner_in_month(self, owner_id: str, year_month: str) -> int:
         cur = await self._conn().execute(
             """SELECT COUNT(*) AS n FROM social_invite_redemptions
                WHERE inviter_id = ? AND year_month = ? AND status != 'invalid'""",
@@ -412,9 +402,7 @@ class SqliteSocialRepository:
         row = await cur.fetchone()
         return int(row["n"]) if row else 0
 
-    async def get_redemption(
-        self, code: str, invitee_id: str
-    ) -> dict[str, Any] | None:
+    async def get_redemption(self, code: str, invitee_id: str) -> dict[str, Any] | None:
         cur = await self._conn().execute(
             """SELECT code, invitee_id, inviter_id, status, redeemed_at, year_month
                FROM social_invite_redemptions WHERE code = ? AND invitee_id = ?""",

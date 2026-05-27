@@ -78,13 +78,9 @@ class DynamoSubscriptionRepository:
                 raise
 
     async def remove(self, user_id: str, content_type: str, content_id: str) -> None:
-        await self._table.delete_item(
-            Key={"PK": f"USER#{user_id}", "SK": _sub_sk(content_type, content_id)}
-        )
+        await self._table.delete_item(Key={"PK": f"USER#{user_id}", "SK": _sub_sk(content_type, content_id)})
 
-    async def list(
-        self, user_id: str, content_type: str | None = None
-    ) -> list[dict[str, Any]]:
+    async def list(self, user_id: str, content_type: str | None = None) -> list[dict[str, Any]]:
         prefix = f"{_SUB_SK_PREFIX}{content_type}#" if content_type else _SUB_SK_PREFIX
         items = await _paginate_query(
             self._table,
@@ -105,9 +101,7 @@ class DynamoSubscriptionRepository:
         content_id: str,
         patch: dict[str, Any],
     ) -> bool:
-        resp = await self._table.get_item(
-            Key={"PK": f"USER#{user_id}", "SK": _sub_sk(content_type, content_id)}
-        )
+        resp = await self._table.get_item(Key={"PK": f"USER#{user_id}", "SK": _sub_sk(content_type, content_id)})
         item = resp.get("Item")
         if not item:
             return False

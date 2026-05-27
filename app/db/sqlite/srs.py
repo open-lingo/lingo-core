@@ -71,9 +71,7 @@ class SqliteSRSRepository:
         rows = await cur.fetchall()
         return {row["card_id"]: _row_to_state(row) for row in rows}
 
-    async def get_due_cards(
-        self, user_id: str, on_or_before: str
-    ) -> dict[str, dict[str, Any]]:
+    async def get_due_cards(self, user_id: str, on_or_before: str) -> dict[str, dict[str, Any]]:
         cur = await self._conn().execute(
             """SELECT card_id, state_json FROM srs_cards_v2
                WHERE user_id = ? AND due_date <= ?
@@ -91,9 +89,7 @@ class SqliteSRSRepository:
         row = await cur.fetchone()
         return _row_to_state(row) if row else None
 
-    async def upsert_cards(
-        self, user_id: str, cards: dict[str, dict[str, Any]]
-    ) -> dict[str, dict[str, Any]]:
+    async def upsert_cards(self, user_id: str, cards: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
         result: dict[str, dict[str, Any]] = {}
 
         for card_id, incoming in cards.items():
@@ -103,11 +99,7 @@ class SqliteSRSRepository:
             existing_review = _max_last_review(existing) if existing else ""
             core_win = existing and existing_review >= incoming_review
 
-            bury_changed = (
-                existing
-                and "buriedUntil" in incoming
-                and incoming.get("buriedUntil") != existing.get("buriedUntil")
-            )
+            bury_changed = existing and "buriedUntil" in incoming and incoming.get("buriedUntil") != existing.get("buriedUntil")
             if core_win and not bury_changed:
                 result[card_id] = existing
                 continue
@@ -142,8 +134,6 @@ class SqliteSRSRepository:
         return cur.rowcount
 
     async def clear_all(self, user_id: str) -> int:
-        cur = await self._conn().execute(
-            "DELETE FROM srs_cards_v2 WHERE user_id = ?", (user_id,)
-        )
+        cur = await self._conn().execute("DELETE FROM srs_cards_v2 WHERE user_id = ?", (user_id,))
         await self._conn().commit()
         return cur.rowcount

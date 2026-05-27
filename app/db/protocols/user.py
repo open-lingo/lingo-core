@@ -2,7 +2,6 @@ from typing import Any, Protocol
 
 
 class UserRepository(Protocol):
-
     # -- User record --
 
     async def create_user(self, user: dict[str, Any]) -> dict[str, Any]:

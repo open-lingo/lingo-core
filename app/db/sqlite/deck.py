@@ -80,33 +80,25 @@ class SqliteDeckRepository:
         await self._db.executescript(_INIT_SQL)
         # Migration: add image column if missing (existing DBs)
         try:
-            await self._db.execute(
-                "ALTER TABLE deck_manifests ADD COLUMN image TEXT"
-            )
+            await self._db.execute("ALTER TABLE deck_manifests ADD COLUMN image TEXT")
             await self._db.commit()
         except Exception as e:
             if "duplicate column name" not in str(e).lower():
                 raise
         try:
-            await self._db.execute(
-                "ALTER TABLE deck_manifests ADD COLUMN locale TEXT"
-            )
+            await self._db.execute("ALTER TABLE deck_manifests ADD COLUMN locale TEXT")
             await self._db.commit()
         except Exception as e:
             if "duplicate column name" not in str(e).lower():
                 raise
         try:
-            await self._db.execute(
-                "ALTER TABLE deck_manifests ADD COLUMN default_ease REAL"
-            )
+            await self._db.execute("ALTER TABLE deck_manifests ADD COLUMN default_ease REAL")
             await self._db.commit()
         except Exception as e:
             if "duplicate column name" not in str(e).lower():
                 raise
         try:
-            await self._db.execute(
-                "ALTER TABLE deck_manifests ADD COLUMN companion_to_story_id TEXT"
-            )
+            await self._db.execute("ALTER TABLE deck_manifests ADD COLUMN companion_to_story_id TEXT")
             await self._db.commit()
         except Exception as e:
             if "duplicate column name" not in str(e).lower():
@@ -118,9 +110,7 @@ class SqliteDeckRepository:
             ("status", "TEXT DEFAULT 'published'"),
         ]:
             try:
-                await self._db.execute(
-                    f"ALTER TABLE deck_manifests ADD COLUMN {col} {col_def}"
-                )
+                await self._db.execute(f"ALTER TABLE deck_manifests ADD COLUMN {col} {col_def}")
                 await self._db.commit()
             except Exception as e:
                 if "duplicate column name" not in str(e).lower():
@@ -190,9 +180,7 @@ class SqliteDeckRepository:
         )
 
     async def get_manifest(self, deck_id: str) -> dict[str, Any] | None:
-        cur = await self._conn().execute(
-            "SELECT * FROM deck_manifests WHERE id = ?", (deck_id,)
-        )
+        cur = await self._conn().execute("SELECT * FROM deck_manifests WHERE id = ?", (deck_id,))
         row = await cur.fetchone()
         return _row_to_manifest(row) if row else None
 
@@ -201,9 +189,7 @@ class SqliteDeckRepository:
         if not manifest:
             return None
 
-        cur = await self._conn().execute(
-            "SELECT cards FROM deck_content WHERE deck_id = ?", (deck_id,)
-        )
+        cur = await self._conn().execute("SELECT cards FROM deck_content WHERE deck_id = ?", (deck_id,))
         row = await cur.fetchone()
         if not row:
             return None
@@ -244,9 +230,7 @@ class SqliteDeckRepository:
         rows = await cur.fetchall()
         return {row["id"]: row["version"] for row in rows}
 
-    async def upsert_deck(
-        self, deck_id: str, manifest: dict[str, Any], cards: list[dict[str, Any]]
-    ) -> None:
+    async def upsert_deck(self, deck_id: str, manifest: dict[str, Any], cards: list[dict[str, Any]]) -> None:
         now = datetime.now(UTC).isoformat()
         card_count = len(cards)
 
@@ -330,9 +314,7 @@ class SqliteDeckRepository:
         row = await cur.fetchone()
         return int(row["c"]) if row else 0
 
-    async def get_vote_state(
-        self, deck_id: str, user_id: str | None
-    ) -> dict[str, Any]:
+    async def get_vote_state(self, deck_id: str, user_id: str | None) -> dict[str, Any]:
         count = await self.get_vote_count(deck_id)
         if user_id is None:
             return {"count": count, "voted": False}

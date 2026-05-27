@@ -97,6 +97,4 @@ def test_idempotent_retry(api_client) -> None:
     assert r2["attemptId"] == first_attempt_id
 
     me2 = client.get("/api/core/v1/users/me").json()
-    assert me2["xp"] == xp_after_first, (
-        f"retry double-credited XP: {xp_after_first} → {me2['xp']}"
-    )
+    assert me2["xp"] == xp_after_first, f"retry double-credited XP: {xp_after_first} → {me2['xp']}"

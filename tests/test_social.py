@@ -20,9 +20,7 @@ from fastapi.testclient import TestClient
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _register_user(
-    client: TestClient, sub: str, username: str, display_name: str
-) -> dict[str, Any]:
+def _register_user(client: TestClient, sub: str, username: str, display_name: str) -> dict[str, Any]:
     """Create a user via POST /users/me, impersonating ``sub``."""
     resp = client.post(
         "/api/core/v1/users/me",
@@ -55,12 +53,16 @@ def client() -> Any:
     import importlib
 
     from app import config as config_mod
+
     importlib.reload(config_mod)
     from app.db import provider as provider_mod
+
     importlib.reload(provider_mod)
     from app.auth import dependencies as auth_dep_mod
+
     importlib.reload(auth_dep_mod)
     from app import main as main_mod
+
     importlib.reload(main_mod)
 
     with TestClient(main_mod.app) as c:
@@ -78,9 +80,7 @@ def users(client: TestClient) -> dict[str, dict[str, Any]]:
 # ── Friends ──────────────────────────────────────────────────────────────────
 
 
-def test_send_and_accept_friend_request(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+def test_send_and_accept_friend_request(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     bob_id = users["bob"]["id"]
     # Alice sends a request to Bob.
     resp = client.post(
@@ -115,9 +115,7 @@ def test_send_and_accept_friend_request(
 
 def test_block_and_unblock(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     carol_id = users["carol"]["id"]
-    resp = client.post(
-        f"/api/core/v1/social/blocks/{carol_id}", headers=_as("auth0|alice")
-    )
+    resp = client.post(f"/api/core/v1/social/blocks/{carol_id}", headers=_as("auth0|alice"))
     assert resp.status_code == 200
     assert resp.json() == {"status": "blocked"}
 
@@ -125,35 +123,25 @@ def test_block_and_unblock(client: TestClient, users: dict[str, dict[str, Any]])
     assert resp.status_code == 200
     assert any(b["user_id"] == carol_id for b in resp.json())
 
-    resp = client.delete(
-        f"/api/core/v1/social/blocks/{carol_id}", headers=_as("auth0|alice")
-    )
+    resp = client.delete(f"/api/core/v1/social/blocks/{carol_id}", headers=_as("auth0|alice"))
     assert resp.status_code == 204
 
 
 # ── Public profile ───────────────────────────────────────────────────────────
 
 
-def test_public_profile_friendship_status(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+def test_public_profile_friendship_status(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     # Bob is already Alice's friend by the time this runs (test_send_and_accept).
-    resp = client.get(
-        "/api/core/v1/social/profiles/bob_t", headers=_as("auth0|alice")
-    )
+    resp = client.get("/api/core/v1/social/profiles/bob_t", headers=_as("auth0|alice"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["username"] == "bob_t"
     assert body["friendship_status"] == "friend"
 
 
-def test_public_profile_enriched_fields(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+def test_public_profile_enriched_fields(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     """Enriched fields are present + typed correctly even when zero-valued."""
-    resp = client.get(
-        "/api/core/v1/social/profiles/bob_t", headers=_as("auth0|alice")
-    )
+    resp = client.get("/api/core/v1/social/profiles/bob_t", headers=_as("auth0|alice"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     # Enrichment fields appended in Task 2.
@@ -170,13 +158,9 @@ def test_public_profile_enriched_fields(
     assert "league" in body
 
 
-def test_public_profile_league_none_for_zero_xp(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+def test_public_profile_league_none_for_zero_xp(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     """Bob has 0 XP at this point in the session — league must be None."""
-    resp = client.get(
-        "/api/core/v1/social/profiles/bob_t", headers=_as("auth0|alice")
-    )
+    resp = client.get("/api/core/v1/social/profiles/bob_t", headers=_as("auth0|alice"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     # Bob hasn't earned XP in the test fixtures.
@@ -184,9 +168,7 @@ def test_public_profile_league_none_for_zero_xp(
     assert body["league"] is None
 
 
-def test_public_profile_league_derived_from_xp(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+def test_public_profile_league_derived_from_xp(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     """When a user has accumulated XP, the league badge is filled in.
 
     Carol is a fresh user — we award her some XP via the admin endpoint
@@ -207,9 +189,7 @@ def test_public_profile_league_derived_from_xp(
     finally:
         cfg.ADMIN_USER_IDS = prior_admins
 
-    resp = client.get(
-        "/api/core/v1/social/profiles/carol_t", headers=_as("auth0|alice")
-    )
+    resp = client.get("/api/core/v1/social/profiles/carol_t", headers=_as("auth0|alice"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     league = body["league"]
@@ -243,9 +223,7 @@ def test_leaderboards_all_buckets(client: TestClient, users: dict[str, dict[str,
 
 
 def test_league_spotlight(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
-    resp = client.get(
-        "/api/core/v1/social/leaderboards/spotlight", headers=_as("auth0|alice")
-    )
+    resp = client.get("/api/core/v1/social/leaderboards/spotlight", headers=_as("auth0|alice"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["league"] in {"bronze", "silver", "gold", "diamond", "obsidian"}
@@ -261,9 +239,7 @@ def test_league_spotlight(client: TestClient, users: dict[str, dict[str, Any]]) 
 
 
 def test_streak_snapshot(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
-    resp = client.get(
-        "/api/core/v1/social/streak-snapshot", headers=_as("auth0|alice")
-    )
+    resp = client.get("/api/core/v1/social/streak-snapshot", headers=_as("auth0|alice"))
     assert resp.status_code == 200
     body = resp.json()
     assert "my_streak_days" in body
@@ -274,9 +250,7 @@ def test_streak_snapshot(client: TestClient, users: dict[str, dict[str, Any]]) -
 
 
 @pytest.mark.asyncio
-async def test_activity_feed_and_reaction_toggle(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+async def test_activity_feed_and_reaction_toggle(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     """Seed a single activity row via the repo, then exercise GET + reactions."""
     from app.db.provider import get_social_repo
 
@@ -340,9 +314,7 @@ async def test_activity_feed_and_reaction_toggle(
 # ── Invites ──────────────────────────────────────────────────────────────────
 
 
-def test_invite_offer_returns_persistent_code(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+def test_invite_offer_returns_persistent_code(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     resp = client.get("/api/core/v1/social/invites/offer", headers=_as("auth0|alice"))
     assert resp.status_code == 200, resp.text
     first = resp.json()
@@ -357,39 +329,29 @@ def test_invite_offer_returns_persistent_code(
     assert second["code"] == first["code"]
 
 
-def test_invite_redemption_paths(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+def test_invite_redemption_paths(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     # Alice's code, fetched fresh.
     resp = client.get("/api/core/v1/social/invites/offer", headers=_as("auth0|alice"))
     assert resp.status_code == 200
     code = resp.json()["code"]
 
     # Alice tries to redeem her own code → self.
-    resp = client.post(
-        f"/api/core/v1/social/invites/redeem/{code}", headers=_as("auth0|alice")
-    )
+    resp = client.post(f"/api/core/v1/social/invites/redeem/{code}", headers=_as("auth0|alice"))
     assert resp.status_code == 200
     assert resp.json()["status"] == "self"
 
     # Bob redeems → pending.
-    resp = client.post(
-        f"/api/core/v1/social/invites/redeem/{code}", headers=_as("auth0|bob")
-    )
+    resp = client.post(f"/api/core/v1/social/invites/redeem/{code}", headers=_as("auth0|bob"))
     assert resp.status_code == 200
     assert resp.json()["status"] == "pending"
 
     # Same call again → still pending (idempotent).
-    resp = client.post(
-        f"/api/core/v1/social/invites/redeem/{code}", headers=_as("auth0|bob")
-    )
+    resp = client.post(f"/api/core/v1/social/invites/redeem/{code}", headers=_as("auth0|bob"))
     assert resp.status_code == 200
     assert resp.json()["status"] == "pending"
 
     # Invalid code → invalid.
-    resp = client.post(
-        "/api/core/v1/social/invites/redeem/NOTACODE", headers=_as("auth0|carol")
-    )
+    resp = client.post("/api/core/v1/social/invites/redeem/NOTACODE", headers=_as("auth0|carol"))
     assert resp.status_code == 200
     assert resp.json()["status"] == "invalid"
 
@@ -398,9 +360,7 @@ def test_invite_redemption_paths(
 
 
 @pytest.mark.asyncio
-async def test_threads_listing_and_detail(
-    client: TestClient, users: dict[str, dict[str, Any]]
-) -> None:
+async def test_threads_listing_and_detail(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     from app.db.provider import get_social_repo
 
     repo = get_social_repo()
@@ -433,18 +393,14 @@ async def test_threads_listing_and_detail(
     assert found["other_username"] == "bob_t"
     assert found["last_message_preview"] == "hey alice!"
 
-    resp = client.get(
-        f"/api/core/v1/social/threads/{thread_id}", headers=_as("auth0|alice")
-    )
+    resp = client.get(f"/api/core/v1/social/threads/{thread_id}", headers=_as("auth0|alice"))
     assert resp.status_code == 200, resp.text
     detail = resp.json()
     assert len(detail["messages"]) == 1
     assert detail["messages"][0]["body"] == "hey alice!"
 
     # Carol is not a participant.
-    resp = client.get(
-        f"/api/core/v1/social/threads/{thread_id}", headers=_as("auth0|carol")
-    )
+    resp = client.get(f"/api/core/v1/social/threads/{thread_id}", headers=_as("auth0|carol"))
     assert resp.status_code == 403
 
 

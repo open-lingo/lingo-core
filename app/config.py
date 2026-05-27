@@ -70,10 +70,7 @@ def _guard_debug_in_prod(s: "Settings") -> None:
     if not s.DEBUG:
         return
     if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-        raise RuntimeError(
-            "DEBUG=true is not allowed in production environments "
-            "(AWS_LAMBDA_FUNCTION_NAME is set)."
-        )
+        raise RuntimeError("DEBUG=true is not allowed in production environments (AWS_LAMBDA_FUNCTION_NAME is set).")
 
 
 # Wrap Settings.__init__ so direct ``Settings()`` calls (e.g. in tests) also

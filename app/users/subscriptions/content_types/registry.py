@@ -9,9 +9,7 @@ from app.users.subscriptions.content_types.story import StoryContentType
 from app.users.subscriptions.types import ContentType
 
 
-def get_content_type_handler(
-    content_type: str, context: dict[str, Any] | None = None
-) -> BaseContentType:
+def get_content_type_handler(content_type: str, context: dict[str, Any] | None = None) -> BaseContentType:
     """Return the handler for a content type. Context can inject deps (e.g. deck_repo)."""
     context = context or {}
     if content_type == ContentType.DECK:

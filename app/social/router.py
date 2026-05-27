@@ -136,9 +136,7 @@ def _league_for_weekly_xp(weekly_xp: int) -> tuple[LeagueName, int, int | None, 
     return ("obsidian", 4, None, 5000)
 
 
-async def _xp_in_window(
-    progress: ProgressRepository, user_id: str, days: int
-) -> int:
+async def _xp_in_window(progress: ProgressRepository, user_id: str, days: int) -> int:
     today = _today()
     since = (today - timedelta(days=days - 1)).isoformat()
     until = today.isoformat()
@@ -151,9 +149,7 @@ async def _xp_for_day(progress: ProgressRepository, user_id: str, day: date) -> 
     return sum(int(r.get("xpEarned") or 0) for r in rows)
 
 
-async def _friendship_status(
-    social: SocialRepository, me_id: str, other_id: str
-) -> FriendshipStatus:
+async def _friendship_status(social: SocialRepository, me_id: str, other_id: str) -> FriendshipStatus:
     if me_id == other_id:
         return "self"
     if await social.is_blocked(me_id, other_id):
@@ -169,9 +165,7 @@ async def _friendship_status(
     return "none"
 
 
-async def _users_by_ids(
-    users: UserRepository, ids: list[str]
-) -> dict[str, dict[str, Any]]:
+async def _users_by_ids(users: UserRepository, ids: list[str]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for uid in ids:
         rec = await users.get_user_by_id(uid)
@@ -236,9 +230,7 @@ async def send_friend_request(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Target user not found")
     if target["id"] == user.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot friend yourself")
-    if await social.is_blocked(user.id, target["id"]) or await social.is_blocked(
-        target["id"], user.id
-    ):
+    if await social.is_blocked(user.id, target["id"]) or await social.is_blocked(target["id"], user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Blocked")
     if await social.is_friend(user.id, target["id"]):
         return FriendRequestStatus(status="exists")
@@ -502,12 +494,8 @@ async def leaderboard_me(
     my_weekly_xp = await _xp_in_window(progress, user.id, 7)
     my_monthly_xp = await _xp_in_window(progress, user.id, 30)
     return MyLeaderboardSummary(
-        weekly=MyLeaderboardSlot(
-            bucket=weekly.bucket, xp=my_weekly_xp, rank=weekly.my_rank, total=weekly.total
-        ),
-        monthly=MyLeaderboardSlot(
-            bucket=monthly.bucket, xp=my_monthly_xp, rank=monthly.my_rank, total=monthly.total
-        ),
+        weekly=MyLeaderboardSlot(bucket=weekly.bucket, xp=my_weekly_xp, rank=weekly.my_rank, total=weekly.total),
+        monthly=MyLeaderboardSlot(bucket=monthly.bucket, xp=my_monthly_xp, rank=monthly.my_rank, total=monthly.total),
         lang=lang,
     )
 
@@ -639,9 +627,7 @@ async def get_public_profile(
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     settings_blob = await users.get_settings(target["id"]) or {}
-    learning_language = settings_blob.get("learning_language") or settings_blob.get(
-        "learningLanguageId"
-    )
+    learning_language = settings_blob.get("learning_language") or settings_blob.get("learningLanguageId")
     fs = await _friendship_status(social, user.id, target["id"])
     # Authored-decks enrichment — best-effort: fall back to an empty list if
     # the deck repo isn't wired (Dynamo backend in degraded mode, etc.).
@@ -649,9 +635,7 @@ async def get_public_profile(
     authored_sample: list[dict[str, Any]] = []
     if decks is not None:
         try:
-            owned = await decks.list_owned_manifests(
-                target["id"], status="published", exclude_companion=True
-            )
+            owned = await decks.list_owned_manifests(target["id"], status="published", exclude_companion=True)
             authored_count = len(owned)
             authored_sample = [
                 {
@@ -688,12 +672,8 @@ async def get_public_profile(
 # ─── Activity feed + reactions ───────────────────────────────────────────────
 
 
-def _summarize_reactions(
-    rows: list[dict[str, Any]], me_id: str
-) -> list[ActivityReaction]:
-    by_kind: dict[str, dict[str, Any]] = {
-        k: {"kind": k, "count": 0, "mine": False} for k in REACTION_KINDS
-    }
+def _summarize_reactions(rows: list[dict[str, Any]], me_id: str) -> list[ActivityReaction]:
+    by_kind: dict[str, dict[str, Any]] = {k: {"kind": k, "count": 0, "mine": False} for k in REACTION_KINDS}
     for row in rows:
         kind = row.get("kind")
         if kind not in by_kind:
@@ -718,9 +698,7 @@ async def list_activity(
     with api_error("listing activity feed"):
         edges = await social.list_friends(user.id)
         friend_ids = [e["friend_id"] for e in edges]
-        items, next_cursor = await social.list_activity(
-            user.id, friend_ids, limit=limit, cursor=cursor
-        )
+        items, next_cursor = await social.list_activity(user.id, friend_ids, limit=limit, cursor=cursor)
         if not items:
             return ActivityFeedResponse(items=[], cursor=None)
 
@@ -782,9 +760,7 @@ async def toggle_activity_reaction(
 # ─── Invites ─────────────────────────────────────────────────────────────────
 
 
-async def _resolve_or_create_invite(
-    social: SocialRepository, owner_id: str
-) -> dict[str, Any]:
+async def _resolve_or_create_invite(social: SocialRepository, owner_id: str) -> dict[str, Any]:
     existing = await social.get_invite_code_for_owner(owner_id)
     if existing:
         return existing
@@ -794,9 +770,7 @@ async def _resolve_or_create_invite(
         clash = await social.get_invite_code(candidate)
         if clash is None:
             return await social.create_invite_code(owner_id, candidate)
-    raise HTTPException(
-        status.HTTP_503_SERVICE_UNAVAILABLE, "Could not allocate an invite code"
-    )
+    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Could not allocate an invite code")
 
 
 @router.get("/invites/offer", response_model=InviteOfferResponse)
@@ -805,9 +779,7 @@ async def get_invite_offer(
     social: SocialRepo,
 ) -> Any:
     row = await _resolve_or_create_invite(social, user.id)
-    count = await social.count_redemptions_for_owner_in_month(
-        user.id, _yyyymm(_today())
-    )
+    count = await social.count_redemptions_for_owner_in_month(user.id, _yyyymm(_today()))
     return InviteOfferResponse(
         code=row["code"],
         url=f"{DEFAULT_INVITE_BASE_URL}/{row['code']}",
@@ -839,12 +811,8 @@ async def redeem_invite(
         # Idempotent: surface whatever state we're in.
         return InviteRedeemResponse(
             status=existing["status"],
-            lingot_reward=(
-                DEFAULT_LINGOT_REWARD_INVITEE if existing["status"] == "redeemed" else 0
-            ),
-            ad_free_minutes=(
-                DEFAULT_AD_FREE_MINUTES_INVITEE if existing["status"] == "redeemed" else 0
-            ),
+            lingot_reward=(DEFAULT_LINGOT_REWARD_INVITEE if existing["status"] == "redeemed" else 0),
+            ad_free_minutes=(DEFAULT_AD_FREE_MINUTES_INVITEE if existing["status"] == "redeemed" else 0),
         )
 
     ym = _yyyymm(_today())
@@ -886,11 +854,7 @@ async def list_threads(
             continue
         msgs = await social.list_messages(row["id"])
         last = msgs[-1] if msgs else None
-        last_at = (
-            datetime.fromisoformat(last["sent_at"])
-            if last
-            else datetime.fromisoformat(row["updated_at"])
-        )
+        last_at = datetime.fromisoformat(last["sent_at"]) if last else datetime.fromisoformat(row["updated_at"])
         out.append(
             ThreadItem(
                 id=row["id"],
@@ -918,9 +882,7 @@ async def get_thread_detail(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Thread not found")
     if user.id not in (thread["user_a_id"], thread["user_b_id"]):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a participant")
-    other_id = (
-        thread["user_b_id"] if thread["user_a_id"] == user.id else thread["user_a_id"]
-    )
+    other_id = thread["user_b_id"] if thread["user_a_id"] == user.id else thread["user_a_id"]
     other = await users.get_user_by_id(other_id)
     if other is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Other participant not found")

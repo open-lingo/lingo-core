@@ -125,9 +125,7 @@ class StreakSnapshotResponse(BaseModel):
 # ─── Public profile ──────────────────────────────────────────────────────────
 
 
-FriendshipStatus = Literal[
-    "none", "friend", "request_in", "request_out", "blocked", "self"
-]
+FriendshipStatus = Literal["none", "friend", "request_in", "request_out", "blocked", "self"]
 
 
 class AuthoredDeckSample(BaseModel):

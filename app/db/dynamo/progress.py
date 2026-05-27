@@ -28,6 +28,7 @@ def _to_attr_map(item: dict[str, Any]) -> dict[str, Any]:
     required by the low-level transact_write_items API."""
     return {k: _SERIALIZER.serialize(v) for k, v in item.items()}
 
+
 _USER_PREFIX = "USER#"
 _ATTEMPT_PREFIX = "ATTEMPT#"
 _CLIENT_PREFIX = "CLIENT#"
@@ -112,9 +113,7 @@ async def _paginate_query(table: Any, **kwargs: Any) -> list[dict[str, Any]]:
     resp = await table.query(**kwargs)
     items.extend(resp.get("Items", []))
     while "LastEvaluatedKey" in resp:
-        resp = await table.query(
-            **kwargs, ExclusiveStartKey=resp["LastEvaluatedKey"]
-        )
+        resp = await table.query(**kwargs, ExclusiveStartKey=resp["LastEvaluatedKey"])
         items.extend(resp.get("Items", []))
     return items
 
@@ -130,9 +129,7 @@ class DynamoProgressRepository:
         self._resource_ctx: Any = None
 
     async def connect(self) -> None:
-        self._resource_ctx = self._session.resource(
-            "dynamodb", region_name=self._region
-        )
+        self._resource_ctx = self._session.resource("dynamodb", region_name=self._region)
         resource = await self._resource_ctx.__aenter__()
         self._table = await resource.Table(self._table_name)
 
@@ -140,12 +137,8 @@ class DynamoProgressRepository:
         if self._resource_ctx:
             await self._resource_ctx.__aexit__(None, None, None)
 
-    async def attempt_exists(
-        self, user_id: str, client_attempt_id: str
-    ) -> dict[str, Any] | None:
-        resp = await self._table.get_item(
-            Key={"PK": _pk(user_id), "SK": f"{_CLIENT_PREFIX}{client_attempt_id}"}
-        )
+    async def attempt_exists(self, user_id: str, client_attempt_id: str) -> dict[str, Any] | None:
+        resp = await self._table.get_item(Key={"PK": _pk(user_id), "SK": f"{_CLIENT_PREFIX}{client_attempt_id}"})
         item = resp.get("Item")
         return _attempt_item_to_dict(item) if item else None
 
@@ -211,8 +204,7 @@ class DynamoProgressRepository:
         fetch = limit + 1
         if lesson_id:
             kwargs: dict[str, Any] = {
-                "KeyConditionExpression": Key("PK").eq(_pk(user_id))
-                & Key("SK").begins_with(f"{_ATTEMPT_PREFIX}{lesson_id}#"),
+                "KeyConditionExpression": Key("PK").eq(_pk(user_id)) & Key("SK").begins_with(f"{_ATTEMPT_PREFIX}{lesson_id}#"),
                 "ScanIndexForward": False,
                 "Limit": fetch,
             }
@@ -259,17 +251,11 @@ class DynamoProgressRepository:
         out: list[dict[str, Any]] = []
         for row in rows:
             attempt = _attempt_item_to_dict(row)
-            if any(
-                cid in concept_set
-                for step in attempt["steps"]
-                for cid in (step.get("conceptIds") or [])
-            ):
+            if any(cid in concept_set for step in attempt["steps"] for cid in (step.get("conceptIds") or [])):
                 out.append(attempt)
         return out
 
-    async def update_lesson_rollup(
-        self, user_id: str, lesson_id: str, attempt: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def update_lesson_rollup(self, user_id: str, lesson_id: str, attempt: dict[str, Any]) -> dict[str, Any]:
         sk = f"{_LESSON_PREFIX}{lesson_id}"
         key = {"PK": _pk(user_id), "SK": sk}
         score = float(attempt["score"])
@@ -310,8 +296,7 @@ class DynamoProgressRepository:
     async def get_lesson_rollups(self, user_id: str) -> list[dict[str, Any]]:
         rows = await _paginate_query(
             self._table,
-            KeyConditionExpression=Key("PK").eq(_pk(user_id))
-            & Key("SK").begins_with(_LESSON_PREFIX),
+            KeyConditionExpression=Key("PK").eq(_pk(user_id)) & Key("SK").begins_with(_LESSON_PREFIX),
         )
         return [_lesson_item_to_dict(r) for r in rows]
 
@@ -327,10 +312,7 @@ class DynamoProgressRepository:
         key = {"PK": _pk(user_id), "SK": sk}
         await self._table.update_item(
             Key=key,
-            UpdateExpression=(
-                "ADD lessonsCompleted :lc, minutesActive :ma, xpEarned :xp "
-                "SET #d = if_not_exists(#d, :date)"
-            ),
+            UpdateExpression=("ADD lessonsCompleted :lc, minutesActive :ma, xpEarned :xp SET #d = if_not_exists(#d, :date)"),
             ExpressionAttributeNames={"#d": "date"},
             ExpressionAttributeValues={
                 ":lc": lessons_inc,
@@ -342,19 +324,14 @@ class DynamoProgressRepository:
         resp = await self._table.get_item(Key=key)
         return _day_item_to_dict(resp["Item"])
 
-    async def get_day_rollups(
-        self, user_id: str, since: str, until: str
-    ) -> list[dict[str, Any]]:
+    async def get_day_rollups(self, user_id: str, since: str, until: str) -> list[dict[str, Any]]:
         rows = await _paginate_query(
             self._table,
-            KeyConditionExpression=Key("PK").eq(_pk(user_id))
-            & Key("SK").between(f"{_DAY_PREFIX}{since}", f"{_DAY_PREFIX}{until}"),
+            KeyConditionExpression=Key("PK").eq(_pk(user_id)) & Key("SK").between(f"{_DAY_PREFIX}{since}", f"{_DAY_PREFIX}{until}"),
         )
         return [_day_item_to_dict(r) for r in rows]
 
-    async def invalidate_concepts(
-        self, user_id: str, concept_ids: list[str], staleAt: str
-    ) -> None:
+    async def invalidate_concepts(self, user_id: str, concept_ids: list[str], staleAt: str) -> None:
         for cid in concept_ids:
             await self._table.update_item(
                 Key={"PK": _pk(user_id), "SK": f"{_CONCEPT_PREFIX}{cid}"},
@@ -377,8 +354,7 @@ class DynamoProgressRepository:
     async def get_concept_rollups(self, user_id: str) -> list[dict[str, Any]]:
         rows = await _paginate_query(
             self._table,
-            KeyConditionExpression=Key("PK").eq(_pk(user_id))
-            & Key("SK").begins_with(_CONCEPT_PREFIX),
+            KeyConditionExpression=Key("PK").eq(_pk(user_id)) & Key("SK").begins_with(_CONCEPT_PREFIX),
         )
         return [_concept_item_to_dict(r) for r in rows]
 

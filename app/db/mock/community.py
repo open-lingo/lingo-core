@@ -33,16 +33,11 @@ class MockCommunityRepository:
     def _seed_data(self) -> None:
         """Seed initial categories, tags, and sample threads."""
         cats = [
-            {"id": "c1", "slug": "general", "name_key": "forum.categoryGeneral",
-             "description_key": "forum.categoryGeneralDesc", "sort_order": 0},
-            {"id": "c2", "slug": "features", "name_key": "forum.categoryFeatures",
-             "description_key": "forum.categoryFeaturesDesc", "sort_order": 1},
-            {"id": "c3", "slug": "bugs", "name_key": "forum.categoryBugs",
-             "description_key": "forum.categoryBugsDesc", "sort_order": 2},
-            {"id": "c4", "slug": "tips", "name_key": "forum.categoryTips",
-             "description_key": "forum.categoryTipsDesc", "sort_order": 3},
-            {"id": "c5", "slug": "content", "name_key": "forum.categoryContent",
-             "description_key": "forum.categoryContentDesc", "sort_order": 4},
+            {"id": "c1", "slug": "general", "name_key": "forum.categoryGeneral", "description_key": "forum.categoryGeneralDesc", "sort_order": 0},
+            {"id": "c2", "slug": "features", "name_key": "forum.categoryFeatures", "description_key": "forum.categoryFeaturesDesc", "sort_order": 1},
+            {"id": "c3", "slug": "bugs", "name_key": "forum.categoryBugs", "description_key": "forum.categoryBugsDesc", "sort_order": 2},
+            {"id": "c4", "slug": "tips", "name_key": "forum.categoryTips", "description_key": "forum.categoryTipsDesc", "sort_order": 3},
+            {"id": "c5", "slug": "content", "name_key": "forum.categoryContent", "description_key": "forum.categoryContentDesc", "sort_order": 4},
         ]
         for c in cats:
             c["created_at"] = c["updated_at"] = _now()
@@ -67,10 +62,7 @@ class MockCommunityRepository:
             "author_name": "Community",
             "title": "Welcome to the Open Lingo community forum!",
             "excerpt": "Introduce yourself and share what you're learning.",
-            "body_markdown": (
-                "Welcome! This is the place to discuss, ask questions, and share tips.\n\n"
-                "**Be kind and helpful.**"
-            ),
+            "body_markdown": ("Welcome! This is the place to discuss, ask questions, and share tips.\n\n**Be kind and helpful.**"),
             "reply_count": 0,
             "upvote_count": 0,
             "downvote_count": 0,
@@ -166,12 +158,9 @@ class MockCommunityRepository:
         if tag_id:
             items = [t for t in items if tag_id in self._thread_tags.get(t["id"], set())]
         if content_type and content_id:
-            linked = {
-                cl["thread_id"]
-                for cl in self._content_links
-                if cl.get("content_type") == content_type and cl.get("content_id") == content_id
-            }
+            linked = {cl["thread_id"] for cl in self._content_links if cl.get("content_type") == content_type and cl.get("content_id") == content_id}
             items = [t for t in items if t["id"] in linked]
+
         def _score(t: dict) -> int:
             return t["upvote_count"] - t["downvote_count"] + t["reply_count"] * 2
 
@@ -282,11 +271,7 @@ class MockCommunityRepository:
         *,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
-        linked = [
-            cl["thread_id"]
-            for cl in self._content_links
-            if cl.get("content_type") == content_type and cl.get("content_id") == content_id
-        ]
+        linked = [cl["thread_id"] for cl in self._content_links if cl.get("content_type") == content_type and cl.get("content_id") == content_id]
         items = [self._threads[tid] for tid in linked if tid in self._threads][:limit]
         return [deepcopy(t) for t in items]
 
@@ -304,14 +289,8 @@ class MockCommunityRepository:
         # Update denormalized counts (simplified: we'd need to recalc from all votes in real impl)
         if target_type == "thread" and target_id in self._threads:
             t = self._threads[target_id]
-            t["upvote_count"] = sum(
-                1 for k, v in self._votes.items()
-                if k[1] == "thread" and k[2] == target_id and v == 1
-            )
-            t["downvote_count"] = sum(
-                1 for k, v in self._votes.items()
-                if k[1] == "thread" and k[2] == target_id and v == -1
-            )
+            t["upvote_count"] = sum(1 for k, v in self._votes.items() if k[1] == "thread" and k[2] == target_id and v == 1)
+            t["downvote_count"] = sum(1 for k, v in self._votes.items() if k[1] == "thread" and k[2] == target_id and v == -1)
 
     async def get_user_vote(
         self,

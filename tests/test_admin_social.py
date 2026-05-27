@@ -32,6 +32,7 @@ def admin_client(api_client, monkeypatch):
     """Wrap the standard api_client fixture but flip the admin allowlist on."""
     client, user_id, admin_user_id = api_client
     from app.config import settings
+
     monkeypatch.setattr(settings, "ADMIN_USER_IDS", [admin_user_id])
     return client, user_id, admin_user_id
 

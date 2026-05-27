@@ -161,7 +161,8 @@ async def _validate_jwt(token: str) -> TokenPayload:
 
     logger.warning(
         "JWT validation failed: kid=%r, domain=%s, jwks_kids=%s",
-        kid, settings.AUTH0_DOMAIN,
+        kid,
+        settings.AUTH0_DOMAIN,
         [k.get("kid") for k in jwks.get("keys", [])],
     )
     raise HTTPException(

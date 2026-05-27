@@ -36,9 +36,7 @@ class GradedStepResult(BaseModel):
 class AttemptSubmission(BaseModel):
     """Body of POST /progress/lessons/:lessonId/attempt (single, dev-convenience)."""
 
-    clientAttemptId: str = Field(
-        description="Client-generated UUID for idempotent retries"
-    )
+    clientAttemptId: str = Field(description="Client-generated UUID for idempotent retries")
     durationSec: int = Field(
         ge=1,
         le=3600,
@@ -237,9 +235,7 @@ class TouchResponse(BaseModel):
     """Returned by POST /progress/me/touch — login/session-start hook."""
 
     user: UserStats
-    streakUpdated: bool = Field(
-        description="True if today is the first activity day for the user"
-    )
+    streakUpdated: bool = Field(description="True if today is the first activity day for the user")
     staleConceptIds: list[str] = Field(
         default_factory=list,
         description="Concepts that were flagged stale at this touch — frontend can prefetch on next read",

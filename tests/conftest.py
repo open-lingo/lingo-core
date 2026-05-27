@@ -86,12 +86,16 @@ async def api_client(tmp_db_path: str, monkeypatch: pytest.MonkeyPatch) -> Async
     import importlib
 
     from app import config as config_mod
+
     importlib.reload(config_mod)
     from app.db import provider as provider_mod
+
     importlib.reload(provider_mod)
     from app.auth import dependencies as auth_dep_mod
+
     importlib.reload(auth_dep_mod)
     from app import main as main_mod
+
     importlib.reload(main_mod)
 
     app = main_mod.app

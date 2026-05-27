@@ -19,9 +19,7 @@ from app.shared.errors import api_error
 router = APIRouter(tags=["admin", "platform-settings"])
 
 AdminUser = Annotated[TokenPayload, Depends(require_admin)]
-PlatformSettingsRepo = Annotated[
-    PlatformSettingsRepository | None, Depends(get_platform_settings_repo)
-]
+PlatformSettingsRepo = Annotated[PlatformSettingsRepository | None, Depends(get_platform_settings_repo)]
 
 
 @router.get("/xp", response_model=XpEconomyConfig)

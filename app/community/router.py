@@ -39,9 +39,7 @@ CommunityRepo = Annotated[CommunityRepository, Depends(get_community_repo)]
 CurrentUser = Annotated[TokenPayload | None, Depends(get_community_user_optional)]
 
 
-def _thread_to_response(
-    thread: dict, tag_ids: list[str], content_links: list[dict]
-) -> ThreadResponse:
+def _thread_to_response(thread: dict, tag_ids: list[str], content_links: list[dict]) -> ThreadResponse:
     return ThreadResponse(
         id=thread["id"],
         category_id=thread["category_id"],

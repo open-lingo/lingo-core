@@ -18,9 +18,7 @@ class StoryContentType(BaseContentType):
     def type_name(self) -> str:
         return "story"
 
-    async def validate_subscription(
-        self, content_id: str, context: dict[str, Any] | None = None
-    ) -> bool:
+    async def validate_subscription(self, content_id: str, context: dict[str, Any] | None = None) -> bool:
         repo = self._story_repo or (context or {}).get("story_repo")
         if repo is None:
             return True

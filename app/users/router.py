@@ -169,9 +169,7 @@ async def list_subscriptions(
     return [SubscriptionItem(**x) for x in items]
 
 
-@router.post(
-    "/me/subscriptions", response_model=SubscriptionItem, status_code=status.HTTP_201_CREATED
-)
+@router.post("/me/subscriptions", response_model=SubscriptionItem, status_code=status.HTTP_201_CREATED)
 async def add_subscription(
     body: SubscriptionCreate,
     user: CurrentUser,
@@ -238,9 +236,7 @@ async def update_subscription(
     with api_error("updating subscription"):
         updated = await r.update_settings(user.id, content_type, content_id, db_patch)
         if not updated:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
         items = await r.list(user.id, content_type=content_type)
         item = next((i for i in items if i["contentId"] == content_id), None)
         if not item:
@@ -314,9 +310,7 @@ async def _weekly_xp(progress: ProgressRepository | None, user_id: str) -> int:
     return sum(int(r.get("xpEarned") or 0) for r in rows)
 
 
-async def _discover_friendship_status(
-    social: SocialRepository | None, me_id: str, other_id: str
-) -> PublicFriendshipStatus:
+async def _discover_friendship_status(social: SocialRepository | None, me_id: str, other_id: str) -> PublicFriendshipStatus:
     if me_id == other_id:
         return "self"
     if social is None:
@@ -367,10 +361,7 @@ async def discover_users(
             if not normalized_q and record["id"] == user.id:
                 continue
             if normalized_q:
-                hay = (
-                    f"{record.get('username') or ''} "
-                    f"{record.get('display_name') or ''}"
-                ).lower()
+                hay = (f"{record.get('username') or ''} {record.get('display_name') or ''}").lower()
                 if normalized_q not in hay:
                     continue
             settings_blob = await repo.get_settings(record["id"])
@@ -391,9 +382,7 @@ async def discover_users(
             enriched.append((record, settings_blob, weekly, fs))
 
         # Sort: weekly_xp DESC, then streak DESC, then username for stability.
-        enriched.sort(
-            key=lambda p: (-p[2], -int(p[0].get("streak") or 0), p[0].get("username") or "")
-        )
+        enriched.sort(key=lambda p: (-p[2], -int(p[0].get("streak") or 0), p[0].get("username") or ""))
 
         total = len(enriched)
         sliced = enriched[offset : offset + limit]

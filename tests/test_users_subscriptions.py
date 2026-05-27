@@ -5,9 +5,7 @@ def test_list_subscriptions_rejects_unknown_content_type(api_client) -> None:
     """A bogus ``content_type`` query param must return 400, not an empty list."""
     client, _user_id, _ = api_client
 
-    resp = client.get(
-        "/api/core/v1/users/me/subscriptions?content_type=not-a-real-type"
-    )
+    resp = client.get("/api/core/v1/users/me/subscriptions?content_type=not-a-real-type")
     assert resp.status_code == 400, resp.text
 
 

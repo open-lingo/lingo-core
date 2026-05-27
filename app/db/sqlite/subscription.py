@@ -109,9 +109,7 @@ class SqliteSubscriptionRepository:
         )
         await self._conn().commit()
 
-    async def list(
-        self, user_id: str, content_type: str | None = None
-    ) -> list[dict[str, Any]]:
+    async def list(self, user_id: str, content_type: str | None = None) -> list[dict[str, Any]]:
         if content_type:
             cur = await self._conn().execute(
                 """SELECT * FROM subscriptions

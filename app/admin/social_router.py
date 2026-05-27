@@ -43,9 +43,7 @@ UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 
 def _require_social(repo: SocialRepository | None) -> SocialRepository:
     if repo is None:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "social repository unavailable"
-        )
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "social repository unavailable")
     return repo
 
 
@@ -58,9 +56,7 @@ def _user_to_request_item(user: dict[str, Any], when: str) -> FriendRequestItem:
     )
 
 
-@router.get(
-    "/users/{user_id}/friend-requests", response_model=FriendRequestsResponse
-)
+@router.get("/users/{user_id}/friend-requests", response_model=FriendRequestsResponse)
 async def admin_list_friend_requests(
     user_id: str,
     _admin: AdminUser,
@@ -107,9 +103,7 @@ async def admin_accept_friend_request(
     repo = _require_social(social)
     req = await repo.get_friend_request(requester_id, user_id)
     if req is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, "No pending request from that user"
-        )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No pending request from that user")
     await repo.add_friend_edge(user_id, requester_id)
     await repo.delete_friend_request(requester_id, user_id)
     await repo.delete_friend_request(user_id, requester_id)

@@ -57,9 +57,7 @@ class ThreadCreate(BaseModel):
 
 
 class ContentLinkCreate(BaseModel):
-    content_type: str = Field(
-        description="official_course, official_lesson, addon, flashcard_pack, etc."
-    )
+    content_type: str = Field(description="official_course, official_lesson, addon, flashcard_pack, etc.")
     content_id: str
     language_id: str | None = None
 

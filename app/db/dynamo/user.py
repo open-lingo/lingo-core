@@ -100,9 +100,7 @@ class DynamoUserRepository:
         return self._strip_keys(items[0]) if items else None
 
     async def get_user_by_id(self, user_id: str) -> dict[str, Any] | None:
-        resp = await self._table.get_item(
-            Key={"PK": self._pk(user_id), "SK": _RECORD_SK}
-        )
+        resp = await self._table.get_item(Key={"PK": self._pk(user_id), "SK": _RECORD_SK})
         item = resp.get("Item")
         return self._strip_keys(item) if item else None
 
@@ -147,6 +145,7 @@ class DynamoUserRepository:
         """Scan user records. cursor is last_evaluated_key as base64 JSON."""
         import base64
         import json
+
         params: dict[str, Any] = {
             "FilterExpression": "SK = :sk",
             "ExpressionAttributeValues": {":sk": _RECORD_SK},
@@ -154,36 +153,24 @@ class DynamoUserRepository:
         }
         if cursor:
             try:
-                params["ExclusiveStartKey"] = json.loads(
-                    base64.urlsafe_b64decode(cursor + "==").decode()
-                )
+                params["ExclusiveStartKey"] = json.loads(base64.urlsafe_b64decode(cursor + "==").decode())
             except Exception:
                 pass
         resp = await self._table.scan(**params)
         raw = [self._strip_keys(i) for i in resp.get("Items", [])]
         items = raw[:limit]
         lek = resp.get("LastEvaluatedKey")
-        next_cursor = (
-            base64.urlsafe_b64encode(json.dumps(lek, default=str).encode()).decode().rstrip("=")
-            if lek
-            else None
-        )
+        next_cursor = base64.urlsafe_b64encode(json.dumps(lek, default=str).encode()).decode().rstrip("=") if lek else None
         return items, next_cursor
 
     async def delete_user(self, user_id: str) -> None:
-        await self._table.delete_item(
-            Key={"PK": self._pk(user_id), "SK": _RECORD_SK}
-        )
-        await self._table.delete_item(
-            Key={"PK": self._pk(user_id), "SK": _SETTINGS_SK}
-        )
+        await self._table.delete_item(Key={"PK": self._pk(user_id), "SK": _RECORD_SK})
+        await self._table.delete_item(Key={"PK": self._pk(user_id), "SK": _SETTINGS_SK})
 
     # -- User settings --
 
     async def get_settings(self, user_id: str) -> dict[str, Any] | None:
-        resp = await self._table.get_item(
-            Key={"PK": self._pk(user_id), "SK": _SETTINGS_SK}
-        )
+        resp = await self._table.get_item(Key={"PK": self._pk(user_id), "SK": _SETTINGS_SK})
         item = resp.get("Item")
         return self._strip_keys(item) if item else None
 

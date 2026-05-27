@@ -18,9 +18,7 @@ class DeckContentType(BaseContentType):
     def type_name(self) -> str:
         return "deck"
 
-    async def validate_subscription(
-        self, content_id: str, context: dict[str, Any] | None = None
-    ) -> bool:
+    async def validate_subscription(self, content_id: str, context: dict[str, Any] | None = None) -> bool:
         if self._deck_repo is None:
             return True
         manifest = await self._deck_repo.get_manifest(content_id)
