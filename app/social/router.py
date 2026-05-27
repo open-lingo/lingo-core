@@ -18,7 +18,7 @@ from typing import Annotated, Any, get_args
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.auth.dependencies import get_registered_user
+from app.auth.dependencies import get_community_user, get_registered_user
 from app.auth.schemas import TokenPayload
 from app.db.protocols import DeckRepository, ProgressRepository, SocialRepository, UserRepository
 from app.db.provider import get_deck_repo, get_progress_repo, get_social_repo, get_user_repo
@@ -42,6 +42,8 @@ from app.social.schemas import (
     FriendRequestsResponse,
     FriendRequestStatus,
     FriendshipStatus,
+    FriendSuggestionItem,
+    FriendSuggestionsResponse,
     InviteOfferResponse,
     InviteRedeemResponse,
     LeaderboardEntry,
@@ -65,10 +67,29 @@ logger = logging.getLogger("lingo.social")
 router = APIRouter(tags=["social"])
 
 CurrentUser = Annotated[TokenPayload, Depends(get_registered_user)]
+CommunityUser = Annotated[TokenPayload, Depends(get_community_user)]
 SocialRepo = Annotated[SocialRepository, Depends(get_social_repo)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 ProgressRepo = Annotated[ProgressRepository, Depends(get_progress_repo)]
 DeckRepo = Annotated[DeckRepository | None, Depends(get_deck_repo)]
+
+
+def _learning_language_from_settings(settings_blob: dict[str, Any] | None) -> str | None:
+    """Extract the learning language id from a user settings dict.
+
+    Supports the modern nested shape (``learning.learningLanguageId``) and the
+    legacy flat ``learningLanguage`` key. Matches the helper in
+    ``app/users/router.py`` — duplicated here to avoid a cross-router import.
+    """
+    if not settings_blob:
+        return None
+    learning = settings_blob.get("learning")
+    if isinstance(learning, dict):
+        v = learning.get("learningLanguageId")
+        if v:
+            return str(v)
+    legacy = settings_blob.get("learningLanguage")
+    return str(legacy) if legacy else None
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -906,6 +927,66 @@ async def get_thread_detail(
     )
 
 
+@router.post("/threads/with/{user_id}", response_model=ThreadItem)
+async def open_or_create_thread_with(
+    user_id: str,
+    user: CurrentUser,
+    social: SocialRepo,
+    users: UserRepo,
+) -> Any:
+    """Open (or create) the 1:1 thread between the caller and ``user_id``.
+
+    Idempotent: returns the existing thread when one already exists, otherwise
+    creates a fresh row and returns it. Used by the messenger "New
+    conversation" picker so the FE never has to special-case "is there a
+    thread already?".
+    """
+    if user_id == user.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot message yourself")
+    other = await users.get_user_by_id(user_id)
+    if other is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+
+    existing = await social.list_threads_for_user(user.id)
+    found: dict[str, Any] | None = None
+    for row in existing:
+        partner_id = row["user_b_id"] if row["user_a_id"] == user.id else row["user_a_id"]
+        if partner_id == user_id:
+            found = row
+            break
+
+    if found is None:
+        now = datetime.now(UTC).isoformat()
+        found = await social.put_thread(
+            {
+                "id": str(uuid.uuid4()),
+                # Canonicalize ordering so duplicates are impossible — caller's
+                # id is always user_a when smaller (string sort), partner
+                # otherwise. The query above tolerates either ordering.
+                "user_a_id": min(user.id, user_id),
+                "user_b_id": max(user.id, user_id),
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
+    msgs = await social.list_messages(found["id"])
+    last = msgs[-1] if msgs else None
+    last_at = (
+        datetime.fromisoformat(last["sent_at"]) if last else datetime.fromisoformat(found["updated_at"])
+    )
+    return ThreadItem(
+        id=found["id"],
+        other_user_id=other["id"],
+        other_username=other["username"],
+        other_display_name=other["display_name"],
+        other_avatar_key=other.get("profile_picture_key"),
+        last_message_preview=(last["body"] if last else "")[:120],
+        last_message_at=last_at,
+        unread_count=0,
+    )
+
+
 # ─── Friend quest helpers ────────────────────────────────────────────────────
 
 
@@ -959,6 +1040,79 @@ async def quest_targets(
             )
         )
     return out
+
+
+# ─── Friend suggestions ──────────────────────────────────────────────────────
+
+
+@router.get("/suggestions", response_model=FriendSuggestionsResponse)
+async def list_friend_suggestions(
+    user: CommunityUser,
+    social: SocialRepo,
+    users: UserRepo,
+    limit: int = Query(10, ge=1, le=50),
+) -> Any:
+    """Return non-friend, non-blocked users who share the caller's
+    learning language. Capped at ``limit``.
+
+    Sourced from the user directory (``list_users``). Cheap O(N) filter on
+    the small dev cohort. The DynamoDB path will overfetch the same way the
+    leaderboard helpers do until a dedicated index lands; not a problem at
+    MVP scale.
+    """
+    with api_error("listing friend suggestions"):
+        me_settings = await users.get_settings(user.id) or {}
+        my_lang = (_learning_language_from_settings(me_settings) or "").lower()
+
+        # Overfetch from the directory then filter. The dev cohort is tiny
+        # (<100 users), and the leaderboards helpers already use the same cap.
+        records, _ = await users.list_users(limit=500)
+
+        out: list[FriendSuggestionItem] = []
+        for record in records:
+            if record["id"] == user.id:
+                continue
+            if record.get("status") == "banned":
+                continue
+            # Exclude existing friends.
+            if await social.is_friend(user.id, record["id"]):
+                continue
+            # Exclude blocked in either direction.
+            if await social.is_blocked(user.id, record["id"]):
+                continue
+            if await social.is_blocked(record["id"], user.id):
+                continue
+            # Exclude pending requests (both directions) so we don't suggest
+            # someone you've already sent a request to.
+            if await social.get_friend_request(user.id, record["id"]):
+                continue
+            if await social.get_friend_request(record["id"], user.id):
+                continue
+
+            settings_blob = await users.get_settings(record["id"])
+            their_lang = (_learning_language_from_settings(settings_blob) or "").lower()
+            # Filter by shared language when the caller has one set. When the
+            # caller has no language pref yet, return language-agnostic
+            # suggestions so the surface isn't empty.
+            if my_lang and their_lang != my_lang:
+                continue
+
+            out.append(
+                FriendSuggestionItem(
+                    user_id=record["id"],
+                    username=record["username"],
+                    display_name=record["display_name"],
+                    profile_picture_key=record.get("profile_picture_key"),
+                    learning_language=_learning_language_from_settings(settings_blob),
+                    streak=int(record.get("streak") or 0),
+                    xp=int(record.get("xp") or 0),
+                    reason=("Same language" if my_lang else "On Open Lingo"),
+                )
+            )
+            if len(out) >= limit:
+                break
+
+        return FriendSuggestionsResponse(items=out)
 
 
 # ─── Internal: helper for tests / seed scripts to mint an activity ───────────

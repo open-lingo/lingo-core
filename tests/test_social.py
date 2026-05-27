@@ -417,3 +417,98 @@ def test_quest_targets(client: TestClient, users: dict[str, dict[str, Any]]) -> 
     assert bob_target is not None
     assert "streak" in bob_target["reachable_for"]
     assert "weekly_xp" in bob_target["reachable_for"]
+
+
+# ── Friend suggestions ──────────────────────────────────────────────────────
+
+
+def _set_lang(client: TestClient, sub: str, lang: str) -> None:
+    """Persist a learning-language preference via the user-settings endpoint."""
+    resp = client.patch(
+        "/api/core/v1/users/me/settings",
+        json={"learning": {"learningLanguageId": lang}},
+        headers=_as(sub),
+    )
+    assert resp.status_code in (200, 204), resp.text
+
+
+def test_friend_suggestions_filters_by_shared_language_and_excludes_friends_and_blocked(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    """End-to-end: register 3 fresh users, set Alice + a `lang_buddy` to ``ja``
+    and a `lang_other` to ``ko``, then verify the suggestion list contains
+    ``lang_buddy`` but excludes Bob (already a friend), Carol (blocked), the
+    ``lang_other`` user (wrong language), and Alice herself.
+    """
+    # Register two more users with explicit languages.
+    _register_user(client, "auth0|lang_buddy", "lang_buddy", "Lang Buddy")
+    _register_user(client, "auth0|lang_other", "lang_other", "Lang Other")
+
+    _set_lang(client, "auth0|alice", "ja")
+    _set_lang(client, "auth0|lang_buddy", "ja")
+    _set_lang(client, "auth0|lang_other", "ko")
+    # Bob (friend) shares language but is already a friend.
+    _set_lang(client, "auth0|bob", "ja")
+    # Carol is blocked from earlier test.
+    _set_lang(client, "auth0|carol", "ja")
+    # Re-block Carol — the earlier block was undone, ensure she's blocked again
+    # so we exercise the block-exclusion path.
+    carol_id = users["carol"]["id"]
+    resp = client.post(f"/api/core/v1/social/blocks/{carol_id}", headers=_as("auth0|alice"))
+    assert resp.status_code in (200, 409), resp.text
+
+    resp = client.get(
+        "/api/core/v1/social/suggestions?limit=10", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    names = {item["username"] for item in body["items"]}
+
+    # The shared-language non-friend should appear.
+    assert "lang_buddy" in names
+    # Excluded: self, friends, blocked, wrong-language.
+    assert "alice_t" not in names
+    assert "bob_t" not in names
+    assert "carol_t" not in names
+    assert "lang_other" not in names
+
+
+def test_friend_suggestions_respects_limit(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    resp = client.get(
+        "/api/core/v1/social/suggestions?limit=1", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert len(body["items"]) <= 1
+
+
+def test_friend_suggestions_excludes_blocked_target(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    """Targeted check: a candidate that becomes blocked must drop out of
+    the suggestion list."""
+    # Register a fresh suggestion candidate that shares Alice's language.
+    _register_user(client, "auth0|new_buddy", "new_buddy", "New Buddy")
+    _set_lang(client, "auth0|new_buddy", "ja")
+
+    resp = client.get(
+        "/api/core/v1/social/suggestions?limit=20", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    assert any(item["username"] == "new_buddy" for item in resp.json()["items"])
+
+    # Block them — they should disappear.
+    me_resp = client.get("/api/core/v1/users/me", headers=_as("auth0|new_buddy"))
+    new_buddy_id = me_resp.json()["id"]
+    resp = client.post(
+        f"/api/core/v1/social/blocks/{new_buddy_id}", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = client.get(
+        "/api/core/v1/social/suggestions?limit=20", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    assert all(item["username"] != "new_buddy" for item in resp.json()["items"])

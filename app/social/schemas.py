@@ -279,3 +279,28 @@ class QuestTargetItem(BaseModel):
     streak_days: int = 0
     level: int = 1
     reachable_for: list[str] = Field(default_factory=list)
+
+
+# ─── Friend suggestions ──────────────────────────────────────────────────────
+
+
+class FriendSuggestionItem(BaseModel):
+    """A non-friend, non-blocked candidate to send a friend request to.
+
+    Sourced from the user directory, filtered to users who share the
+    requester's ``learning_language`` setting. The ``reason`` is a short
+    human label the FE can show next to the suggestion.
+    """
+
+    user_id: str
+    username: str
+    display_name: str
+    profile_picture_key: str | None = None
+    learning_language: str | None = None
+    streak: int = 0
+    xp: int = 0
+    reason: str = "Same language"
+
+
+class FriendSuggestionsResponse(BaseModel):
+    items: list[FriendSuggestionItem] = Field(default_factory=list)
