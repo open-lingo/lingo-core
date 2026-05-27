@@ -22,6 +22,7 @@ from app.db.provider import (
     get_social_repo,
     get_user_repo,
 )
+from app.events.publisher import publish as publish_event
 from app.platform_settings.schemas import XP_ECONOMY_KEY, XpEconomyConfig
 from app.progress.schemas import (
     AttemptList,
@@ -170,6 +171,34 @@ async def submit_attempt_batch(
     for r in results:
         if r.accepted:
             r.streakAfter = streak_after
+
+    # Fire async events to the lingo-async worker (best-effort; no-op if
+    # EVENTS_QUEUE_URL isn't set). Publish AFTER the user-row write so
+    # downstream consumers (quest eval, leaderboard fan-out, activity
+    # feed) see a state that already reflects the batch.
+    if total_xp_inc > 0:
+        publish_event(
+            {
+                "type": "xp_awarded",
+                "version": 1,
+                "user_id": user.id,
+                "amount": total_xp_inc,
+                "source": "lesson",
+            }
+        )
+    for item, r in zip(body.attempts, results, strict=True):
+        if r.accepted:
+            publish_event(
+                {
+                    "type": "lesson_completed",
+                    "version": 1,
+                    "user_id": user.id,
+                    "lesson_id": item.lessonId,
+                    "score": float(item.score),
+                    "perfect": item.passed and item.score >= 0.999,
+                    "attempted_at": str(item.attemptedAt),
+                }
+            )
 
     return BatchAttemptResponse(results=results)
 
