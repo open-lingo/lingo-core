@@ -19,7 +19,14 @@ dependencies = [
     "httpx>=0.28",
     "aiosqlite>=0.20",
     "aioboto3>=13",
+    "boto3>=1.35",
     "mangum>=0.18",
+    # kombu — transport abstraction for the async-events publisher.
+    # `EVENTS_BROKER_URL=sqs://...` in prod, `redis://localhost:6379/0` in
+    # local dev. One publish() path, one broker config — lingo-async picks
+    # up either via the kombu consumer or the SQS event source mapping.
+    "kombu>=5.4",
+    "redis>=5",
 ]
 
 [project.optional-dependencies]
