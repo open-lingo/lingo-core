@@ -149,18 +149,23 @@ async def submit_attempt_batch(
     if total_xp_inc or total_lingots_inc or streak_touched:
         await users.update_user(user.id, patch)
 
-    # Leaderboard hook — opt-in via user settings. Done ONCE per batch with
-    # the total XP increment (was per-attempt before; both cost one settings
-    # read so consolidating is free).
+    # Leaderboard hook + event enrichment — read settings ONCE when XP was
+    # earned.  The settings blob is reused by both the social-repo write and
+    # the xp_awarded event so lingo-async can fan out without a second lookup.
+    xp_settings_blob: dict = {}
     if total_xp_inc > 0:
+        try:
+            xp_settings_blob = await users.get_settings(user.id) or {}
+        except Exception:
+            pass  # Degrade gracefully — event fields will be None/default.
+
         social_repo = get_social_repo()
         if social_repo is not None:
             try:
-                settings_blob = await users.get_settings(user.id) or {}
-                social_cfg = settings_blob.get("social") or {}
+                social_cfg = xp_settings_blob.get("social") or {}
                 if social_cfg.get("show_on_leaderboard"):
-                    learning = settings_blob.get("learning") or {}
-                    lang = learning.get("learningLanguageId") or settings_blob.get("learningLanguage")
+                    learning = xp_settings_blob.get("learning") or {}
+                    lang = learning.get("learningLanguageId") or xp_settings_blob.get("learningLanguage")
                     if lang:
                         await social_repo.add_xp_to_leaderboard(user.id, str(lang), total_xp_inc)
             except Exception:
@@ -173,10 +178,12 @@ async def submit_attempt_batch(
             r.streakAfter = streak_after
 
     # Fire async events to the lingo-async worker (best-effort; no-op if
-    # EVENTS_QUEUE_URL isn't set). Publish AFTER the user-row write so
+    # EVENTS_BROKER_URL isn't set). Publish AFTER the user-row write so
     # downstream consumers (quest eval, leaderboard fan-out, activity
     # feed) see a state that already reflects the batch.
     if total_xp_inc > 0:
+        _xp_learning = xp_settings_blob.get("learning") or {}
+        _xp_social = xp_settings_blob.get("social") or {}
         publish_event(
             {
                 "type": "xp_awarded",
@@ -184,6 +191,12 @@ async def submit_attempt_batch(
                 "user_id": user.id,
                 "amount": total_xp_inc,
                 "source": "lesson",
+                # Include user context so lingo-async's leaderboard fan-out
+                # can act without a secondary user lookup (fixes local-dev
+                # "user_not_found" skip when the Dynamo users table is absent).
+                "learning_language_id": _xp_learning.get("learningLanguageId")
+                or xp_settings_blob.get("learningLanguage"),
+                "leaderboard_opt_in": bool(_xp_social.get("show_on_leaderboard", True)),
             }
         )
     for item, r in zip(body.attempts, results, strict=True):
