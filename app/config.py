@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     # .env as a JSON list. Either internal UUIDs *or* Auth0 subs are accepted.
     ADMIN_USER_IDS: list[str] = []
 
+    INTERNAL_SERVICE_TOKEN: str = ""  # shared with lingo-async for /quests/_internal callbacks
+
     # Funding transparency meter (public GET /finance/transparency)
     FUNDING_AD_PERCENT: int = 40
     FUNDING_PERIOD_LABEL: str = "Last 30 days"

@@ -16,7 +16,7 @@ import time
 from typing import Annotated
 
 import httpx
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
@@ -343,3 +343,21 @@ async def get_community_user_optional(
         if record:
             raise_if_community_banned(record)
     return user
+
+
+def require_internal_service(
+    authorization: Annotated[str | None, Header()] = None,
+) -> None:
+    """Service-to-service auth gate. Rejects everything except an exact
+    match of ``Authorization: Bearer <INTERNAL_SERVICE_TOKEN>``.
+
+    Used by routes that ``lingo-async`` calls back into on behalf of a
+    user — e.g. ``/quests/_internal/{id}/progress``. Auth0 JWTs are
+    rejected here so a leaked user token can't masquerade as the worker.
+    """
+    if not settings.INTERNAL_SERVICE_TOKEN:
+        raise HTTPException(
+            status_code=500, detail="INTERNAL_SERVICE_TOKEN not configured"
+        )
+    if authorization != f"Bearer {settings.INTERNAL_SERVICE_TOKEN}":
+        raise HTTPException(status_code=401, detail="invalid system token")
