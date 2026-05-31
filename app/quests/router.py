@@ -12,8 +12,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 
-from app.auth.dependencies import get_registered_user
+from app.auth.dependencies import get_registered_user, require_internal_service
 from app.auth.schemas import TokenPayload
 from app.db.protocols import QuestRepository, UserRepository
 from app.db.provider import get_quest_repo, get_user_repo
@@ -36,6 +37,11 @@ router = APIRouter(tags=["quests"])
 CurrentUser = Annotated[TokenPayload, Depends(get_registered_user)]
 QuestRepo = Annotated[QuestRepository | None, Depends(get_quest_repo)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
+
+
+class InternalProgressBody(BaseModel):
+    user_id: str
+    delta: int
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -252,6 +258,40 @@ async def refresh_quests(
             row.setdefault("created_at", _now_iso())
             await quests_repo.put_quest(row)
         return QuestRefreshResponse(removed=removed, seeded=len(rows))
+
+
+# ─── Internal service-to-service routes (lingo-async callbacks) ──────────────
+
+
+@router.get(
+    "/_internal/list",
+    response_model=QuestListResponse,
+    dependencies=[Depends(require_internal_service)],
+)
+async def internal_list_quests(user_id: str, repo: QuestRepo) -> Any:
+    """List quests for any user_id (service-to-service, no Auth0 JWT required)."""
+    quests_repo = require_repo(repo, "quests")
+    with api_error("listing quests (internal)"):
+        rows = await quests_repo.list_quests(user_id)
+        items = [_row_to_quest(r) for r in rows]
+        return QuestListResponse(items=items)
+
+
+@router.post(
+    "/_internal/{quest_id}/progress",
+    response_model=Quest,
+    dependencies=[Depends(require_internal_service)],
+)
+async def internal_bump_progress(
+    quest_id: str, body: InternalProgressBody, repo: QuestRepo
+) -> Any:
+    """Bump quest progress on behalf of a user (service-to-service)."""
+    quests_repo = require_repo(repo, "quests")
+    with api_error("updating quest progress (internal)"):
+        updated = await quests_repo.update_progress(body.user_id, quest_id, int(body.delta))
+        if updated is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Quest not found")
+        return _row_to_quest(updated)
 
 
 __all__ = ["router"]
