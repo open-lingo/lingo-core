@@ -2,8 +2,14 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.auth.dependencies import get_current_user, get_registered_user
+from app.auth.dependencies import (
+    get_current_user,
+    get_registered_user,
+    require_internal_service,
+)
 from app.auth.schemas import TokenPayload
+from app.progress.xp import level_for_xp
+from pydantic import BaseModel, Field
 from app.db.protocols import (
     ProgressRepository,
     SocialRepository,
@@ -402,3 +408,62 @@ async def discover_users(
         ]
         has_more = (offset + len(sliced)) < total
     return DiscoverUsersResponse(users=users_out, total=total, has_more=has_more)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Internal service callbacks — used by lingo-async (and the admin synthetic
+# events publisher in lingo-ops) to bump XP / leaderboards on behalf of a
+# user without an Auth0 JWT. Gated by INTERNAL_SERVICE_TOKEN.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class InternalXpAddBody(BaseModel):
+    user_id: str
+    amount: int = Field(ge=0)
+    learning_language_id: str | None = None
+    leaderboard_opt_in: bool = True
+
+
+@router.post(
+    "/_internal/xp/add",
+    dependencies=[Depends(require_internal_service)],
+)
+async def internal_add_xp(body: InternalXpAddBody, repo: UserRepo) -> dict:
+    """Credit XP on a user's profile + write the leaderboard row.
+
+    Used by the lingo-async ``xp_awarded`` handler when the producer
+    was lingo-ops (synthetic admin event) rather than lingo-core
+    (real lesson sync — lingo-core already credits XP inline before
+    publishing). Idempotency is the caller's responsibility; this just
+    adds amount to the current XP.
+    """
+    if body.amount <= 0:
+        return {"ok": True, "xp_added": 0}
+    with api_error("internal xp add"):
+        record = await repo.get_user_by_id(body.user_id)
+        if not record:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
+        new_xp = int(record.get("xp") or 0) + body.amount
+        await repo.update_user(
+            body.user_id,
+            {"xp": new_xp, "level": level_for_xp(new_xp)},
+        )
+
+        # Leaderboard hook (best-effort — must not break the XP credit).
+        if body.leaderboard_opt_in:
+            try:
+                social_repo = get_social_repo()
+                lang = body.learning_language_id
+                if not lang:
+                    settings_blob = (record.get("settings") or {})
+                    learning = settings_blob.get("learning") or {}
+                    lang = learning.get("learningLanguageId") or settings_blob.get(
+                        "learningLanguage"
+                    )
+                if social_repo is not None and lang:
+                    await social_repo.add_xp_to_leaderboard(
+                        body.user_id, str(lang), body.amount
+                    )
+            except Exception:
+                pass
+        return {"ok": True, "xp_added": body.amount, "new_xp": new_xp}
