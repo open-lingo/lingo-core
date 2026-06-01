@@ -1,14 +1,19 @@
 name: deploy
 
 # Auto-deploys lingo-core Lambda code on every push to main.
-# Requires org secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION.
-# Function name defaults to "lingo-core"; override via repo variable
+# Auth: GitHub OIDC -> ci-lingo-core IAM role (no stored AWS keys). The role
+# can only update/invoke the lingo-core / lingo-test functions.
+# Function name defaults to "lingo-test"; override via repo variable
 # LINGO_CORE_FUNCTION_NAME if your Lambda is named differently.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  id-token: write # required to mint the OIDC token
+  contents: read
 
 env:
   # Default 'lingo-test' matches the current manually-provisioned function.
@@ -27,10 +32,9 @@ jobs:
           python-version: "3.13"
       - name: build zip
         run: ./scripts/build-zip.sh
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v5
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::349654078389:role/ci-lingo-core
           aws-region: us-west-1
       - name: update lambda code
         run: |
@@ -39,13 +43,12 @@ jobs:
             --zip-file fileb://lingo-core.zip \
             --publish
       - name: write smoke-test payload
-        # Write payload to a file rather than inline JSON in --payload to dodge
-        # YAML quoting / hidden-character gotchas (a soft-hyphen, U+00AD, snuck
-        # into the previous inline payload and broke aws lambda invoke).
+        # printf with single-quoted JSON, then an ASCII assertion — immune to
+        # the invisible-unicode (U+00AD soft hyphen) issue that broke the
+        # previous heredoc/inline payloads.
         run: |
-          cat > /tmp/payload.json <<'EOF'
-          {"rawPath":"/health","requestContext":{"http":{"method":"GET","path":"/health"}},"headers":{},"version":"2.0"}
-          EOF
+          printf '%s' '{"rawPath":"/health","requestContext":{"http":{"method":"GET","path":"/health"}},"headers":{},"version":"2.0"}' > /tmp/payload.json
+          python3 -c "open('/tmp/payload.json', encoding='ascii').read()"
       - name: wait + smoke test
         run: |
           aws lambda wait function-updated --function-name "$FUNCTION_NAME"
@@ -54,3 +57,4 @@ jobs:
             --payload file:///tmp/payload.json \
             /tmp/out.json
           cat /tmp/out.json
+          python3 -c "import json,sys; r=json.load(open('/tmp/out.json')); sys.exit(0 if int(r.get('statusCode',500)) < 400 else 1)"
