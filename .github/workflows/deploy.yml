@@ -37,11 +37,14 @@ jobs:
           role-to-assume: arn:aws:iam::349654078389:role/ci-lingo-core
           aws-region: us-west-1
       - name: update lambda code
+        # --query limits output to safe fields; the default output dumps the
+        # full function config INCLUDING environment variables into the log.
         run: |
           aws lambda update-function-code \
             --function-name "$FUNCTION_NAME" \
             --zip-file fileb://lingo-core.zip \
-            --publish
+            --publish \
+            --query '{Version: Version, CodeSha256: CodeSha256, LastModified: LastModified}'
       - name: write smoke-test payload
         # printf with single-quoted JSON, then an ASCII assertion — immune to
         # the invisible-unicode (U+00AD soft hyphen) issue that broke the
