@@ -229,7 +229,11 @@ def test_league_spotlight(client: TestClient, users: dict[str, dict[str, Any]]) 
     assert body["league"] in {"bronze", "silver", "gold", "diamond", "obsidian"}
     assert isinstance(body["league_tier"], int)
     assert isinstance(body["top_three"], list)
-    assert isinstance(body["daily_xp"], int)
+    # daily_xp is a 7-element list (one int per day, oldest first).
+    assert isinstance(body["daily_xp"], list), f"daily_xp must be list, got {type(body['daily_xp'])}"
+    assert len(body["daily_xp"]) == 7
+    assert isinstance(body["friend_median_daily_xp"], list)
+    assert len(body["friend_median_daily_xp"]) == 7
     # Bronze for a fresh user — promotion threshold should be set.
     if body["league"] == "bronze":
         assert body["promotion_threshold"] == 100

@@ -105,8 +105,11 @@ class LeagueSpotlightResponse(BaseModel):
     rank: int | None = None
     rank_yesterday: int | None = None
     rank_delta_today: int = 0
-    daily_xp: int = 0
-    friend_median_daily_xp: int = 0
+    # 7-element arrays (one int per day, index 0 = oldest, index 6 = today).
+    # The FE adapter expects list[int]; scalar values would silently become []
+    # after the Array.isArray() guard in socialAdapters.ts.
+    daily_xp: list[int] = Field(default_factory=list)
+    friend_median_daily_xp: list[int] = Field(default_factory=list)
     top_three: list[LeaderboardEntry] = Field(default_factory=list)
     promotion_threshold: int | None = None
     demotion_threshold: int | None = None

@@ -428,8 +428,13 @@ class InternalXpAddBody(BaseModel):
     "/_internal/xp/add",
     dependencies=[Depends(require_internal_service)],
 )
-async def internal_add_xp(body: InternalXpAddBody, repo: UserRepo) -> dict:
-    """Credit XP on a user's profile + write the leaderboard row.
+async def internal_add_xp(
+    body: InternalXpAddBody,
+    repo: UserRepo,
+    progress: Annotated[ProgressRepository | None, Depends(get_progress_repo)],
+) -> dict:
+    """Credit XP on a user's profile + write the day rollup so the leaderboard
+    reflects the award immediately.
 
     Used by the lingo-async ``xp_awarded`` handler when the producer
     was lingo-ops (synthetic admin event) rather than lingo-core
@@ -449,7 +454,19 @@ async def internal_add_xp(body: InternalXpAddBody, repo: UserRepo) -> dict:
             {"xp": new_xp, "level": level_for_xp(new_xp)},
         )
 
-        # Leaderboard hook (best-effort — must not break the XP credit).
+        # Write day rollup so the leaderboard (which reads progress_day_rollups)
+        # reflects synthetic/admin XP in the rolling window.
+        if progress is not None:
+            try:
+                from datetime import UTC, datetime
+                today_iso = datetime.now(UTC).date().isoformat()
+                await progress.update_day_rollup(
+                    body.user_id, today_iso, lessons_inc=0, minutes_inc=0, xp_inc=body.amount
+                )
+            except Exception:  # noqa: BLE001 — must not break the XP credit
+                pass
+
+        # Social-repo leaderboard mirror (best-effort — for DynamoDB prod path).
         if body.leaderboard_opt_in:
             try:
                 social_repo = get_social_repo()

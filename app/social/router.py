@@ -573,15 +573,22 @@ async def leaderboard_spotlight(
     if rank_yesterday is not None and board.my_rank is not None:
         rank_delta = rank_yesterday - board.my_rank
 
-    # Friend-median daily XP (today's XP across each friend).
-    edges = await social.list_friends(user.id)
+    # Build 7-day arrays for the caller and the friend-median chart.
+    # Index 0 = 6 days ago, index 6 = today.
     today = _today()
-    friend_xps: list[int] = []
-    for edge in edges:
-        friend_xps.append(await _xp_for_day(progress, edge["friend_id"], today))
-    fmed = int(median(friend_xps)) if friend_xps else 0
+    my_daily_xp: list[int] = []
+    for days_back in range(6, -1, -1):
+        day = today - timedelta(days=days_back)
+        my_daily_xp.append(await _xp_for_day(progress, user.id, day))
 
-    my_daily = await _xp_for_day(progress, user.id, today)
+    edges = await social.list_friends(user.id)
+    friend_daily_xp: list[int] = []
+    for days_back in range(6, -1, -1):
+        day = today - timedelta(days=days_back)
+        day_xps: list[int] = []
+        for edge in edges:
+            day_xps.append(await _xp_for_day(progress, edge["friend_id"], day))
+        friend_daily_xp.append(int(median(day_xps)) if day_xps else 0)
 
     return LeagueSpotlightResponse(
         league=league,
@@ -590,8 +597,8 @@ async def leaderboard_spotlight(
         rank=board.my_rank,
         rank_yesterday=rank_yesterday,
         rank_delta_today=rank_delta,
-        daily_xp=my_daily,
-        friend_median_daily_xp=fmed,
+        daily_xp=my_daily_xp,
+        friend_median_daily_xp=friend_daily_xp,
         top_three=board.entries[:3],
         promotion_threshold=promo,
         demotion_threshold=demo,
