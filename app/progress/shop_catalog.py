@@ -29,6 +29,42 @@ SHOP_ITEMS: dict[str, ShopItemDef] = {
         "category": "cosmetics",
         "consumable": False,
     },
+    "profile-frame-silver": {
+        "id": "profile-frame-silver",
+        "price": 250,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "profile-frame-bronze": {
+        "id": "profile-frame-bronze",
+        "price": 150,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "profile-frame-blue": {
+        "id": "profile-frame-blue",
+        "price": 500,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "profile-frame-emerald": {
+        "id": "profile-frame-emerald",
+        "price": 500,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "profile-frame-rose": {
+        "id": "profile-frame-rose",
+        "price": 500,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "profile-frame-plasma": {
+        "id": "profile-frame-plasma",
+        "price": 1000,
+        "category": "cosmetics",
+        "consumable": False,
+    },
     "title-night-owl": {
         "id": "title-night-owl",
         "price": 15,
