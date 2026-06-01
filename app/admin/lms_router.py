@@ -4,6 +4,7 @@ Surface for moderators to inspect and edit a user's learning state:
   - GET    /admin/lms/{user_id}            — full LMS snapshot
   - PATCH  /admin/lms/{user_id}/learning   — set currentLesson / currentModule / learningLanguageId
   - POST   /admin/lms/{user_id}/xp         — award / retract XP
+  - POST   /admin/lms/{user_id}/lingots    — grant / retract lingots (in-app currency)
   - DELETE /admin/lms/{user_id}/progress   — wipe lesson+day rollups, reset XP/streak
 
 All routes require admin role (via require_admin dependency).
@@ -88,6 +89,19 @@ class LmsXpResponse(BaseModel):
     userId: str
     xp: int
     level: int
+    awarded: int
+
+
+class LmsLingotsAdjust(BaseModel):
+    """Lingot adjustment. Positive = grant, negative = retract (floor 0)."""
+
+    amount: int = Field(..., ge=-1_000_000, le=1_000_000)
+    reason: str = Field(default="admin-lms", max_length=500)
+
+
+class LmsLingotsResponse(BaseModel):
+    userId: str
+    lingots: int
     awarded: int
 
 
@@ -221,6 +235,42 @@ async def award_lms_xp(
         payload={"amount": body.amount, "reason": body.reason, "new_xp": new_xp},
     )
     return LmsXpResponse(userId=user_id, xp=new_xp, level=new_level, awarded=body.amount)
+
+
+@router.post("/{user_id}/lingots", response_model=LmsLingotsResponse)
+async def adjust_lms_lingots(
+    user_id: str,
+    body: LmsLingotsAdjust,
+    _admin: AdminUser,
+    users: UserRepo,
+) -> Any:
+    """Grant or retract lingots (in-app currency) for a user via the LMS surface.
+
+    Mirrors the XP-adjustment endpoint shape. Lingots are clamped at 0 — a
+    negative ``amount`` larger than the current balance reduces to 0 rather
+    than going negative.
+    """
+    if body.amount == 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "amount must be non-zero")
+    r = require_repo(users, "user")
+
+    with api_error("adjusting LMS lingots"):
+        record = await r.get_user_by_id(user_id)
+        if record is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+
+        base = int(record.get("lingots") or 0)
+        new_lingots = max(0, base + body.amount)
+        await r.update_user(user_id, {"lingots": new_lingots})
+
+    await record_admin_action(
+        actor_id=_admin.id,
+        action="lms_adjust_lingots",
+        target_id=user_id,
+        target_kind="user",
+        payload={"amount": body.amount, "reason": body.reason, "new_lingots": new_lingots},
+    )
+    return LmsLingotsResponse(userId=user_id, lingots=new_lingots, awarded=body.amount)
 
 
 @router.delete("/{user_id}/progress", status_code=status.HTTP_204_NO_CONTENT)
