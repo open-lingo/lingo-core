@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.auth.dependencies import (
+    get_acting_user,
     get_current_user,
     get_registered_user,
     require_internal_service,
@@ -46,8 +47,15 @@ router = APIRouter(tags=["users"])
 
 # Registration uses get_current_user — user.id is None before registration
 UnregisteredUser = Annotated[TokenPayload, Depends(get_current_user)]
-# All other endpoints require a fully registered user (user.id is set)
-CurrentUser = Annotated[TokenPayload, Depends(get_registered_user)]
+# Most endpoints honor admin impersonation via X-Impersonate-User-Id
+# (so /users/me reflects the impersonated user, etc.). For sensitive
+# routes that MUST resolve to the admin's own identity (settings, delete
+# account), use ``JwtUser`` instead.
+CurrentUser = Annotated[TokenPayload, Depends(get_acting_user)]
+# Admin's true identity — bypasses impersonation. Used by routes where
+# silently mutating the target user's settings while "acting as" them
+# would be too dangerous (e.g. PATCH /me/settings, DELETE /me).
+JwtUser = Annotated[TokenPayload, Depends(get_registered_user)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 
 
@@ -86,8 +94,13 @@ async def get_me(user: CurrentUser, repo: UserRepo) -> Any:
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_me(user: CurrentUser, repo: UserRepo) -> None:
-    """Delete the current user's account record and stored settings."""
+async def delete_me(user: JwtUser, repo: UserRepo) -> None:
+    """Delete the current user's account record and stored settings.
+
+    JWT-pinned — admins must not be able to delete a user account via the
+    impersonation header. Use the explicit admin delete endpoint for
+    moderation deletes.
+    """
     from app.auth.dependencies import invalidate_user_id_cache
 
     with api_error("deleting current user"):
@@ -131,7 +144,10 @@ async def get_user_by_username(username: str, repo: UserRepo) -> Any:
 
 
 @router.get("/me/settings", response_model=UserSettings)
-async def get_settings(user: CurrentUser, repo: UserRepo) -> Any:
+async def get_settings(user: JwtUser, repo: UserRepo) -> Any:
+    """JWT-pinned — admins see their own settings while impersonating,
+    not the target's. Reading the target's settings is what the admin
+    LMS surface is for."""
     with api_error("fetching user settings"):
         data = await repo.get_settings(user.id)
     if data is None:
@@ -142,9 +158,11 @@ async def get_settings(user: CurrentUser, repo: UserRepo) -> Any:
 @router.patch("/me/settings", response_model=UserSettings)
 async def patch_settings(
     body: UserSettingsPatch,
-    user: CurrentUser,
+    user: JwtUser,
     repo: UserRepo,
 ) -> Any:
+    """JWT-pinned — admins must not accidentally rewrite the
+    impersonated user's settings."""
     patch = body.model_dump(exclude_none=True)
     if not patch:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty patch body")

@@ -13,7 +13,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.auth.dependencies import get_registered_user
+from app.auth.dependencies import get_acting_user
 from app.auth.schemas import TokenPayload
 from app.db.protocols import ProgressRepository, UserRepository
 from app.db.provider import (
@@ -43,7 +43,10 @@ from app.progress.xp import level_for_xp
 
 router = APIRouter(tags=["progress"])
 
-CurrentUser = Annotated[TokenPayload, Depends(get_registered_user)]
+# Honors admin impersonation: when an admin sets X-Impersonate-User-Id,
+# XP / lesson credits land on the target user (the whole point of
+# "act as user").
+CurrentUser = Annotated[TokenPayload, Depends(get_acting_user)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 ProgressRepo = Annotated[ProgressRepository, Depends(get_progress_repo)]
 
