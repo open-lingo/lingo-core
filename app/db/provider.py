@@ -21,6 +21,7 @@ from typing import Any
 
 from app.config import settings
 from app.db.protocols import (
+    AuditRepository,
     CommunityRepository,
     DeckRepository,
     PlatformSettingsRepository,
@@ -47,6 +48,7 @@ _social_repo: SocialRepository | None = None
 _quest_repo: QuestRepository | None = None
 _platform_settings_repo: PlatformSettingsRepository | None = None
 _tag_repo: TagRepository | None = None
+_audit_repo: AuditRepository | None = None
 
 # Set of domain names whose connect() raised during startup.
 _degraded: set[str] = set()
@@ -69,7 +71,7 @@ async def _safe_connect(domain: str, repo: Any) -> Any | None:
 async def init_repositories() -> None:
     """Create and connect the repository singletons based on config."""
     global _user_repo, _srs_repo, _deck_repo, _subscription_repo, _story_repo, _progress_repo
-    global _social_repo, _quest_repo, _platform_settings_repo, _tag_repo
+    global _social_repo, _quest_repo, _platform_settings_repo, _tag_repo, _audit_repo
 
     _degraded.clear()
 
@@ -98,6 +100,10 @@ async def init_repositories() -> None:
             SqlitePlatformSettingsRepository(settings.SQLITE_PATH),
         )
         _tag_repo = await _safe_connect("tag", SqliteTagRepository(settings.SQLITE_PATH))
+
+        from app.db.sqlite.audit import SqliteAuditRepository
+
+        _audit_repo = await _safe_connect("audit", SqliteAuditRepository(settings.SQLITE_PATH))
 
     elif settings.DB_BACKEND == "dynamodb":
         from app.db.dynamo.deck import DynamoDeckRepository
@@ -139,6 +145,12 @@ async def init_repositories() -> None:
         from app.db.dynamo.tag import DynamoTagRepository
 
         _tag_repo = await _safe_connect("tag", DynamoTagRepository(f"{prefix}tags", region))
+
+        # Audit — SQLite-first per established pattern. Dynamo impl is a
+        # stub that raises on append/list until the production cut-over.
+        from app.db.dynamo.audit import DynamoAuditRepository
+
+        _audit_repo = await _safe_connect("audit", DynamoAuditRepository(f"{prefix}admin_audit", region))
 
     else:
         raise ValueError(f"Unknown DB_BACKEND: {settings.DB_BACKEND!r}")
@@ -187,6 +199,8 @@ async def shutdown_repositories() -> None:
         await _platform_settings_repo.close()  # type: ignore[union-attr]
     if _tag_repo and hasattr(_tag_repo, "close"):
         await _tag_repo.close()  # type: ignore[union-attr]
+    if _audit_repo and hasattr(_audit_repo, "close"):
+        await _audit_repo.close()  # type: ignore[union-attr]
     if _community_repo and hasattr(_community_repo, "close"):
         await _community_repo.close()
 
@@ -250,6 +264,10 @@ def get_platform_settings_repo() -> PlatformSettingsRepository | None:
 
 def get_tag_repo() -> TagRepository | None:
     return _tag_repo
+
+
+def get_audit_repo() -> AuditRepository | None:
+    return _audit_repo
 
 
 def degraded_domains() -> set[str]:

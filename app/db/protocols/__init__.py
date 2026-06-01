@@ -7,6 +7,7 @@ re-export for backward compatibility:
     from app.db.protocols.srs import SRSRepository        # explicit
 """
 
+from app.db.protocols.audit import AuditRepository
 from app.db.protocols.community import CommunityRepository
 from app.db.protocols.deck import DeckRepository
 from app.db.protocols.platform_settings import PlatformSettingsRepository
@@ -20,6 +21,7 @@ from app.db.protocols.tag import TagRepository
 from app.db.protocols.user import UserRepository
 
 __all__ = [
+    "AuditRepository",
     "UserRepository",
     "SRSRepository",
     "DeckRepository",

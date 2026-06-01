@@ -5,6 +5,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
+from app.admin.audit_router import record_admin_action
 from app.auth.dependencies import require_admin
 from app.auth.schemas import TokenPayload
 from app.db.protocols import (
@@ -372,6 +373,13 @@ async def admin_update_deck_status(
         deck = await r.get_deck(deck_id)
         if not deck:
             raise HTTPException(status_code=500, detail="Deck update failed")
+    await record_admin_action(
+        actor_id=_admin.id,
+        action=f"deck_{status_param}",
+        target_id=deck_id,
+        target_kind="deck",
+        payload={"name": deck.get("name")},
+    )
     return _to_response(deck, deck.get("cards", []))
 
 
@@ -441,6 +449,13 @@ async def admin_update_story_status(
         story = await r.get_story(story_id)
         if not story:
             raise HTTPException(status_code=500, detail="Story update failed")
+    await record_admin_action(
+        actor_id=_admin.id,
+        action=f"story_{status_param}",
+        target_id=story_id,
+        target_kind="story",
+        payload={"title": story.get("title")},
+    )
     return _story_to_response(story)
 
 

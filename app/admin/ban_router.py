@@ -22,6 +22,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.admin.audit_router import record_admin_action
 from app.auth.dependencies import require_admin
 from app.auth.schemas import TokenPayload
 from app.db.protocols import UserRepository
@@ -137,6 +138,17 @@ async def admin_ban_user(
         }
         updated = await r.update_user(user_id, patch)
 
+    await record_admin_action(
+        actor_id=admin_user.id,
+        action=f"ban_{body.type}",
+        target_id=user_id,
+        target_kind="user",
+        payload={
+            "reason": body.reason,
+            "duration": body.duration,
+            "expires_at": expires_at,
+        },
+    )
     return UserResponse(**updated)
 
 
@@ -179,5 +191,11 @@ async def admin_unban_user(
         }
         updated = await r.update_user(user_id, patch)
 
-    _ = admin_user  # currently only the user_id matters; future audit log uses it
+    await record_admin_action(
+        actor_id=admin_user.id,
+        action=f"unban_{body.type}",
+        target_id=user_id,
+        target_kind="user",
+        payload={"notes": body.notes},
+    )
     return UserResponse(**updated)
