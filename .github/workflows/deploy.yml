@@ -46,18 +46,20 @@ jobs:
             --publish \
             --query '{Version: Version, CodeSha256: CodeSha256, LastModified: LastModified}'
       - name: write smoke-test payload
-        # printf with single-quoted JSON, then an ASCII assertion — immune to
-        # the invisible-unicode (U+00AD soft hyphen) issue that broke the
-        # previous heredoc/inline payloads.
         run: |
           printf '%s' '{"rawPath":"/health","requestContext":{"http":{"method":"GET","path":"/health"}},"headers":{},"version":"2.0"}' > /tmp/payload.json
-          python3 -c "open('/tmp/payload.json', encoding='ascii').read()"
       - name: wait + smoke test
+        # --cli-binary-format raw-in-base64-out is REQUIRED with AWS CLI v2:
+        # without it the CLI treats the payload as base64, and Lambda ends up
+        # parsing base64-decoded garbage. (This was the real cause of the
+        # historical "soft hyphen U+00AD" smoke-test failures — 0xAD is just a
+        # byte that falls out of base64-decoding raw JSON.)
         run: |
           aws lambda wait function-updated --function-name "$FUNCTION_NAME"
           aws lambda invoke \
             --function-name "$FUNCTION_NAME" \
             --payload file:///tmp/payload.json \
+            --cli-binary-format raw-in-base64-out \
             /tmp/out.json
           cat /tmp/out.json
           python3 -c "import json,sys; r=json.load(open('/tmp/out.json')); sys.exit(0 if int(r.get('statusCode',500)) < 400 else 1)"

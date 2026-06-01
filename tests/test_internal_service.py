@@ -10,8 +10,8 @@ from fastapi import HTTPException
 
 
 def test_rejects_missing_header(monkeypatch):
-    from app.config import settings
     from app.auth.dependencies import require_internal_service
+    from app.config import settings
 
     monkeypatch.setattr(settings, "INTERNAL_SERVICE_TOKEN", "secret-x")
     with pytest.raises(HTTPException) as exc_info:
@@ -20,8 +20,8 @@ def test_rejects_missing_header(monkeypatch):
 
 
 def test_rejects_wrong_token(monkeypatch):
-    from app.config import settings
     from app.auth.dependencies import require_internal_service
+    from app.config import settings
 
     monkeypatch.setattr(settings, "INTERNAL_SERVICE_TOKEN", "secret-x")
     with pytest.raises(HTTPException) as exc_info:
@@ -30,8 +30,8 @@ def test_rejects_wrong_token(monkeypatch):
 
 
 def test_rejects_when_unconfigured(monkeypatch):
-    from app.config import settings
     from app.auth.dependencies import require_internal_service
+    from app.config import settings
 
     monkeypatch.setattr(settings, "INTERNAL_SERVICE_TOKEN", "")
     with pytest.raises(HTTPException) as exc_info:
@@ -40,8 +40,8 @@ def test_rejects_when_unconfigured(monkeypatch):
 
 
 def test_accepts_matching_token(monkeypatch):
-    from app.config import settings
     from app.auth.dependencies import require_internal_service
+    from app.config import settings
 
     monkeypatch.setattr(settings, "INTERNAL_SERVICE_TOKEN", "secret-x")
     # Should not raise.

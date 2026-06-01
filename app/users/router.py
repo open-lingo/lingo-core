@@ -1,6 +1,7 @@
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 
 from app.auth.dependencies import (
     get_current_user,
@@ -8,8 +9,6 @@ from app.auth.dependencies import (
     require_internal_service,
 )
 from app.auth.schemas import TokenPayload
-from app.progress.xp import level_for_xp
-from pydantic import BaseModel, Field
 from app.db.protocols import (
     ProgressRepository,
     SocialRepository,
@@ -24,6 +23,7 @@ from app.db.provider import (
     get_subscription_repo,
     get_user_repo,
 )
+from app.progress.xp import level_for_xp
 from app.shared.errors import api_error
 from app.shared.repos import require_repo
 from app.users.schemas import (
