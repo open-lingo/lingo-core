@@ -71,6 +71,54 @@ SHOP_ITEMS: dict[str, ShopItemDef] = {
         "category": "cosmetics",
         "consumable": False,
     },
+    "title-early-bird": {
+        "id": "title-early-bird",
+        "price": 50,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "title-bookworm": {
+        "id": "title-bookworm",
+        "price": 75,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "title-wanderer": {
+        "id": "title-wanderer",
+        "price": 75,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "title-polyglot": {
+        "id": "title-polyglot",
+        "price": 150,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "title-linguist": {
+        "id": "title-linguist",
+        "price": 150,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "title-wordsmith": {
+        "id": "title-wordsmith",
+        "price": 200,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "title-globetrotter": {
+        "id": "title-globetrotter",
+        "price": 200,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "title-sensei": {
+        "id": "title-sensei",
+        "price": 300,
+        "category": "cosmetics",
+        "consumable": False,
+    },
     # ─── Profile banners ────────────────────────────────────────────────
     # Inline-SVG art lives on the frontend; the backend just gates purchase
     # + records ownership. IDs and prices MUST match
