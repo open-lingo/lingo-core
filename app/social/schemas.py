@@ -166,6 +166,12 @@ class PublicProfileResponse(BaseModel):
     authored_decks_sample: list[AuthoredDeckSample] = []
     # Optional league badge — None when the user has no XP yet.
     league: LeagueBadge | None = None
+    # Equipped cosmetics (read from the owner's settings blob). Empty
+    # string in settings is normalized to None so the FE can render the
+    # bare profile when the owner hasn't equipped anything.
+    equipped_decorator_id: str | None = None
+    equipped_title_id: str | None = None
+    equipped_banner_id: str | None = None
 
 
 # ─── Activity feed ───────────────────────────────────────────────────────────

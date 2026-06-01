@@ -676,6 +676,11 @@ async def get_public_profile(
             authored_count = 0
             authored_sample = []
     target_xp = int(target.get("xp") or 0)
+    shop_blob = settings_blob.get("shop") if isinstance(settings_blob, dict) else None
+    shop_blob = shop_blob if isinstance(shop_blob, dict) else {}
+    def _eq(key: str) -> str | None:
+        val = shop_blob.get(key)
+        return val if isinstance(val, str) and val else None
     return PublicProfileResponse(
         user_id=target["id"],
         username=target["username"],
@@ -693,6 +698,9 @@ async def get_public_profile(
         authored_deck_count=authored_count,
         authored_decks_sample=authored_sample,
         league=league_for_xp(target_xp),
+        equipped_decorator_id=_eq("equippedDecorator"),
+        equipped_title_id=_eq("equippedTitle"),
+        equipped_banner_id=_eq("equippedBanner"),
     )
 
 
