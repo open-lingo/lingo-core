@@ -14,7 +14,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.auth.dependencies import get_registered_user, require_internal_service
+from app.auth.dependencies import get_acting_user, require_internal_service
 from app.auth.schemas import TokenPayload
 from app.db.protocols import QuestRepository, UserRepository
 from app.db.provider import get_quest_repo, get_user_repo
@@ -34,7 +34,9 @@ logger = logging.getLogger("lingo.quests")
 
 router = APIRouter(tags=["quests"])
 
-CurrentUser = Annotated[TokenPayload, Depends(get_registered_user)]
+# Honors admin impersonation so quest progress is read/written for the
+# impersonated user.
+CurrentUser = Annotated[TokenPayload, Depends(get_acting_user)]
 QuestRepo = Annotated[QuestRepository | None, Depends(get_quest_repo)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 

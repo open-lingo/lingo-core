@@ -20,7 +20,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.ads.schemas import WatchedAdPayload, WatchedAdResponse
-from app.auth.dependencies import get_registered_user
+from app.auth.dependencies import get_acting_user
 from app.auth.schemas import TokenPayload
 from app.db.protocols import UserRepository
 from app.db.provider import get_user_repo
@@ -32,7 +32,9 @@ logger = logging.getLogger("lingo.ads")
 
 router = APIRouter(tags=["ads"])
 
-CurrentUser = Annotated[TokenPayload, Depends(get_registered_user)]
+# Honors admin impersonation so ad-credit lingots land on the
+# impersonated user.
+CurrentUser = Annotated[TokenPayload, Depends(get_acting_user)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 
 # Tweakable: flat credit per rewarded-ad watch. Lives here as a module

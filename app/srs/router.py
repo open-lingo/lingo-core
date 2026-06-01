@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.auth.dependencies import get_registered_user
+from app.auth.dependencies import get_acting_user
 from app.auth.schemas import TokenPayload
 from app.db.protocols import SRSRepository
 from app.db.provider import get_srs_repo
@@ -22,7 +22,9 @@ logger = logging.getLogger("lingo.srs")
 
 router = APIRouter(tags=["srs"])
 
-CurrentUser = Annotated[TokenPayload, Depends(get_registered_user)]
+# Honors admin impersonation so /srs/state and sync read/write the
+# impersonated user's card states.
+CurrentUser = Annotated[TokenPayload, Depends(get_acting_user)]
 SRSRepo = Annotated[SRSRepository, Depends(get_srs_repo)]
 
 

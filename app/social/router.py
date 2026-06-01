@@ -18,7 +18,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.auth.dependencies import get_community_user, get_registered_user
+from app.auth.dependencies import get_acting_user, get_community_user
 from app.auth.schemas import TokenPayload
 from app.db.protocols import DeckRepository, ProgressRepository, SocialRepository, UserRepository
 from app.db.provider import get_deck_repo, get_progress_repo, get_social_repo, get_user_repo
@@ -65,7 +65,11 @@ logger = logging.getLogger("lingo.social")
 
 router = APIRouter(tags=["social"])
 
-CurrentUser = Annotated[TokenPayload, Depends(get_registered_user)]
+# Honors admin impersonation for non-community-gated reads/writes
+# (friend list, requests, leaderboard view).
+CurrentUser = Annotated[TokenPayload, Depends(get_acting_user)]
+# Kept on JWT identity — community writes (posts, reactions) should
+# resolve to the admin's own community-ban status, not the target's.
 CommunityUser = Annotated[TokenPayload, Depends(get_community_user)]
 SocialRepo = Annotated[SocialRepository, Depends(get_social_repo)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]

@@ -9,9 +9,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import (
+    get_acting_user,
     get_current_user,
     get_current_user_optional,
-    get_registered_user,
     require_admin,
 )
 from app.auth.schemas import TokenPayload
@@ -34,7 +34,9 @@ SubRepo = Annotated[SubscriptionRepository | None, Depends(get_subscription_repo
 TagRepo = Annotated[TagRepository | None, Depends(get_tag_repo)]
 CurrentUser = Annotated[TokenPayload, Depends(get_current_user)]
 OptionalUser = Annotated[TokenPayload | None, Depends(get_current_user_optional)]
-RegisteredUser = Annotated[TokenPayload, Depends(get_registered_user)]
+# Deck mutations + creator-scoped reads honor admin impersonation so
+# admins can author/preview decks as if they were the target user.
+RegisteredUser = Annotated[TokenPayload, Depends(get_acting_user)]
 AdminUser = Annotated[TokenPayload, Depends(require_admin)]
 
 
