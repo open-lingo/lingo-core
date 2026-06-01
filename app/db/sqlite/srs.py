@@ -36,6 +36,23 @@ def _min_due(state: dict[str, Any]) -> str:
 
 
 def _max_last_review(state: dict[str, Any]) -> str:
+    """Freshest review marker for the LWW merge.
+
+    Prefer the top-level ``lastReviewedAt`` timestamp when present — it
+    has sub-day precision so two same-day reviews can be distinguished.
+    Without it, two reviews of the same card on the same day looked
+    "equal" and the server-existing row won every time, silently
+    discarding the user's newer dueDate.
+
+    Falls back to the modality ``lastReviewDate`` (YYYY-MM-DD) for rows
+    stored before the timestamp shipped. A bare date string sorts
+    BEFORE any timestamp on the same day (``"2026-06-01"`` <
+    ``"2026-06-01T..."``), so the timestamp-carrying side wins by
+    construction — which is correct: it has more information.
+    """
+    ts = state.get("lastReviewedAt")
+    if ts:
+        return str(ts)
     r = state.get("recognition", {}).get("lastReviewDate", "")
     p = state.get("production", {}).get("lastReviewDate", "")
     return max(r, p)

@@ -29,6 +29,16 @@ class SRSCardState(BaseModel):
         default=None,
         description="YYYY-MM-DD; if set and > today, card excluded from queue",
     )
+    lastReviewedAt: str | None = Field(
+        default=None,
+        description=(
+            "Top-level ISO timestamp of the most-recent review across "
+            "modalities. The FE writes this so the server LWW merge can "
+            "distinguish two same-day reviews — comparing the modality "
+            "``lastReviewDate`` alone (date-only) made same-day re-reviews "
+            "look equal and silently rejected the client's newer state."
+        ),
+    )
 
 
 class SRSSyncRequest(BaseModel):
