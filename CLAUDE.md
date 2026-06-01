@@ -27,7 +27,7 @@ app/
 ├── config.py               # Pydantic Settings (env vars, .env)
 ├── handler.py              # Mangum ASGI adapter for Lambda
 ├── auth/
-│   ├── dependencies.py     # get_current_user, get_registered_user
+│   ├── dependencies.py     # get_current_user, get_registered_user, get_acting_user (admin impersonation)
 │   ├── roles.py            # ⚠️  is_admin() NOT ENFORCED (TODO: OAuth scopes)
 │   ├── ban.py
 │   └── schemas.py
@@ -66,6 +66,18 @@ app/
 2. Bearer token → `auth/dependencies.py:get_current_user` → validates against JWKS, returns internal User
 3. `get_current_user_optional` returns `None` for public endpoints
 4. `DEBUG=true` + `X-Dev-User: <auth0_sub>` bypasses JWT entirely (dev only — **must never be set in deployed envs**)
+
+### User-facing dependencies — which one to use
+
+- `get_current_user` — unregistered + registered users. Use for registration only.
+- `get_registered_user` — pinned to the JWT user (the admin themselves while impersonating). Use for sensitive routes: `/users/me/settings`, `DELETE /users/me`, payment, account-level deletes.
+- `get_acting_user` — honors `X-Impersonate-User-Id` from admin callers and swaps `id` / `sub` to the target. Use for everything else under `users/`, `progress/`, `srs/`, `quests/`, `decks/`, `ads/`, `social/` so admins acting-as-a-user see and affect that user's state. Audit-logs `impersonate_request` per request. Routes currently using `get_acting_user`:
+  - `app/users/router.py` (`CurrentUser` alias — JwtUser explicitly used for settings + delete)
+  - `app/progress/router.py`, `app/srs/router.py`, `app/quests/router.py`, `app/decks/router.py`, `app/ads/router.py`, `app/social/router.py` (CommunityUser stays JWT-pinned)
+- `require_admin` — admin-only routes.
+- `require_internal_service` — lingo-async / lingo-ops service-to-service.
+
+When adding a new user-facing route, the default should be `get_acting_user`. Use `get_registered_user` only if there's a specific reason the admin's identity must not be swappable.
 
 ## What's missing (do NOT assume working in features)
 
