@@ -313,6 +313,104 @@ async def require_admin(
     return user
 
 
+async def get_acting_user(
+    request: Request,
+    user: Annotated[TokenPayload, Depends(get_registered_user)],
+) -> TokenPayload:
+    """Like ``get_registered_user`` but honors ``X-Impersonate-User-Id``.
+
+    When an admin sets that header on a request, the dependency swaps the
+    returned ``TokenPayload``'s ``id`` and ``sub`` for the target user's
+    (preserving the admin originals as ``actor_id`` / ``actor_sub``). The
+    rest of the request is then processed as if the target user made it:
+    user.xp credits land on the target, /users/me reflects the target,
+    etc. Every impersonated request is audit-logged with the admin as
+    actor.
+
+    Trust gate:
+      1. Caller must be admin (per ``require_admin``'s rules — env
+         allow-list OR DB role).
+      2. Target user must exist.
+      3. The admin's own ``id`` is never swapped if it equals the
+         target (no-op self-impersonation just passes through).
+
+    Returns the (possibly swapped) ``TokenPayload``. If the header is
+    absent the JWT user is returned unchanged; for non-admins the header
+    is silently ignored (a leaked header on a regular user's tab must
+    not lock them out).
+
+    Routes that need to ALWAYS resolve to the JWT identity (e.g.
+    /users/me/settings, account deletion, payment) should keep using
+    ``get_registered_user`` directly so admins can't accidentally mutate
+    sensitive settings while acting-as.
+    """
+    target_id = request.headers.get("X-Impersonate-User-Id")
+    if not target_id:
+        return user
+
+    # Cheap-bail: self-impersonation is a no-op.
+    if target_id == user.id:
+        return user
+
+    # Admin gate — reuse require_admin's logic without re-raising 403 (we
+    # want to silently ignore the header for non-admins; otherwise a
+    # leaked header could DoS regular users with 403s).
+    from app.auth.roles import has_admin_access, user_id_is_admin
+    from app.db.provider import get_user_repo
+
+    is_admin = user_id_is_admin(user.id, user.sub)
+    repo = get_user_repo()
+    if not is_admin and repo is not None and user.id is not None:
+        record = await repo.get_user_by_id(user.id)
+        if record and has_admin_access(record.get("role") or "user"):
+            is_admin = True
+    if not is_admin:
+        logger.warning(
+            "X-Impersonate-User-Id ignored: caller not admin (sub=%s target=%s)",
+            user.sub,
+            target_id,
+        )
+        return user
+
+    # Resolve target. Missing target is a hard 404 — admin should fix
+    # their request rather than silently get the wrong user.
+    if repo is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "user repo unavailable"
+        )
+    target = await repo.get_user_by_id(target_id)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "impersonation target not found")
+
+    # Best-effort audit log per impersonated request. Failure swallowed so
+    # a broken audit log can't break the impersonation path.
+    try:
+        from app.admin.audit_router import record_admin_action
+
+        await record_admin_action(
+            actor_id=user.id,
+            action="impersonate_request",
+            target_id=target_id,
+            target_kind="user",
+            payload={
+                "method": request.method,
+                "path": request.url.path,
+                "actor_sub": user.sub,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        logger.warning("impersonate_request audit failed: %s", exc)
+
+    return user.model_copy(
+        update={
+            "id": target["id"],
+            "sub": target.get("auth0_id") or user.sub,
+            "actor_id": user.id,
+            "actor_sub": user.sub,
+        }
+    )
+
+
 async def get_community_user(
     user: Annotated[TokenPayload, Depends(get_registered_user)],
 ) -> TokenPayload:
