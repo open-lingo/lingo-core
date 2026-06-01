@@ -144,10 +144,10 @@ async def get_user_by_username(username: str, repo: UserRepo) -> Any:
 
 
 @router.get("/me/settings", response_model=UserSettings)
-async def get_settings(user: JwtUser, repo: UserRepo) -> Any:
-    """JWT-pinned — admins see their own settings while impersonating,
-    not the target's. Reading the target's settings is what the admin
-    LMS surface is for."""
+async def get_settings(user: CurrentUser, repo: UserRepo) -> Any:
+    """Honors admin impersonation — the whole point of "act as user" is
+    to see what they see. Shop purchases, equipped cosmetics, theme,
+    learning preferences all reflect the impersonated target."""
     with api_error("fetching user settings"):
         data = await repo.get_settings(user.id)
     if data is None:
@@ -158,11 +158,12 @@ async def get_settings(user: JwtUser, repo: UserRepo) -> Any:
 @router.patch("/me/settings", response_model=UserSettings)
 async def patch_settings(
     body: UserSettingsPatch,
-    user: JwtUser,
+    user: CurrentUser,
     repo: UserRepo,
 ) -> Any:
-    """JWT-pinned — admins must not accidentally rewrite the
-    impersonated user's settings."""
+    """Honors admin impersonation — settings edits performed while acting
+    as a user write to the target's settings. Every request is audit-logged
+    via the impersonation middleware so the admin's identity is recorded."""
     patch = body.model_dump(exclude_none=True)
     if not patch:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty patch body")
