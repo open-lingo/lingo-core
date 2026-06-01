@@ -354,10 +354,16 @@ def require_internal_service(
     Used by routes that ``lingo-async`` calls back into on behalf of a
     user — e.g. ``/quests/_internal/{id}/progress``. Auth0 JWTs are
     rejected here so a leaked user token can't masquerade as the worker.
+
+    Re-imports ``settings`` per call so the conftest module-reload pattern
+    (which replaces the ``app.config.settings`` singleton) still picks up
+    test-time monkeypatches.
     """
-    if not settings.INTERNAL_SERVICE_TOKEN:
+    from app.config import settings as live_settings
+
+    if not live_settings.INTERNAL_SERVICE_TOKEN:
         raise HTTPException(
             status_code=500, detail="INTERNAL_SERVICE_TOKEN not configured"
         )
-    if authorization != f"Bearer {settings.INTERNAL_SERVICE_TOKEN}":
+    if authorization != f"Bearer {live_settings.INTERNAL_SERVICE_TOKEN}":
         raise HTTPException(status_code=401, detail="invalid system token")
