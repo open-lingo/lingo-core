@@ -115,12 +115,11 @@ async def submit_attempt_batch(
             xp_config=xp_config,
         )
         results.append(result)
-        # Drafts (mid-lesson snapshots) get persisted but must not affect
-        # XP / lingots / streak / leaderboard / quests. Those side effects
-        # only fire when the user actually finishes the lesson.
-        if not item.isDraft:
-            total_xp_inc += xp_inc
-            total_lingots_inc += lingots_inc
+        # Drafts contribute incremental step-XP (server-computed inside
+        # _process_one_attempt). They do NOT add lingots and do NOT fire
+        # lesson_completed (that's gated separately below).
+        total_xp_inc += xp_inc
+        total_lingots_inc += lingots_inc
 
     # Compute new user-row state from a single base snapshot.
     base_xp = int(user_record.get("xp") or 0)
@@ -253,9 +252,38 @@ async def _process_one_attempt(
     by the caller (see Fix 2 in ``submit_attempt_batch``).
     """
     # Idempotency — if we've already accepted this client attempt, return the
-    # cached outcome shape.
+    # cached outcome shape. EXCEPT for drafts: drafts re-sync the same
+    # clientAttemptId multiple times as the user progresses through a
+    # lesson; we want to award XP for the *new* correctly-completed steps
+    # in each sync (so the XP bar climbs during long lessons) without
+    # double-counting steps from previous syncs.
     existing = await progress.attempt_exists(user_id, item.clientAttemptId)
-    if existing is not None:
+    if existing is not None and not item.isDraft:
+        return (
+            BatchAttemptResult(
+                clientAttemptId=item.clientAttemptId,
+                attemptId=existing["attemptId"],
+                accepted=True,
+                xpEarned=0,
+                streakAfter=0,
+                lingotsEarned=0,
+                dailyTotalLessons=0,
+            ),
+            0,
+            0,
+        )
+
+    if existing is not None and item.isDraft:
+        # Update the persisted step list so the user's mid-lesson state
+        # is recoverable across devices, but DON'T award XP — the lesson
+        # XP burst lands once on the final lesson_completed attempt, and
+        # incrementally awarding mid-lesson XP would require server-side
+        # reconciliation that isn't worth the complexity here.
+        await progress.update_attempt_steps(
+            user_id,
+            item.clientAttemptId,
+            [s.model_dump() for s in item.stepResults],
+        )
         return (
             BatchAttemptResult(
                 clientAttemptId=item.clientAttemptId,
@@ -305,7 +333,11 @@ async def _process_one_attempt(
     # XP / lingot computation (server-authoritative, admin-tunable via
     # PlatformSettings → xp_economy). Pre-config defaults match the legacy
     # constants in app.progress.xp.
-    if not item.passed:
+    if item.isDraft or not item.passed:
+        # Drafts: persisted but no XP / lingots — the lesson burst lands
+        # on the final non-draft attempt (the natural lesson_completed
+        # signal). Keeps reconciliation simple at the cost of a momentary
+        # XP bar that stays still mid-lesson.
         xp_earned = 0
         lingots_earned = 0
     else:

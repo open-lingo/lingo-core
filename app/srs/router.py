@@ -61,45 +61,41 @@ async def sync_cards(body: SRSSyncRequest, user: CurrentUser, repo: SRSRepo) -> 
     cards_dict = {cid: state.model_dump(mode="json") for cid, state in body.cards.items()}
     merged = await repo.upsert_cards(user.id, cards_dict)
 
-    # Fan out review events. The client-supplied state carries both modality
-    # sub-states; we use ``recognition.lastReviewDate`` as the "did a review
-    # happen today" signal because every graded review writes that field
-    # (production-mode grades touch production.lastReviewDate which we
-    # mirror separately). Keep this best-effort: a publish failure must not
-    # break the sync response.
-    # Compare against UTC date — the FE writes ``lastReviewDate`` from
-    # ``new Date().toISOString().slice(0, 10)``, which is UTC. Using
-    # local date here would drift by a day depending on server TZ.
+    # Tally today's reviews and fire ONE batched ``review_completed`` event
+    # carrying the count. We count each modality whose ``lastReviewDate``
+    # is today (UTC, matching the FE's ``new Date().toISOString().slice(0,10)``).
+    # The quest evaluator uses ``count`` as the delta for unit="cards"
+    # quests, so 6 reviews in one sync = +6 progress in one event instead
+    # of six separate events spamming the inspector + dispatch loop.
+    # Best-effort: a publish failure must not break the sync response.
     today_iso = datetime.now(UTC).date().isoformat()
+    review_count = 0
+    last_card_id = ""
+    last_modality: str = "recognition"
     for card_id, state in body.cards.items():
         if state.recognition.lastReviewDate == today_iso:
-            try:
-                publish_event(
-                    {
-                        "type": "review_completed",
-                        "version": 1,
-                        "user_id": user.id,
-                        "card_id": card_id,
-                        "modality": "recognition",
-                        "rating": "good",
-                    }
-                )
-            except Exception:
-                logger.exception("review_completed publish failed card_id=%s", card_id)
+            review_count += 1
+            last_card_id, last_modality = card_id, "recognition"
         if state.production.lastReviewDate == today_iso:
-            try:
-                publish_event(
-                    {
-                        "type": "review_completed",
-                        "version": 1,
-                        "user_id": user.id,
-                        "card_id": card_id,
-                        "modality": "production",
-                        "rating": "good",
-                    }
-                )
-            except Exception:
-                logger.exception("review_completed publish failed card_id=%s", card_id)
+            review_count += 1
+            last_card_id, last_modality = card_id, "production"
+    if review_count > 0:
+        try:
+            publish_event(
+                {
+                    "type": "review_completed",
+                    "version": 1,
+                    "user_id": user.id,
+                    "card_id": last_card_id,
+                    "modality": last_modality,
+                    "rating": "good",
+                    "count": review_count,
+                }
+            )
+        except Exception:
+            logger.exception(
+                "review_completed batch publish failed count=%d", review_count
+            )
 
     return {
         "cards": merged,

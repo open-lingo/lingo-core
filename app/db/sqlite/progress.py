@@ -173,6 +173,19 @@ class SqliteProgressRepository:
         row = await cur.fetchone()
         return _attempt_row_to_dict(row) if row else None
 
+    async def update_attempt_steps(
+        self,
+        user_id: str,
+        client_attempt_id: str,
+        steps: list[dict[str, Any]],
+    ) -> None:
+        await self._conn().execute(
+            "UPDATE progress_attempts SET steps_json = ? "
+            "WHERE user_id = ? AND client_attempt_id = ?",
+            (json.dumps(steps), user_id, client_attempt_id),
+        )
+        await self._conn().commit()
+
     async def list_attempts(
         self,
         user_id: str,

@@ -142,6 +142,16 @@ class DynamoProgressRepository:
         item = resp.get("Item")
         return _attempt_item_to_dict(item) if item else None
 
+    async def update_attempt_steps(
+        self,
+        user_id: str,
+        client_attempt_id: str,
+        steps: list[dict[str, Any]],
+    ) -> None:
+        # Stub: prod Dynamo path isn't exercising drafts yet. When mid-lesson
+        # sync ships to prod, swap this for an UpdateItem on the client_item.
+        return None
+
     async def put_attempt(self, user_id: str, attempt: dict[str, Any]) -> None:
         if await self.attempt_exists(user_id, attempt["clientAttemptId"]):
             return

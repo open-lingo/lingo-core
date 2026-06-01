@@ -45,6 +45,21 @@ class ProgressRepository(Protocol):
         """Return the existing attempt if ``client_attempt_id`` was already stored."""
         ...
 
+    async def update_attempt_steps(
+        self,
+        user_id: str,
+        client_attempt_id: str,
+        steps: list[dict[str, Any]],
+    ) -> None:
+        """Overwrite the ``steps`` column of an existing attempt row.
+
+        Used for mid-lesson drafts (``clientAttemptId`` prefixed with
+        ``draft:``) so each sync can update the cumulative step list
+        rather than being IGNOREd by the idempotent put_attempt path.
+        No-op if the row doesn't exist.
+        """
+        ...
+
     async def list_attempts(
         self,
         user_id: str,
