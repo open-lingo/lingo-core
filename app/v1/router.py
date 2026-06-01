@@ -19,6 +19,7 @@ from app.admin.lms_router import router as admin_lms_router
 from app.admin.router import router as admin_router
 from app.admin.social_router import router as admin_social_router
 from app.admin.xp_router import router as admin_xp_router
+from app.ads.router import router as ads_router
 from app.community.router import router as community_router
 from app.decks.router import router as decks_router
 from app.finance.router import router as finance_router
@@ -52,3 +53,4 @@ v1_router.include_router(quests_router, prefix="/quests")
 v1_router.include_router(platform_settings_router, prefix="/admin/platform-settings")
 v1_router.include_router(tags_public_router, prefix="/tags")
 v1_router.include_router(tags_admin_router, prefix="/admin/tags")
+v1_router.include_router(ads_router, prefix="/ads")
