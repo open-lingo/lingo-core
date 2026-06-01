@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
-# Package lingo-core for deployment. Output: lingo-core.zip with app/ and package/ (deps).
-# If Lambda ARN/name is provided (prompted or via -f), pushes the zip to Lambda.
+# Package lingo-core for AWS Lambda deployment. Output: lingo-core.zip.
 #
-# Lambda optimizations: no uvicorn (Mangum handles ASGI), excludes cruft to shrink zip.
+# Layout matches lingo-ops: deps installed at the zip ROOT alongside app/,
+# so everything lands directly on /var/task (the Python path). Do NOT put
+# deps in a subdirectory — Lambda won't find them without PYTHONPATH hacks.
+#
+# Targets x86_64 / py3.13 to match the Terraform-managed lingo-core function
+# (lingo-infra/lingo_core_function.tf). If you change the Lambda arch there,
+# update the --platform tag below to match.
+#
+# Optional: -f <LAMBDA_NAME> pushes the zip after building.
 
 set -e
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
-OUT=lingo-core.zip
+OUT="$ROOT/lingo-core.zip"
+BUILD_DIR="$ROOT/build"
 LAMBDA_ARN=""
 
 while getopts "f:" opt; do
@@ -26,11 +34,18 @@ if [ -z "$LAMBDA_ARN" ] && [ -t 0 ]; then
 fi
 
 echo "Building $OUT ..."
-rm -rf build package
-mkdir -p build package
+rm -rf "$BUILD_DIR" "$OUT"
+mkdir -p "$BUILD_DIR"
 
-# Lambda doesn't need uvicorn — Mangum adapts ASGI directly. Saves ~15MB.
-pip install -t package/ -q \
+# Install runtime deps targeted at the Lambda arch/runtime. Lambda doesn't
+# need uvicorn — Mangum adapts ASGI directly. --only-binary forces manylinux
+# wheels so native deps (cryptography) are Lambda-compatible.
+pip install \
+  --target "$BUILD_DIR" \
+  --platform manylinux2014_x86_64 \
+  --python-version 3.13 \
+  --only-binary=:all: \
+  --quiet \
   fastapi \
   pydantic-settings \
   "python-jose[cryptography]" \
@@ -40,24 +55,25 @@ pip install -t package/ -q \
   mangum \
   "kombu>=5"
 
-cp -r app build/
-cp -r package build/
+# Application code alongside the deps (both at zip root -> /var/task).
+cp -r app "$BUILD_DIR/"
 
-# Exclude cruft to shrink zip and speed cold starts
-cd build
-zip -rq "$ROOT/$OUT" . \
-  -x "*.pyc" -x "*__pycache__*" \
-  -x "*.dist-info/*" -x "*.egg-info/*" \
-  -x "*/tests/*" -x "*/test/*"
-cd ..
-rm -rf build package
+# Zip from inside build/ so paths have no leading "build/" prefix.
+( cd "$BUILD_DIR" && zip -rq "$OUT" . \
+    -x "*.pyc" -x "*__pycache__*" \
+    -x "*.dist-info/*" -x "*.egg-info/*" \
+    -x "*/tests/*" -x "*/test/*" )
 
-echo "Done: $OUT"
+rm -rf "$BUILD_DIR"
+
+SIZE_BYTES=$(stat -c%s "$OUT" 2>/dev/null || stat -f%z "$OUT")
+SIZE_MB=$(awk -v b="$SIZE_BYTES" 'BEGIN { printf "%.1f", b/1024/1024 }')
+echo "Done: $OUT (${SIZE_MB} MB)"
 
 if [ -n "$LAMBDA_ARN" ]; then
   echo "Pushing to Lambda: $LAMBDA_ARN"
   aws lambda update-function-code \
     --function-name "$LAMBDA_ARN" \
-    --zip-file "fileb://$ROOT/$OUT"
+    --zip-file "fileb://$OUT"
   echo "Lambda updated."
 fi
