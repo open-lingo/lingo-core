@@ -63,6 +63,14 @@ class BatchAttempt(BaseModel):
     passed: bool
     score: float = Field(ge=0.0, le=1.0)
     stepResults: list[GradedStepResult]
+    # Mid-lesson sync flag. True = an in-progress snapshot of the user's
+    # step results (the FE flushes these so the SyncManager dirty count
+    # clears even while the user is still in the lesson). The router
+    # still persists the step results / accepts the row, but skips event
+    # emission so quest progress + leaderboard don't advance until the
+    # user actually finishes the lesson. False (default) = a real, final
+    # attempt — fires events as before.
+    isDraft: bool = False
 
 
 class BatchAttemptSubmission(BaseModel):

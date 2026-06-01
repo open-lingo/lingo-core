@@ -115,8 +115,12 @@ async def submit_attempt_batch(
             xp_config=xp_config,
         )
         results.append(result)
-        total_xp_inc += xp_inc
-        total_lingots_inc += lingots_inc
+        # Drafts (mid-lesson snapshots) get persisted but must not affect
+        # XP / lingots / streak / leaderboard / quests. Those side effects
+        # only fire when the user actually finishes the lesson.
+        if not item.isDraft:
+            total_xp_inc += xp_inc
+            total_lingots_inc += lingots_inc
 
     # Compute new user-row state from a single base snapshot.
     base_xp = int(user_record.get("xp") or 0)
@@ -200,7 +204,9 @@ async def submit_attempt_batch(
             }
         )
     for item, r in zip(body.attempts, results, strict=True):
-        if r.accepted:
+        # Drafts persist but don't fire lesson_completed (would advance
+        # quests / activity feed before the user is actually done).
+        if r.accepted and not item.isDraft:
             publish_event(
                 {
                     "type": "lesson_completed",
