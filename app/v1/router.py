@@ -13,7 +13,9 @@ per version as needed.
 
 from fastapi import APIRouter
 
+from app.admin.audit_router import router as admin_audit_router
 from app.admin.ban_router import router as admin_ban_router
+from app.admin.lms_router import router as admin_lms_router
 from app.admin.router import router as admin_router
 from app.admin.social_router import router as admin_social_router
 from app.admin.xp_router import router as admin_xp_router
@@ -40,7 +42,9 @@ v1_router.include_router(community_router, prefix="/community")
 v1_router.include_router(admin_router, prefix="/admin")
 v1_router.include_router(admin_social_router, prefix="/admin/social")
 v1_router.include_router(admin_xp_router, prefix="/admin")
+v1_router.include_router(admin_lms_router, prefix="/admin/lms")
 v1_router.include_router(admin_ban_router, prefix="/admin")
+v1_router.include_router(admin_audit_router, prefix="/admin")
 v1_router.include_router(finance_router, prefix="/finance")
 v1_router.include_router(progress_router, prefix="/progress")
 v1_router.include_router(social_router, prefix="/social")
