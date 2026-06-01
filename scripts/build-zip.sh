@@ -37,7 +37,8 @@ pip install -t package/ -q \
   httpx \
   aiosqlite \
   aioboto3 \
-  mangum
+  mangum \
+  "kombu>=5"
 
 cp -r app build/
 cp -r package build/

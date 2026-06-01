@@ -47,7 +47,9 @@ jobs:
             --query '{Version: Version, CodeSha256: CodeSha256, LastModified: LastModified}'
       - name: write smoke-test payload
         run: |
-          printf '%s' '{"rawPath":"/health","requestContext":{"http":{"method":"GET","path":"/health"}},"headers":{},"version":"2.0"}' > /tmp/payload.json
+          # Full API Gateway v2 shape — Mangum requires requestContext.http.sourceIp
+          # (and friends); a minimal payload crashes with KeyError 'sourceIp'.
+          printf '%s' '{"version":"2.0","routeKey":"$default","rawPath":"/health","rawQueryString":"","headers":{"host":"smoke.test"},"requestContext":{"accountId":"0","apiId":"smoke","domainName":"smoke.test","http":{"method":"GET","path":"/health","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"smoke-test"},"requestId":"smoke","routeKey":"$default","stage":"$default","time":"01/Jan/2026:00:00:00 +0000","timeEpoch":0},"isBase64Encoded":false}' > /tmp/payload.json
       - name: wait + smoke test
         # --cli-binary-format raw-in-base64-out is REQUIRED with AWS CLI v2:
         # without it the CLI treats the payload as base64, and Lambda ends up
