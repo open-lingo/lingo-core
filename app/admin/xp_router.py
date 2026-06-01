@@ -21,7 +21,7 @@ from app.admin.audit_router import record_admin_action
 from app.auth.dependencies import require_admin
 from app.auth.schemas import TokenPayload
 from app.db.protocols import ProgressRepository, UserRepository
-from app.db.provider import get_progress_repo, get_social_repo, get_user_repo
+from app.db.provider import get_progress_repo, get_user_repo
 from app.progress.xp import level_for_xp
 from app.shared.errors import api_error
 
@@ -91,11 +91,6 @@ async def award_xp(
             except Exception:  # noqa: BLE001 — must never break the admin write
                 pass
 
-        # Mirror to social-repo leaderboard bucket (best-effort — for Dynamo
-        # prod path; SQLite social repo doesn't implement this method).
-        if body.amount != 0:
-            await _mirror_to_leaderboard(users=users, user_id=user_id, amount=body.amount)
-
     await record_admin_action(
         actor_id=_admin.id,
         action="award_xp",
@@ -112,24 +107,3 @@ async def award_xp(
     )
 
 
-async def _mirror_to_leaderboard(*, users: UserRepository, user_id: str, amount: int) -> None:
-    """Apply the same XP delta to the user's leaderboard row when they're
-    opted in. Failures are silent — leaderboard mirroring must never break
-    the admin write."""
-    social_repo = get_social_repo()
-    if social_repo is None:
-        return
-    if not hasattr(social_repo, "add_xp_to_leaderboard"):
-        return
-    try:
-        settings_blob = await users.get_settings(user_id) or {}
-        social_cfg = settings_blob.get("social") or {}
-        if not social_cfg.get("show_on_leaderboard"):
-            return
-        learning = settings_blob.get("learning") or {}
-        lang = learning.get("learningLanguageId") or settings_blob.get("learningLanguage")
-        if not lang:
-            return
-        await social_repo.add_xp_to_leaderboard(user_id, str(lang), amount)
-    except Exception:  # noqa: BLE001 — best-effort, never poison the response
-        return

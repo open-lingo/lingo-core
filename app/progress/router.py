@@ -19,7 +19,6 @@ from app.db.protocols import ProgressRepository, UserRepository
 from app.db.provider import (
     get_platform_settings_repo,
     get_progress_repo,
-    get_social_repo,
     get_user_repo,
 )
 from app.events.publisher import publish as publish_event
@@ -161,19 +160,6 @@ async def submit_attempt_batch(
             xp_settings_blob = await users.get_settings(user.id) or {}
         except Exception:
             pass  # Degrade gracefully — event fields will be None/default.
-
-        social_repo = get_social_repo()
-        if social_repo is not None:
-            try:
-                social_cfg = xp_settings_blob.get("social") or {}
-                if social_cfg.get("show_on_leaderboard"):
-                    learning = xp_settings_blob.get("learning") or {}
-                    lang = learning.get("learningLanguageId") or xp_settings_blob.get("learningLanguage")
-                    if lang:
-                        await social_repo.add_xp_to_leaderboard(user.id, str(lang), total_xp_inc)
-            except Exception:
-                # Leaderboard write failures must never break a lesson sync.
-                pass
 
     # Stamp streakAfter on every accepted result for FE display.
     for r in results:

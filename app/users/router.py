@@ -466,21 +466,4 @@ async def internal_add_xp(
             except Exception:  # noqa: BLE001 — must not break the XP credit
                 pass
 
-        # Social-repo leaderboard mirror (best-effort — for DynamoDB prod path).
-        if body.leaderboard_opt_in:
-            try:
-                social_repo = get_social_repo()
-                lang = body.learning_language_id
-                if not lang:
-                    settings_blob = (record.get("settings") or {})
-                    learning = settings_blob.get("learning") or {}
-                    lang = learning.get("learningLanguageId") or settings_blob.get(
-                        "learningLanguage"
-                    )
-                if social_repo is not None and lang:
-                    await social_repo.add_xp_to_leaderboard(
-                        body.user_id, str(lang), body.amount
-                    )
-            except Exception:
-                pass
         return {"ok": True, "xp_added": body.amount, "new_xp": new_xp}
