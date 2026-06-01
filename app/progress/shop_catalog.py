@@ -71,6 +71,58 @@ SHOP_ITEMS: dict[str, ShopItemDef] = {
         "category": "cosmetics",
         "consumable": False,
     },
+    # ─── Profile banners ────────────────────────────────────────────────
+    # Inline-SVG art lives on the frontend; the backend just gates purchase
+    # + records ownership. IDs and prices MUST match
+    # ``lingo/src/features/shop/shopCatalog.ts``.
+    "banner-sakura": {
+        "id": "banner-sakura",
+        "price": 200,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "banner-vaporwave-sun": {
+        "id": "banner-vaporwave-sun",
+        "price": 350,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "banner-starry-night": {
+        "id": "banner-starry-night",
+        "price": 250,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "banner-hearts-confetti": {
+        "id": "banner-hearts-confetti",
+        "price": 150,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "banner-coffee-steam": {
+        "id": "banner-coffee-steam",
+        "price": 150,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "banner-sunset-mountains": {
+        "id": "banner-sunset-mountains",
+        "price": 300,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "banner-ocean-boat": {
+        "id": "banner-ocean-boat",
+        "price": 300,
+        "category": "cosmetics",
+        "consumable": False,
+    },
+    "banner-meadow": {
+        "id": "banner-meadow",
+        "price": 200,
+        "category": "cosmetics",
+        "consumable": False,
+    },
 }
 
 
