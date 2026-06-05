@@ -13,12 +13,16 @@ GSI ``UserAttempts-Index``: hash ``user_id``, range ``attemptedAt``.
 from __future__ import annotations
 
 import json
+import logging
 from decimal import Decimal
-from typing import Any
+from typing import Any, Final
 
 import aioboto3
 from boto3.dynamodb.conditions import Key
 from boto3.dynamodb.types import TypeSerializer
+from botocore.exceptions import ClientError
+
+logger: Final = logging.getLogger("lingo.dynamo")
 
 _SERIALIZER = TypeSerializer()
 
@@ -185,24 +189,49 @@ class DynamoProgressRepository:
         # ConditionExpression fail. TransactWriteItems is 2x WCU but
         # eliminates that failure mode.
         client = self._table.meta.client
-        await client.transact_write_items(
-            TransactItems=[
-                {
-                    "Put": {
-                        "TableName": self._table_name,
-                        "Item": _to_attr_map(attempt_item),
-                        "ConditionExpression": "attribute_not_exists(SK)",
-                    }
-                },
-                {
-                    "Put": {
-                        "TableName": self._table_name,
-                        "Item": _to_attr_map(client_item),
-                        "ConditionExpression": "attribute_not_exists(SK)",
-                    }
-                },
-            ]
-        )
+        try:
+            await client.transact_write_items(
+                TransactItems=[
+                    {
+                        "Put": {
+                            "TableName": self._table_name,
+                            "Item": _to_attr_map(attempt_item),
+                            "ConditionExpression": "attribute_not_exists(SK)",
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self._table_name,
+                            "Item": _to_attr_map(client_item),
+                            "ConditionExpression": "attribute_not_exists(SK)",
+                        }
+                    },
+                ]
+            )
+        except ClientError as exc:
+            # DIAGNOSTIC (temporary): the boto summary only prints
+            # "[ValidationError, None]" and hides which field is malformed.
+            # The real per-item reason (with a human Message) lives in the
+            # response's CancellationReasons. Log it plus the item-shape
+            # fingerprint so we can pin the bad draft attempt, then re-raise
+            # unchanged. Remove once root cause is fixed.
+            reasons = exc.response.get("CancellationReasons")
+            logger.warning(
+                "put_attempt transact failed: code=%s reasons=%s "
+                "fingerprint={attempt_sk=%r client_sk=%r attemptedAt=%r "
+                "lessonId=%r score=%r durationSec=%r isDraft=%s steps=%d}",
+                exc.response.get("Error", {}).get("Code"),
+                reasons,
+                attempt_item["SK"],
+                client_item["SK"],
+                attempted_at,
+                lesson_id,
+                base["score"],
+                base["durationSec"],
+                attempt["clientAttemptId"].startswith("draft:"),
+                len(base["steps"]),
+            )
+            raise
 
     async def list_attempts(
         self,
