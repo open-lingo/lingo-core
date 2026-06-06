@@ -5,7 +5,12 @@ See ``docs/adr/0001-progress-api-hybrid-rollup.md`` for the data model.
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# Duration sanity ceiling — abandoned tabs / browser sleeps can produce
+# wildly inflated `durationSec` values (days, weeks). Cap at one hour and
+# call it. Floor is enforced via Field(ge=1).
+_MAX_DURATION_SEC = 3600
 
 # ── Submission ──────────────────────────────────────────────────────────────
 
@@ -39,8 +44,7 @@ class AttemptSubmission(BaseModel):
     clientAttemptId: str = Field(description="Client-generated UUID for idempotent retries")
     durationSec: int = Field(
         ge=1,
-        le=3600,
-        description="Total time the user spent on the lesson, clamped server-side",
+        description="Total time the user spent on the lesson. Clamped to 3600 in __init__ — abandoned tabs / browser sleeps were producing 95k-second values that 422'd the whole batch.",
     )
     answers: list[AttemptStepAnswer] | None = Field(
         default=None,
@@ -51,6 +55,11 @@ class AttemptSubmission(BaseModel):
         description="Phase 1 — client-graded results (current production path)",
     )
 
+    @field_validator("durationSec", mode="before")
+    @classmethod
+    def _clamp_duration(cls, v: int) -> int:
+        return min(_MAX_DURATION_SEC, int(v))
+
 
 class BatchAttempt(BaseModel):
     """One entry in the batch sync payload. Mirrors AttemptSubmission but with
@@ -59,7 +68,9 @@ class BatchAttempt(BaseModel):
     clientAttemptId: str
     lessonId: str
     attemptedAt: str = Field(description="ISO timestamp from the client")
-    durationSec: int = Field(ge=1, le=3600)
+    # ge=1 only — upper bound clamped via validator below so abandoned tabs
+    # don't 422 the batch.
+    durationSec: int = Field(ge=1)
     passed: bool
     score: float = Field(ge=0.0, le=1.0)
     stepResults: list[GradedStepResult]
@@ -71,6 +82,11 @@ class BatchAttempt(BaseModel):
     # user actually finishes the lesson. False (default) = a real, final
     # attempt — fires events as before.
     isDraft: bool = False
+
+    @field_validator("durationSec", mode="before")
+    @classmethod
+    def _clamp_duration(cls, v: int) -> int:
+        return min(_MAX_DURATION_SEC, int(v))
 
 
 class BatchAttemptSubmission(BaseModel):
