@@ -7,6 +7,7 @@ for local dev or ``dynamodb`` in prod (requires ``lingo_progress`` table from
 ``lingo-infra``).
 """
 
+import asyncio
 import uuid
 from datetime import date, timedelta
 from typing import Annotated, Any
@@ -392,16 +393,20 @@ async def get_my_progress(
     set today simply ship as-is (the data is still useful, just slightly
     stale). When the recompute path lands it slots in here.
     """
-    user_record = await users.get_user_by_id(user.id) or {}
-    lesson_rollups = await progress.get_lesson_rollups(user.id)
-    concept_rollups = await progress.get_concept_rollups(user.id)
-
     today = date.today()
     since = (today - timedelta(days=29)).isoformat()
     until = today.isoformat()
-    day_rollups = await progress.get_day_rollups(user.id, since, until)
-
-    return _progress_summary_from_db(user_record, lesson_rollups, concept_rollups, day_rollups)
+    # All four reads are independent — run them in parallel inside this
+    # request so the page render isn't gated on serial RTTs.
+    user_record, lesson_rollups, concept_rollups, day_rollups = await asyncio.gather(
+        users.get_user_by_id(user.id),
+        progress.get_lesson_rollups(user.id),
+        progress.get_concept_rollups(user.id),
+        progress.get_day_rollups(user.id, since, until),
+    )
+    return _progress_summary_from_db(
+        user_record or {}, lesson_rollups, concept_rollups, day_rollups
+    )
 
 
 def _progress_summary_from_db(
@@ -511,8 +516,12 @@ async def touch_session(
     batch-attempt endpoint with checkStreak=true (per ADR-0001). This
     endpoint is purely a read of "what does the user need to refresh".
     """
-    user_record = await users.get_user_by_id(user.id) or {}
-    concept_rollups = await progress.get_concept_rollups(user.id)
+    # Two independent reads — fan out in parallel.
+    user_record, concept_rollups = await asyncio.gather(
+        users.get_user_by_id(user.id),
+        progress.get_concept_rollups(user.id),
+    )
+    user_record = user_record or {}
     stale_ids = [c["conceptId"] for c in concept_rollups if c.get("staleAt")]
     return TouchResponse(
         user=_user_stats_from_record(user_record),
@@ -532,7 +541,14 @@ async def purchase_shop_item(
     if item is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown shop item")
 
-    settings = await users.get_settings(user.id) or {}
+    # The settings + user-row reads are both keyed on user.id and independent —
+    # run them in parallel so the purchase RTT count is one less.
+    settings, user_record = await asyncio.gather(
+        users.get_settings(user.id),
+        users.get_user_by_id(user.id),
+    )
+    settings = settings or {}
+    user_record = user_record or {}
     shop_state = dict(settings.get("shop") or {})
     purchases: list[str] = list(shop_state.get("purchases") or [])
     inventory: dict[str, int] = {str(k): int(v) for k, v in (shop_state.get("inventory") or {}).items() if isinstance(v, (int, float))}
@@ -540,8 +556,6 @@ async def purchase_shop_item(
     consumable = bool(item.get("consumable"))
     if not consumable and body.itemId in purchases:
         raise HTTPException(status.HTTP_409_CONFLICT, "Already owned")
-
-    user_record = await users.get_user_by_id(user.id) or {}
     lingots = int(user_record.get("lingots") or 0)
     price = int(item["price"])
     if lingots < price:

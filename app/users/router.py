@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -397,13 +398,22 @@ async def discover_users(
             candidates.append((record, settings_blob))
 
         # Pull friendship status + weekly XP for the full filtered set so we
-        # can sort by XP server-side (contributors page expects this).
+        # can sort by XP server-side (contributors page expects this). The
+        # two awaits per candidate are independent reads — fan them all out
+        # in parallel with asyncio.gather so the discover RTT count is
+        # O(1) rather than O(N candidates) sequential.
+        fs_results, weekly_results = await asyncio.gather(
+            asyncio.gather(
+                *(_discover_friendship_status(social, user.id, r["id"]) for r, _ in candidates)
+            ),
+            asyncio.gather(*(_weekly_xp(progress, r["id"]) for r, _ in candidates)),
+        )
         enriched: list[tuple[dict[str, Any], dict[str, Any] | None, int, PublicFriendshipStatus]] = []
-        for record, settings_blob in candidates:
-            fs = await _discover_friendship_status(social, user.id, record["id"])
+        for (record, settings_blob), fs, weekly in zip(
+            candidates, fs_results, weekly_results, strict=True
+        ):
             if fs == "blocked":
                 continue
-            weekly = await _weekly_xp(progress, record["id"])
             enriched.append((record, settings_blob, weekly, fs))
 
         # Sort: weekly_xp DESC, then streak DESC, then username for stability.

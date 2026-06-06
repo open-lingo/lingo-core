@@ -192,12 +192,11 @@ async def _friendship_status(social: SocialRepository, me_id: str, other_id: str
 
 
 async def _users_by_ids(users: UserRepository, ids: list[str]) -> dict[str, dict[str, Any]]:
-    out: dict[str, dict[str, Any]] = {}
-    for uid in ids:
-        rec = await users.get_user_by_id(uid)
-        if rec:
-            out[uid] = rec
-    return out
+    # Parallel fan-out — used by the activity feed where N can be ~tens
+    # (one user-row read per unique actor). Cuts response time from
+    # serial RTTs to one round-trip's worth.
+    records = await asyncio.gather(*(users.get_user_by_id(uid) for uid in ids))
+    return {uid: rec for uid, rec in zip(ids, records, strict=True) if rec}
 
 
 # ─── Friends ─────────────────────────────────────────────────────────────────
@@ -211,12 +210,15 @@ async def list_friends(
 ) -> Any:
     """List the caller's friends."""
     edges = await social.list_friends(user.id)
-    out: list[FriendItem] = []
-    for edge in edges:
-        friend = await users.get_user_by_id(edge["friend_id"])
-        if friend:
-            out.append(_user_to_friend_item(friend, edge["friended_at"]))
-    return out
+    # Fan out the per-friend user reads in parallel.
+    friends = await asyncio.gather(
+        *(users.get_user_by_id(edge["friend_id"]) for edge in edges)
+    )
+    return [
+        _user_to_friend_item(friend, edge["friended_at"])
+        for friend, edge in zip(friends, edges, strict=True)
+        if friend
+    ]
 
 
 @router.get("/friends/requests", response_model=FriendRequestsResponse)
@@ -226,16 +228,21 @@ async def list_friend_requests(
     users: UserRepo,
 ) -> Any:
     incoming_rows, outgoing_rows = await social.list_friend_requests(user.id)
-    incoming: list[FriendRequestItem] = []
-    for row in incoming_rows:
-        u = await users.get_user_by_id(row["from_id"])
-        if u:
-            incoming.append(_user_to_request_item(u, row["requested_at"]))
-    outgoing: list[FriendRequestItem] = []
-    for row in outgoing_rows:
-        u = await users.get_user_by_id(row["to_id"])
-        if u:
-            outgoing.append(_user_to_request_item(u, row["requested_at"]))
+    # Fan out the two per-row user lookups in parallel.
+    incoming_users, outgoing_users = await asyncio.gather(
+        asyncio.gather(*(users.get_user_by_id(row["from_id"]) for row in incoming_rows)),
+        asyncio.gather(*(users.get_user_by_id(row["to_id"]) for row in outgoing_rows)),
+    )
+    incoming: list[FriendRequestItem] = [
+        _user_to_request_item(u, row["requested_at"])
+        for u, row in zip(incoming_users, incoming_rows, strict=True)
+        if u
+    ]
+    outgoing: list[FriendRequestItem] = [
+        _user_to_request_item(u, row["requested_at"])
+        for u, row in zip(outgoing_users, outgoing_rows, strict=True)
+        if u
+    ]
     return FriendRequestsResponse(incoming=incoming, outgoing=outgoing)
 
 
@@ -352,19 +359,19 @@ async def list_blocks(
     users: UserRepo,
 ) -> Any:
     rows = await social.list_blocks(user.id)
-    out: list[BlockedUserItem] = []
-    for row in rows:
-        u = await users.get_user_by_id(row["blocked_id"])
-        if u:
-            out.append(
-                BlockedUserItem(
-                    user_id=u["id"],
-                    username=u["username"],
-                    display_name=u["display_name"],
-                    blocked_at=row["blocked_at"],
-                )
-            )
-    return out
+    blocked = await asyncio.gather(
+        *(users.get_user_by_id(row["blocked_id"]) for row in rows)
+    )
+    return [
+        BlockedUserItem(
+            user_id=u["id"],
+            username=u["username"],
+            display_name=u["display_name"],
+            blocked_at=row["blocked_at"],
+        )
+        for u, row in zip(blocked, rows, strict=True)
+        if u
+    ]
 
 
 # ─── Leaderboards ────────────────────────────────────────────────────────────
@@ -387,16 +394,16 @@ async def _build_leaderboard(
         # SQLite list_users overfetches; cap defensively.
         records, _ = await users.list_users(limit=500)
     else:
-        records = []
-        for uid in cohort_ids:
-            r = await users.get_user_by_id(uid)
-            if r:
-                records.append(r)
+        # Fan out the per-id reads in parallel.
+        fetched = await asyncio.gather(*(users.get_user_by_id(uid) for uid in cohort_ids))
+        records = [r for r in fetched if r]
 
-    pairs: list[tuple[dict[str, Any], int]] = []
-    for record in records:
-        xp = await _xp_in_window(progress, record["id"], window_days)
-        pairs.append((record, xp))
+    # Fan out the XP-window reads in parallel — sequential awaits are the
+    # main reason leaderboards feel slow.
+    xps = await asyncio.gather(
+        *(_xp_in_window(progress, record["id"], window_days) for record in records)
+    )
+    pairs: list[tuple[dict[str, Any], int]] = list(zip(records, xps, strict=True))
 
     pairs.sort(key=lambda p: (-p[1], p[0]["username"]))
     ranked: list[LeaderboardEntry] = []
@@ -560,16 +567,18 @@ async def _build_league_spotlight(
             break
 
     # Compute yesterday's rank — same cohort, but using the 7-day window ending
-    # yesterday.
+    # yesterday. Fan the per-user rollup reads out in parallel.
     yesterday_records, _ = await users.list_users(limit=500)
     yest_today = _today() - timedelta(days=1)
     yest_since = (yest_today - timedelta(days=6)).isoformat()
     yest_until = yest_today.isoformat()
-    yest_pairs: list[tuple[str, int]] = []
-    for record in yesterday_records:
-        rows = await progress.get_day_rollups(record["id"], yest_since, yest_until)
-        xp = sum(int(r.get("xpEarned") or 0) for r in rows)
-        yest_pairs.append((record["id"], xp))
+    yest_rollup_lists = await asyncio.gather(
+        *(progress.get_day_rollups(r["id"], yest_since, yest_until) for r in yesterday_records)
+    )
+    yest_pairs: list[tuple[str, int]] = [
+        (record["id"], sum(int(r.get("xpEarned") or 0) for r in rows))
+        for record, rows in zip(yesterday_records, yest_rollup_lists, strict=True)
+    ]
     yest_pairs.sort(key=lambda p: (-p[1], p[0]))
     rank_yesterday: int | None = None
     for idx, (uid, _xp) in enumerate(yest_pairs, start=1):
@@ -582,20 +591,25 @@ async def _build_league_spotlight(
         rank_delta = rank_yesterday - board.my_rank
 
     # Build 7-day arrays for the caller and the friend-median chart.
-    # Index 0 = 6 days ago, index 6 = today.
+    # Index 0 = 6 days ago, index 6 = today. Fan all 7 + (7 × friends) reads
+    # out in parallel instead of looping with sequential awaits.
     today = _today()
-    my_daily_xp: list[int] = []
-    for days_back in range(6, -1, -1):
-        day = today - timedelta(days=days_back)
-        my_daily_xp.append(await _xp_for_day(progress, user.id, day))
-
+    days = [today - timedelta(days=db) for db in range(6, -1, -1)]
     edges = await social.list_friends(user.id)
+
+    my_daily_xp_task = asyncio.gather(*(_xp_for_day(progress, user.id, d) for d in days))
+    friend_xp_tasks = [
+        asyncio.gather(*(_xp_for_day(progress, e["friend_id"], d) for d in days))
+        for e in edges
+    ]
+    my_daily_xp_raw, *friend_daily_lists = await asyncio.gather(
+        my_daily_xp_task, *friend_xp_tasks
+    )
+    my_daily_xp = list(my_daily_xp_raw)
+    # Transpose: per-day median across all friends.
     friend_daily_xp: list[int] = []
-    for days_back in range(6, -1, -1):
-        day = today - timedelta(days=days_back)
-        day_xps: list[int] = []
-        for edge in edges:
-            day_xps.append(await _xp_for_day(progress, edge["friend_id"], day))
+    for day_idx in range(7):
+        day_xps = [friend_daily_lists[fi][day_idx] for fi in range(len(edges))]
         friend_daily_xp.append(int(median(day_xps)) if day_xps else 0)
 
     return LeagueSpotlightResponse(
@@ -701,14 +715,19 @@ async def streak_snapshot(
     social: SocialRepo,
     users: UserRepo,
 ) -> Any:
-    me = await users.get_user_by_id(user.id) or {}
+    # Fan out the user-row + friends-edge reads in parallel.
+    me, edges = await asyncio.gather(
+        users.get_user_by_id(user.id),
+        social.list_friends(user.id),
+    )
+    me = me or {}
     my_streak = int(me.get("streak") or 0)
-    edges = await social.list_friends(user.id)
-    friend_streaks: list[tuple[dict[str, Any], int]] = []
-    for edge in edges:
-        u = await users.get_user_by_id(edge["friend_id"])
-        if u:
-            friend_streaks.append((u, int(u.get("streak") or 0)))
+    friend_records = await asyncio.gather(
+        *(users.get_user_by_id(edge["friend_id"]) for edge in edges)
+    )
+    friend_streaks: list[tuple[dict[str, Any], int]] = [
+        (u, int(u.get("streak") or 0)) for u in friend_records if u
+    ]
     if friend_streaks:
         fmed = int(median(s for _, s in friend_streaks))
         best_user, best_streak = max(friend_streaks, key=lambda p: p[1])
@@ -838,17 +857,25 @@ async def list_activity(
         # friend can't crowd everyone out of the feed.
         per_actor_limit = limit
 
-        merged: list[dict[str, Any]] = []
-        for actor_id in actor_ids:
+        # Fan out the per-actor attempt reads in parallel — independent
+        # queries, no need to serialize. Per the ADR-0001 § Phase 2 note,
+        # this is the main perf lever for the pull-based feed.
+        async def _safe_list(actor_id: str) -> list[dict[str, Any]]:
             try:
                 attempts, _next = await progress.list_attempts(
                     actor_id, lesson_id=None, limit=per_actor_limit
                 )
+                return attempts
             except Exception as exc:  # noqa: BLE001 — defensive against missing progress backend
                 logger.warning("activity: list_attempts failed for %s: %s", actor_id, exc)
-                continue
-            for a in attempts:
-                merged.append({"actor_id": actor_id, "attempt": a})
+                return []
+
+        attempt_lists = await asyncio.gather(*(_safe_list(aid) for aid in actor_ids))
+        merged: list[dict[str, Any]] = [
+            {"actor_id": actor_id, "attempt": a}
+            for actor_id, attempts in zip(actor_ids, attempt_lists, strict=True)
+            for a in attempts
+        ]
 
         if not merged:
             return ActivityFeedResponse(items=[], cursor=None)
@@ -1008,13 +1035,19 @@ async def list_threads(
     users: UserRepo,
 ) -> Any:
     rows = await social.list_threads_for_user(user.id)
+    other_ids = [
+        row["user_b_id"] if row["user_a_id"] == user.id else row["user_a_id"]
+        for row in rows
+    ]
+    # Per-row reads (other user + last messages) — fan out in parallel.
+    others, msg_lists = await asyncio.gather(
+        asyncio.gather(*(users.get_user_by_id(oid) for oid in other_ids)),
+        asyncio.gather(*(social.list_messages(row["id"]) for row in rows)),
+    )
     out: list[ThreadItem] = []
-    for row in rows:
-        other_id = row["user_b_id"] if row["user_a_id"] == user.id else row["user_a_id"]
-        other = await users.get_user_by_id(other_id)
+    for row, other, msgs in zip(rows, others, msg_lists, strict=True):
         if not other:
             continue
-        msgs = await social.list_messages(row["id"])
         last = msgs[-1] if msgs else None
         last_at = datetime.fromisoformat(last["sent_at"]) if last else datetime.fromisoformat(row["updated_at"])
         out.append(
@@ -1045,10 +1078,14 @@ async def get_thread_detail(
     if user.id not in (thread["user_a_id"], thread["user_b_id"]):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a participant")
     other_id = thread["user_b_id"] if thread["user_a_id"] == user.id else thread["user_a_id"]
-    other = await users.get_user_by_id(other_id)
+    # Fetch the other participant + the message log in parallel — independent
+    # reads, no need to serialize them.
+    other, msgs = await asyncio.gather(
+        users.get_user_by_id(other_id),
+        social.list_messages(thread_id),
+    )
     if other is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Other participant not found")
-    msgs = await social.list_messages(thread_id)
     return ThreadDetailResponse(
         id=thread["id"],
         other_user_id=other["id"],
@@ -1084,11 +1121,13 @@ async def open_or_create_thread_with(
     """
     if user_id == user.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot message yourself")
-    other = await users.get_user_by_id(user_id)
+    # Two independent reads up front — fan them out in parallel.
+    other, existing = await asyncio.gather(
+        users.get_user_by_id(user_id),
+        social.list_threads_for_user(user.id),
+    )
     if other is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
-
-    existing = await social.list_threads_for_user(user.id)
     found: dict[str, Any] | None = None
     for row in existing:
         partner_id = row["user_b_id"] if row["user_a_id"] == user.id else row["user_a_id"]
@@ -1138,18 +1177,25 @@ async def quest_targets(
     users: UserRepo,
     progress: ProgressRepo,
 ) -> Any:
-    me = await users.get_user_by_id(user.id) or {}
+    # Three independent reads — fan them out in parallel.
+    me, my_weekly_xp, edges = await asyncio.gather(
+        users.get_user_by_id(user.id),
+        _xp_in_window(progress, user.id, 7),
+        social.list_friends(user.id),
+    )
+    me = me or {}
     my_streak = int(me.get("streak") or 0)
-    my_weekly_xp = await _xp_in_window(progress, user.id, 7)
 
-    edges = await social.list_friends(user.id)
+    # Per-friend reads (user row + weekly XP) — fan out across friends too.
+    friend_records, friend_weekly_xps = await asyncio.gather(
+        asyncio.gather(*(users.get_user_by_id(e["friend_id"]) for e in edges)),
+        asyncio.gather(*(_xp_in_window(progress, e["friend_id"], 7) for e in edges)),
+    )
     out: list[QuestTargetItem] = []
-    for edge in edges:
-        friend = await users.get_user_by_id(edge["friend_id"])
+    for friend, f_weekly_xp in zip(friend_records, friend_weekly_xps, strict=True):
         if not friend:
             continue
         f_streak = int(friend.get("streak") or 0)
-        f_weekly_xp = await _xp_in_window(progress, friend["id"], 7)
 
         reachable: list[str] = []
         # Streak: friend's streak is within +1 day of caller's (≤ caller +1).
