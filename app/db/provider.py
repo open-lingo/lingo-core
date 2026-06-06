@@ -4,12 +4,10 @@ At startup the app calls ``init_repositories()`` which reads ``DB_BACKEND``
 from config and instantiates the right concrete class.  FastAPI dependencies
 (``get_user_repo``, etc.) return the singleton for the lifetime of the app.
 
-Community uses a separate table. ``SqliteCommunityRepository`` is the real
-SQLite-backed impl. Dynamo doesn't have a real impl yet — the stub raises on
-every method, so for ``DB_BACKEND=dynamodb`` we fall back to
-``MockCommunityRepository`` so the routers stay alive while we wait for the
-prod impl. (The mock is in-memory and resets every Lambda cold start — that's
-documented in ARCHITECTURE_REVIEW.md.)
+Community uses 5 separate Dynamo tables (threads/posts/votes/addons/markdown)
+that match the SQLite split. The ``DynamoCommunityRepository`` takes a dict
+mapping each domain to its table name so callers can override per-domain in
+tests without rebuilding the prefix logic.
 
 Fix 6 — repository init is fault-tolerant. If a connect() raises we log
 the failure, record the domain in ``_degraded`` and keep going. Routers
@@ -177,10 +175,24 @@ async def init_repositories() -> None:
             _community_repo = MockCommunityRepository()
             _degraded.discard("community")
     else:
-        # No real Dynamo impl yet — use the in-memory mock as a fallback.
-        from app.db.mock.community import MockCommunityRepository
+        # Real Dynamo impl backed by the 5 community tables provisioned in
+        # ``lingo-infra/main.tf``. No mock fallback — degraded community
+        # surfaces 503 via the get_community_repo accessor.
+        from app.db.dynamo.community import DynamoCommunityRepository
 
-        _community_repo = MockCommunityRepository()
+        _community_repo = await _safe_connect(
+            "community",
+            DynamoCommunityRepository(
+                {
+                    "threads": f"{prefix}community_threads",
+                    "posts": f"{prefix}community_posts",
+                    "votes": f"{prefix}community_votes",
+                    "addons": f"{prefix}community_addons",
+                    "markdown": f"{prefix}community_markdown",
+                },
+                region,
+            ),
+        )
 
     if _degraded:
         logger.warning("Provider booted in degraded mode: %s", sorted(_degraded))
@@ -245,8 +257,9 @@ def get_srs_repo() -> SRSRepository:
 
 
 def get_community_repo() -> CommunityRepository:
-    assert _community_repo is not None, "repositories not initialised (call init_repositories first)"
-    return _community_repo
+    if _community_repo is None:
+        _raise_degraded("community")
+    return _community_repo  # type: ignore[return-value]
 
 
 def get_deck_repo() -> DeckRepository | None:
