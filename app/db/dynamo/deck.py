@@ -283,9 +283,11 @@ class DynamoDeckRepository:
 
     # ── Voting ────────────────────────────────────────────────────────────
     # SQLite-first per maintainer instruction 2026-05-25 — Dynamo path lands
-    # once the SQLite vote flow validates. Each method raises so an accidental
-    # promotion of Dynamo before this is wired surfaces as a 500 rather than
-    # silently dropping votes on the floor.
+    # once the SQLite vote flow validates. READS return zero/empty (instead
+    # of raising) so community pages don't spam 501s for every visible deck
+    # — the FE fires one of these per card on render. WRITES still raise so
+    # an attempted vote surfaces as a visible 501 instead of silently
+    # dropping on the floor.
 
     async def add_vote(self, deck_id: str, user_id: str) -> None:
         raise NotImplementedError("Deck votes not yet implemented for Dynamo")
@@ -294,10 +296,10 @@ class DynamoDeckRepository:
         raise NotImplementedError("Deck votes not yet implemented for Dynamo")
 
     async def get_vote_state(self, deck_id: str, user_id: str | None) -> dict[str, Any]:
-        raise NotImplementedError("Deck votes not yet implemented for Dynamo")
+        return {"count": 0, "voted": False}
 
     async def get_vote_count(self, deck_id: str) -> int:
-        raise NotImplementedError("Deck votes not yet implemented for Dynamo")
+        return 0
 
     async def get_vote_counts(self, deck_ids: list[str]) -> dict[str, int]:
-        raise NotImplementedError("Deck votes not yet implemented for Dynamo")
+        return dict.fromkeys(deck_ids, 0)
