@@ -25,7 +25,7 @@ The router never touches a concrete repo directly.
 from datetime import UTC, datetime
 from typing import Any
 
-import aioboto3
+from app.db.dynamo._session import get_shared_resource
 
 
 def _now_iso() -> str:
@@ -47,18 +47,15 @@ class DynamoSocialRepository:
     def __init__(self, table_name: str, region: str) -> None:
         self._table_name = table_name
         self._region = region
-        self._session = aioboto3.Session()
         self._table: Any = None
-        self._resource_ctx: Any = None
 
     async def connect(self) -> None:
-        self._resource_ctx = self._session.resource("dynamodb", region_name=self._region)
-        resource = await self._resource_ctx.__aenter__()
+        resource = await get_shared_resource(self._region)
         self._table = await resource.Table(self._table_name)
 
     async def close(self) -> None:
-        if self._resource_ctx:
-            await self._resource_ctx.__aexit__(None, None, None)
+        # Shared resource closed via close_shared_resource(); no-op here.
+        pass
 
     # ── Friends ──────────────────────────────────────────────────────────────
 

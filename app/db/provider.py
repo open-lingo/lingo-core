@@ -204,6 +204,14 @@ async def shutdown_repositories() -> None:
     if _community_repo and hasattr(_community_repo, "close"):
         await _community_repo.close()
 
+    # Tear down the shared aioboto3 DynamoDB resource — only matters when the
+    # backend is dynamodb (sqlite repos don't touch it). Safe to call either
+    # way: close_shared_resource() is a no-op if nothing was opened.
+    if settings.DB_BACKEND == "dynamodb":
+        from app.db.dynamo._session import close_shared_resource
+
+        await close_shared_resource()
+
 
 def _raise_degraded(domain: str) -> None:
     """Raise 503 for an unavailable domain."""
