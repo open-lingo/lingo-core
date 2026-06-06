@@ -222,6 +222,28 @@ def test_leaderboards_all_buckets(client: TestClient, users: dict[str, dict[str,
     assert "weekly" in body and "monthly" in body
 
 
+def test_leaderboard_bundle_shape(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    """Bundle endpoint returns weekly + monthly + friends + spotlight in one
+    payload. Cuts the social-page leaderboards card from 4 round-trips to 1.
+    """
+    resp = client.get(
+        "/api/core/v1/social/leaderboards/bundle?lang=ja", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    for key in ("weekly", "monthly", "friends", "spotlight"):
+        assert key in body, f"bundle missing {key}: {body.keys()}"
+    # Each board carries the same shape as the standalone endpoints.
+    for board_key in ("weekly", "monthly", "friends"):
+        board = body[board_key]
+        assert "entries" in board and "bucket" in board and "total" in board
+    spot = body["spotlight"]
+    assert spot["league"] in {"bronze", "silver", "gold", "diamond", "obsidian"}
+    assert isinstance(spot["daily_xp"], list) and len(spot["daily_xp"]) == 7
+
+
 def test_league_spotlight(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     resp = client.get("/api/core/v1/social/leaderboards/spotlight", headers=_as("auth0|alice"))
     assert resp.status_code == 200, resp.text

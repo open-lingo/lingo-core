@@ -125,6 +125,22 @@ class StreakSnapshotResponse(BaseModel):
     best_friend_username: str | None = None
 
 
+# ─── Leaderboard bundle ──────────────────────────────────────────────────────
+
+# Aggregates the four leaderboard reads the social page needs into a single
+# response so the FE makes one round-trip instead of four. The bundle uses
+# ``asyncio.gather`` internally so the four queries also run in parallel
+# within the same request (real Lambda concurrency win — multiple awaits
+# inside one invocation).
+
+
+class LeaderboardBundleResponse(BaseModel):
+    weekly: LeaderboardResponse
+    monthly: LeaderboardResponse
+    friends: LeaderboardResponse
+    spotlight: LeagueSpotlightResponse
+
+
 # ─── Public profile ──────────────────────────────────────────────────────────
 
 

@@ -8,6 +8,7 @@ go through the user repo. The router owns policy: friend-request idempotency,
 block precedence over friend status, invite caps, etc.
 """
 
+import asyncio
 import logging
 import secrets
 import string
@@ -45,6 +46,7 @@ from app.social.schemas import (
     FriendSuggestionsResponse,
     InviteOfferResponse,
     InviteRedeemResponse,
+    LeaderboardBundleResponse,
     LeaderboardEntry,
     LeaderboardResponse,
     LeagueName,
@@ -524,15 +526,17 @@ async def leaderboard_me(
     )
 
 
-@router.get("/leaderboards/spotlight", response_model=LeagueSpotlightResponse)
-async def leaderboard_spotlight(
-    user: CurrentUser,
-    social: SocialRepo,
-    users: UserRepo,
-    progress: ProgressRepo,
-    lang: str | None = None,
-) -> Any:
-    """League view: my league band, today vs yesterday rank, podium, friend median XP."""
+async def _build_league_spotlight(
+    *,
+    user: TokenPayload,
+    social: SocialRepository,
+    users: UserRepository,
+    progress: ProgressRepository,
+    lang: str | None,
+) -> LeagueSpotlightResponse:
+    """Inner builder shared by ``/leaderboards/spotlight`` and the bundle
+    endpoint. Kept as a free function so the bundle can fan it out via
+    ``asyncio.gather`` alongside the three flat boards."""
     weekly_xp = await _xp_in_window(progress, user.id, 7)
     league, tier, promo, demo = _league_for_weekly_xp(weekly_xp)
 
@@ -606,6 +610,85 @@ async def leaderboard_spotlight(
         top_three=board.entries[:3],
         promotion_threshold=promo,
         demotion_threshold=demo,
+    )
+
+
+@router.get("/leaderboards/spotlight", response_model=LeagueSpotlightResponse)
+async def leaderboard_spotlight(
+    user: CurrentUser,
+    social: SocialRepo,
+    users: UserRepo,
+    progress: ProgressRepo,
+    lang: str | None = None,
+) -> Any:
+    """League view: my league band, today vs yesterday rank, podium, friend median XP."""
+    return await _build_league_spotlight(
+        user=user, social=social, users=users, progress=progress, lang=lang
+    )
+
+
+@router.get("/leaderboards/bundle", response_model=LeaderboardBundleResponse)
+async def leaderboard_bundle(
+    user: CurrentUser,
+    social: SocialRepo,
+    users: UserRepo,
+    progress: ProgressRepo,
+    lang: str | None = None,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> Any:
+    """One-shot batched read for the social page leaderboards card.
+
+    Returns weekly + monthly + friends boards plus the league spotlight in a
+    single response. Internally the four reads run in parallel via
+    ``asyncio.gather`` — multiple awaits inside one Lambda invocation is where
+    Python async concurrency actually pays off. Replaces four sequential
+    round-trips from the FE social page.
+
+    The individual ``/leaderboards/{weekly,monthly,friends,spotlight}`` routes
+    stay for surfaces that only need a single board (e.g. the home Social
+    card, narrow-rail variants).
+    """
+    edges = await social.list_friends(user.id)
+    friend_cohort = [e["friend_id"] for e in edges] + [user.id]
+
+    weekly, monthly, friends, spotlight = await asyncio.gather(
+        _build_leaderboard(
+            user=user,
+            users=users,
+            progress=progress,
+            bucket=f"weekly:{lang or 'all'}",
+            window_days=7,
+            cohort_ids=None,
+            limit=limit,
+            offset=offset,
+        ),
+        _build_leaderboard(
+            user=user,
+            users=users,
+            progress=progress,
+            bucket=f"monthly:{lang or 'all'}",
+            window_days=30,
+            cohort_ids=None,
+            limit=limit,
+            offset=offset,
+        ),
+        _build_leaderboard(
+            user=user,
+            users=users,
+            progress=progress,
+            bucket=f"friends:{lang or 'all'}",
+            window_days=7,
+            cohort_ids=friend_cohort,
+            limit=limit,
+            offset=offset,
+        ),
+        _build_league_spotlight(
+            user=user, social=social, users=users, progress=progress, lang=lang
+        ),
+    )
+    return LeaderboardBundleResponse(
+        weekly=weekly, monthly=monthly, friends=friends, spotlight=spotlight
     )
 
 
