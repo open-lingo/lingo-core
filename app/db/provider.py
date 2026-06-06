@@ -142,11 +142,13 @@ async def init_repositories() -> None:
 
         _quest_repo = MockQuestRepository()
 
-        # Platform settings — same in-memory fallback; admin can read/write
-        # ephemeral settings until the durable Dynamo impl lands.
-        from app.db.mock.platform_settings import MockPlatformSettingsRepository
+        # Platform settings — real Dynamo impl backed by lingo_platform_settings.
+        from app.db.dynamo.platform_settings import DynamoPlatformSettingsRepository
 
-        _platform_settings_repo = MockPlatformSettingsRepository()
+        _platform_settings_repo = await _safe_connect(
+            "platform_settings",
+            DynamoPlatformSettingsRepository(f"{prefix}platform_settings", region),
+        )
 
         # Tags — SQLite-first; Dynamo stub raises on use until the cut-over.
         from app.db.dynamo.tag import DynamoTagRepository
