@@ -119,15 +119,20 @@ async def init_repositories() -> None:
 
         _user_repo = await _safe_connect("user", DynamoUserRepository(f"{prefix}users", region))
         _srs_repo = await _safe_connect("srs", DynamoSRSRepository(f"{prefix}srs", region))
-        _deck_repo = await _safe_connect("deck", DynamoDeckRepository(f"{prefix}decks", region))
+        _deck_repo = await _safe_connect(
+            "deck",
+            DynamoDeckRepository(
+                f"{prefix}decks",
+                region,
+                votes_table_name=f"{prefix}deck_votes",
+            ),
+        )
         _subscription_repo = await _safe_connect("subscription", DynamoSubscriptionRepository(f"{prefix}subscriptions", region))
 
-        # Stories — no Dynamo impl yet; fall back to the in-memory mock so
-        # admin moderation + user browse don't 503. Data is ephemeral per
-        # Lambda container (same trade-off MockCommunityRepository takes).
-        from app.db.mock.story import MockStoryRepository
+        # Stories — real Dynamo impl backed by lingo_stories.
+        from app.db.dynamo.story import DynamoStoryRepository
 
-        _story_repo = MockStoryRepository()
+        _story_repo = await _safe_connect("story", DynamoStoryRepository(f"{prefix}stories", region))
 
         _progress_repo = await _safe_connect("progress", DynamoProgressRepository(f"{prefix}progress", region))
 
@@ -135,12 +140,7 @@ async def init_repositories() -> None:
         # social repo is a stub that raises NotImplementedError on use.
         _social_repo = await _safe_connect("social", DynamoSocialRepository(f"{prefix}social", region))
 
-        # Quests — Dynamo stub still raises for now, but we override it with
-        # an in-memory mock so /quests endpoints return real (ephemeral) data
-        # instead of relying on the inert read-stubs. Drops on cold start.
-        from app.db.mock.quests import MockQuestRepository
-
-        _quest_repo = MockQuestRepository()
+        _quest_repo = await _safe_connect("quest", DynamoQuestRepository(f"{prefix}quests", region))
 
         # Platform settings — real Dynamo impl backed by lingo_platform_settings.
         from app.db.dynamo.platform_settings import DynamoPlatformSettingsRepository

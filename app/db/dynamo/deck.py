@@ -83,14 +83,18 @@ class DynamoDeckRepository:
     snippet for attribute definitions and index specs.
     """
 
-    def __init__(self, table_name: str, region: str) -> None:
+    def __init__(self, table_name: str, region: str, votes_table_name: str | None = None) -> None:
         self._table_name = table_name
+        self._votes_table_name = votes_table_name
         self._region = region
         self._table: Any = None
+        self._votes_table: Any = None
 
     async def connect(self) -> None:
         resource = await get_shared_resource(self._region)
         self._table = await resource.Table(self._table_name)
+        if self._votes_table_name:
+            self._votes_table = await resource.Table(self._votes_table_name)
 
     async def close(self) -> None:
         # Shared resource closed via close_shared_resource(); no-op here.
@@ -280,26 +284,96 @@ class DynamoDeckRepository:
         await self._table.delete_item(
             Key={"PK": self._pk(deck_id), "SK": _META_SK},
         )
+        # Cascade votes — mirrors SQLite's foreign-key-style cleanup. Safe to
+        # skip if the votes table isn't configured (test envs / older callers).
+        if self._votes_table is not None:
+            items = await _paginate_query(
+                self._votes_table,
+                KeyConditionExpression="PK = :pk",
+                ExpressionAttributeValues={":pk": self._vote_pk(deck_id)},
+                ProjectionExpression="PK, SK",
+            )
+            async with self._votes_table.batch_writer() as batch:
+                for it in items:
+                    await batch.delete_item(Key={"PK": it["PK"], "SK": it["SK"]})
 
     # ── Voting ────────────────────────────────────────────────────────────
-    # SQLite-first per maintainer instruction 2026-05-25 — Dynamo path lands
-    # once the SQLite vote flow validates. READS return zero/empty (instead
-    # of raising) so community pages don't spam 501s for every visible deck
-    # — the FE fires one of these per card on render. WRITES still raise so
-    # an attempted vote surfaces as a visible 501 instead of silently
-    # dropping on the floor.
+    # Backed by a separate ``lingo_deck_votes`` table (see lingo-infra/main.tf).
+    # Key layout: PK = DECK#<deck_id>, SK = USER#<user_id>. One row per vote.
+    # add_vote is idempotent via attribute_not_exists(PK) — repeat votes
+    # collapse into a no-op the same way SQLite's INSERT OR IGNORE does.
+    # Vote counts come from a Query(Select=COUNT) per deck — fine at page-
+    # render N≤20; materialize a counter on the deck manifest if it ever
+    # becomes hot.
+
+    def _votes(self) -> Any:
+        if self._votes_table is None:
+            raise RuntimeError("Deck votes table not configured (votes_table_name=None)")
+        return self._votes_table
+
+    def _vote_pk(self, deck_id: str) -> str:
+        return f"DECK#{deck_id}"
+
+    def _vote_sk(self, user_id: str) -> str:
+        return f"USER#{user_id}"
 
     async def add_vote(self, deck_id: str, user_id: str) -> None:
-        raise NotImplementedError("Deck votes not yet implemented for Dynamo")
+        now = datetime.now(UTC).isoformat()
+        try:
+            await self._votes().put_item(
+                Item={
+                    "PK": self._vote_pk(deck_id),
+                    "SK": self._vote_sk(user_id),
+                    "deck_id": deck_id,
+                    "user_id": user_id,
+                    "created_at": now,
+                },
+                ConditionExpression="attribute_not_exists(PK)",
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Already voted — idempotent no-op. botocore wraps the conditional
+            # check failure; match by class name string to avoid importing
+            # botocore.exceptions just for this.
+            if "ConditionalCheckFailed" in str(type(exc).__name__) or "ConditionalCheckFailed" in str(exc):
+                return
+            raise
 
     async def remove_vote(self, deck_id: str, user_id: str) -> None:
-        raise NotImplementedError("Deck votes not yet implemented for Dynamo")
-
-    async def get_vote_state(self, deck_id: str, user_id: str | None) -> dict[str, Any]:
-        return {"count": 0, "voted": False}
+        await self._votes().delete_item(
+            Key={"PK": self._vote_pk(deck_id), "SK": self._vote_sk(user_id)},
+        )
 
     async def get_vote_count(self, deck_id: str) -> int:
-        return 0
+        # Select=COUNT paginates by returning Count + ScannedCount per page;
+        # walk LastEvaluatedKey to handle decks with >1MB worth of voter rows
+        # (unlikely in practice but cheap to be correct).
+        total = 0
+        kwargs: dict[str, Any] = {
+            "KeyConditionExpression": "PK = :pk",
+            "ExpressionAttributeValues": {":pk": self._vote_pk(deck_id)},
+            "Select": "COUNT",
+        }
+        resp = await self._votes().query(**kwargs)
+        total += int(resp.get("Count", 0))
+        while "LastEvaluatedKey" in resp:
+            resp = await self._votes().query(**kwargs, ExclusiveStartKey=resp["LastEvaluatedKey"])
+            total += int(resp.get("Count", 0))
+        return total
+
+    async def get_vote_state(self, deck_id: str, user_id: str | None) -> dict[str, Any]:
+        count = await self.get_vote_count(deck_id)
+        if user_id is None:
+            return {"count": count, "voted": False}
+        resp = await self._votes().get_item(
+            Key={"PK": self._vote_pk(deck_id), "SK": self._vote_sk(user_id)},
+        )
+        return {"count": count, "voted": resp.get("Item") is not None}
 
     async def get_vote_counts(self, deck_ids: list[str]) -> dict[str, int]:
-        return dict.fromkeys(deck_ids, 0)
+        if not deck_ids:
+            return {}
+        counts = await asyncio.gather(
+            *[self.get_vote_count(d) for d in deck_ids],
+            return_exceptions=False,
+        )
+        return dict(zip(deck_ids, counts))
