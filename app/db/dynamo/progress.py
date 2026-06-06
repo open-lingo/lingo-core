@@ -186,6 +186,14 @@ class DynamoProgressRepository:
         # made subsequent idempotency lookups miss and the retry's
         # ConditionExpression fail. TransactWriteItems is 2x WCU but
         # eliminates that failure mode.
+        #
+        # NOTE — `Item=` passes the native Python dict directly. The
+        # resource-attached client (`self._table.meta.client`) registers a
+        # `before-parameter-build.dynamodb.TransactWriteItems` handler that
+        # serializes each value via TypeSerializer. Pre-serializing here
+        # would DOUBLE-serialize and produce a `Type mismatch ... expected: S
+        # actual: M` ValidationError on every write — the bug that left
+        # lingo_progress at 0 items for ~12 days.
         client = self._table.meta.client
         try:
             await client.transact_write_items(
@@ -193,14 +201,14 @@ class DynamoProgressRepository:
                     {
                         "Put": {
                             "TableName": self._table_name,
-                            "Item": _to_attr_map(attempt_item),
+                            "Item": attempt_item,
                             "ConditionExpression": "attribute_not_exists(SK)",
                         }
                     },
                     {
                         "Put": {
                             "TableName": self._table_name,
-                            "Item": _to_attr_map(client_item),
+                            "Item": client_item,
                             "ConditionExpression": "attribute_not_exists(SK)",
                         }
                     },
