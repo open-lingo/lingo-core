@@ -1,17 +1,23 @@
-"""DynamoDB-backed admin audit log — stub.
+"""DynamoDB-backed admin audit log — inert stub.
 
-The SQLite implementation is the only working backend today; this stub
-raises ``NotImplementedError`` on append/list so the provider can wire
-it in without crashing at startup.
+Until the real impl lands, ``append`` is a no-op (writes log line so
+the moderation flow keeps working without persisting), and ``list``
+returns an empty page. This prevents admin moderation actions from
+500ing while the real Dynamo impl is pending.
 
-Schema sketch for the eventual Dynamo impl:
-
+Eventual schema:
   PK = ``AUDIT``
   SK = ``<at>#<id>``           (lexicographic = chronological)
   attrs = actor_id, action, target_id, target_kind, payload (Map), at
 """
 
+import logging
+import uuid
+from datetime import UTC, datetime
 from typing import Any
+
+logger = logging.getLogger("lingo.startup")
+audit_log = logging.getLogger("lingo.audit")
 
 
 class DynamoAuditRepository:
@@ -20,6 +26,9 @@ class DynamoAuditRepository:
         self._region = region
 
     async def connect(self) -> None:
+        logger.warning(
+            "DynamoAuditRepository running in inert-stub mode — audit events log-only, not persisted."
+        )
         return None
 
     async def close(self) -> None:
@@ -34,7 +43,23 @@ class DynamoAuditRepository:
         target_kind: str,
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        raise NotImplementedError("DynamoAuditRepository.append")
+        # No persistence yet — emit to CloudWatch so audit trail isn't fully lost.
+        audit_log.info(
+            "audit actor=%s action=%s target_kind=%s target_id=%s",
+            actor_id,
+            action,
+            target_kind,
+            target_id,
+        )
+        return {
+            "id": str(uuid.uuid4()),
+            "actor_id": actor_id,
+            "action": action,
+            "target_id": target_id,
+            "target_kind": target_kind,
+            "payload": payload,
+            "at": datetime.now(UTC).isoformat(),
+        }
 
     async def list(
         self,
@@ -44,4 +69,4 @@ class DynamoAuditRepository:
         actor_id: str | None = None,
         target_kind: str | None = None,
     ) -> tuple[list[dict[str, Any]], str | None]:
-        raise NotImplementedError("DynamoAuditRepository.list")
+        return ([], None)

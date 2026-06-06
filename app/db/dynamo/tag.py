@@ -1,17 +1,22 @@
-"""DynamoDB-backed tag repository — stub.
+"""DynamoDB-backed tag repository — partial inert stub.
 
-SQLite is the working backend today; this stub raises ``NotImplementedError``
-on every operation so the provider can wire it in without crashing at
-startup. When it lands, the layout will likely be a single-table:
+READ paths return empty so user-facing routes (``/tags``, deck reads
+with tag join) don't 500 while the real impl is pending.
 
-  PK = SLUG#<slug>           SK = META                # canonical tag row
-  PK = DECK#<deck_id>        SK = TAG#<slug>          # deck → tag mirror
-  GSI1PK = TAG#<slug>        GSI1SK = DECK#<deck_id>  # reverse: decks by tag
+WRITE paths (create/update/delete/set_deck_tags) still raise so admin
+actions surface as visible errors rather than silently appearing to
+succeed while data is dropped.
 
-See lingo-infra/main.tf ``lingo_tags`` for the provisioned table.
+Eventual layout (per ``lingo-infra/main.tf`` ``lingo_tags``):
+  PK = SLUG#<slug>     SK = META               # canonical tag row
+  PK = DECK#<deck_id>  SK = TAG#<slug>         # deck → tag mirror
+  GSI1PK = TAG#<slug>  GSI1SK = DECK#<deck_id> # reverse lookup
 """
 
+import logging
 from typing import Any
+
+logger = logging.getLogger("lingo.startup")
 
 
 class DynamoTagRepository:
@@ -20,16 +25,17 @@ class DynamoTagRepository:
         self._region = region
 
     async def connect(self) -> None:
+        logger.warning("DynamoTagRepository running in inert-stub mode — reads return empty, writes raise.")
         return None
 
     async def close(self) -> None:
         return None
 
     async def list_tags(self) -> list[dict[str, Any]]:
-        raise NotImplementedError("DynamoTagRepository.list_tags")
+        return []
 
     async def get_tag(self, slug: str) -> dict[str, Any] | None:
-        raise NotImplementedError("DynamoTagRepository.get_tag")
+        return None
 
     async def create_tag(
         self,
@@ -54,13 +60,13 @@ class DynamoTagRepository:
         raise NotImplementedError("DynamoTagRepository.delete_tag")
 
     async def list_tags_for_deck(self, deck_id: str) -> list[str]:
-        raise NotImplementedError("DynamoTagRepository.list_tags_for_deck")
+        return []
 
     async def list_tags_for_decks(self, deck_ids: list[str]) -> dict[str, list[str]]:
-        raise NotImplementedError("DynamoTagRepository.list_tags_for_decks")
+        return {}
 
     async def list_decks_for_tag(self, slug: str) -> list[str]:
-        raise NotImplementedError("DynamoTagRepository.list_decks_for_tag")
+        return []
 
     async def set_deck_tags(self, deck_id: str, tag_slugs: list[str]) -> None:
         raise NotImplementedError("DynamoTagRepository.set_deck_tags")

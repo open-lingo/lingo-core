@@ -1,17 +1,21 @@
-"""DynamoDB-backed quest repository — stub.
+"""DynamoDB-backed quest repository — inert stub.
 
-The SQLite implementation is the only working backend today; this stub
-raises ``NotImplementedError`` on every operation so the provider can wire
-it in without crashing at startup.
+The full DynamoDB-backed implementation isn't written yet. Until it
+lands, these methods return empty/no-op results instead of raising
+``NotImplementedError`` — that way `/quests` endpoints respond 200
+with "no active quests" rather than 500ing every request. The FE then
+shows an empty state instead of an error banner.
 
-When this lands, the table schema will likely be:
-
+When the real impl lands, the table will likely use:
   PK = ``USER#<user_id>``
   SK = ``QUEST#<quest_id>``
   attrs = the same shape returned by ``SqliteQuestRepository._row_to_quest``.
 """
 
+import logging
 from typing import Any
+
+logger = logging.getLogger("lingo.startup")
 
 
 class DynamoQuestRepository:
@@ -20,26 +24,26 @@ class DynamoQuestRepository:
         self._region = region
 
     async def connect(self) -> None:
-        # No-op so provider init can succeed; methods raise on use.
+        logger.warning("DynamoQuestRepository running in inert-stub mode — quests will not persist.")
         return None
 
     async def close(self) -> None:
         return None
 
     async def list_quests(self, user_id: str) -> list[dict[str, Any]]:
-        raise NotImplementedError("DynamoQuestRepository.list_quests")
+        return []
 
     async def get_quest(self, user_id: str, quest_id: str) -> dict[str, Any] | None:
-        raise NotImplementedError("DynamoQuestRepository.get_quest")
+        return None
 
     async def put_quest(self, quest: dict[str, Any]) -> dict[str, Any]:
-        raise NotImplementedError("DynamoQuestRepository.put_quest")
+        return quest
 
     async def update_progress(self, user_id: str, quest_id: str, delta: int) -> dict[str, Any] | None:
-        raise NotImplementedError("DynamoQuestRepository.update_progress")
+        return None
 
     async def claim(self, user_id: str, quest_id: str) -> dict[str, Any] | None:
-        raise NotImplementedError("DynamoQuestRepository.claim")
+        return None
 
     async def delete_user_quests(self, user_id: str, types: list[str] | None = None) -> int:
-        raise NotImplementedError("DynamoQuestRepository.delete_user_quests")
+        return 0
