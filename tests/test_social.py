@@ -461,6 +461,55 @@ async def test_threads_listing_and_detail(client: TestClient, users: dict[str, d
     assert resp.status_code == 403
 
 
+@pytest.mark.asyncio
+async def test_send_thread_message_persists(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    """POST /threads/{id}/messages persists a new message and the GET detail
+    surfaces it. Non-participants get 403."""
+    from app.db.provider import get_social_repo
+
+    repo = get_social_repo()
+    thread_id = str(uuid.uuid4())
+    now = datetime.now(UTC).isoformat()
+    await repo.put_thread(
+        {
+            "id": thread_id,
+            "user_a_id": users["alice"]["id"],
+            "user_b_id": users["bob"]["id"],
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+
+    # Alice sends → 201 + message echoed back.
+    resp = client.post(
+        f"/api/core/v1/social/threads/{thread_id}/messages",
+        json={"body": "yo bob"},
+        headers=_as("auth0|alice"),
+    )
+    assert resp.status_code == 201, resp.text
+    msg = resp.json()
+    assert msg["body"] == "yo bob"
+    assert msg["sender_id"] == users["alice"]["id"]
+
+    # GET detail now includes it.
+    resp = client.get(
+        f"/api/core/v1/social/threads/{thread_id}", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200
+    bodies = [m["body"] for m in resp.json()["messages"]]
+    assert "yo bob" in bodies
+
+    # Non-participant Carol blocked.
+    resp = client.post(
+        f"/api/core/v1/social/threads/{thread_id}/messages",
+        json={"body": "lurker"},
+        headers=_as("auth0|carol"),
+    )
+    assert resp.status_code == 403
+
+
 # ── Friend quest helpers ─────────────────────────────────────────────────────
 
 

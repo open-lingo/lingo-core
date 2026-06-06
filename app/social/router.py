@@ -58,6 +58,7 @@ from app.social.schemas import (
     QuestTargetItem,
     ReactionKind,
     SendFriendRequestBody,
+    SendMessageBody,
     StreakSnapshotResponse,
     ThreadDetailResponse,
     ThreadItem,
@@ -1102,6 +1103,50 @@ async def get_thread_detail(
             )
             for m in msgs
         ],
+    )
+
+
+@router.post(
+    "/threads/{thread_id}/messages",
+    response_model=Message,
+    status_code=status.HTTP_201_CREATED,
+)
+async def send_thread_message(
+    thread_id: str,
+    body: SendMessageBody,
+    user: CurrentUser,
+    social: SocialRepo,
+) -> Any:
+    """Persist a new message in the given 1:1 thread.
+
+    The caller must be one of the thread's two participants — admins acting
+    as themselves on this route fail the participant gate by design;
+    impersonating a user is the way to send-as for support flows.
+
+    SQLite stores the row in ``social_messages``; DynamoDB has the same
+    shape via ``put_message``. The router owns participant-gating policy;
+    persistence is delegated to ``social.put_message``.
+    """
+    thread = await social.get_thread(thread_id)
+    if thread is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Thread not found")
+    if user.id not in (thread["user_a_id"], thread["user_b_id"]):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a participant")
+    persisted = await social.put_message(
+        {
+            "id": str(uuid.uuid4()),
+            "thread_id": thread_id,
+            "sender_id": user.id,
+            "body": body.body,
+            "sent_at": _now_iso(),
+        }
+    )
+    return Message(
+        id=persisted["id"],
+        thread_id=persisted["thread_id"],
+        sender_id=persisted["sender_id"],
+        body=persisted["body"],
+        sent_at=datetime.fromisoformat(persisted["sent_at"]),
     )
 
 

@@ -293,6 +293,12 @@ class ThreadDetailResponse(BaseModel):
     messages: list[Message] = Field(default_factory=list)
 
 
+class SendMessageBody(BaseModel):
+    """Caller payload for POST /threads/{thread_id}/messages."""
+
+    body: str = Field(min_length=1, max_length=4000)
+
+
 # ─── Friend quest targets ────────────────────────────────────────────────────
 
 
