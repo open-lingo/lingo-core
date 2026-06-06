@@ -122,7 +122,12 @@ async def init_repositories() -> None:
         _deck_repo = await _safe_connect("deck", DynamoDeckRepository(f"{prefix}decks", region))
         _subscription_repo = await _safe_connect("subscription", DynamoSubscriptionRepository(f"{prefix}subscriptions", region))
 
-        _story_repo = None  # Stories not yet supported for DynamoDB
+        # Stories — no Dynamo impl yet; fall back to the in-memory mock so
+        # admin moderation + user browse don't 503. Data is ephemeral per
+        # Lambda container (same trade-off MockCommunityRepository takes).
+        from app.db.mock.story import MockStoryRepository
+
+        _story_repo = MockStoryRepository()
 
         _progress_repo = await _safe_connect("progress", DynamoProgressRepository(f"{prefix}progress", region))
 
@@ -130,16 +135,18 @@ async def init_repositories() -> None:
         # social repo is a stub that raises NotImplementedError on use.
         _social_repo = await _safe_connect("social", DynamoSocialRepository(f"{prefix}social", region))
 
-        # Same story for quests: SQLite-first; Dynamo stub raises on every method.
-        _quest_repo = await _safe_connect("quest", DynamoQuestRepository(f"{prefix}quests", region))
+        # Quests — Dynamo stub still raises for now, but we override it with
+        # an in-memory mock so /quests endpoints return real (ephemeral) data
+        # instead of relying on the inert read-stubs. Drops on cold start.
+        from app.db.mock.quests import MockQuestRepository
 
-        # Platform settings — SQLite-first too; Dynamo stub raises on use.
-        from app.db.dynamo.platform_settings import DynamoPlatformSettingsRepository
+        _quest_repo = MockQuestRepository()
 
-        _platform_settings_repo = await _safe_connect(
-            "platform_settings",
-            DynamoPlatformSettingsRepository(f"{prefix}platform_settings", region),
-        )
+        # Platform settings — same in-memory fallback; admin can read/write
+        # ephemeral settings until the durable Dynamo impl lands.
+        from app.db.mock.platform_settings import MockPlatformSettingsRepository
+
+        _platform_settings_repo = MockPlatformSettingsRepository()
 
         # Tags — SQLite-first; Dynamo stub raises on use until the cut-over.
         from app.db.dynamo.tag import DynamoTagRepository
