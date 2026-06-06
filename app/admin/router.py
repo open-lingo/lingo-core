@@ -423,10 +423,19 @@ async def list_admin_stories(
     status: str | None = Query(None, description="draft | published"),
     language_id: str | None = Query(None),
 ) -> Any:
-    """List all stories for admin. Optional filters."""
-    r = require_repo(story_repo, "story")
+    """List all stories for admin. Optional filters.
+
+    Returns an empty list when the story repo isn't wired up (Dynamo
+    has no story impl yet — provider.py sets ``_story_repo = None``).
+    The admin UI then shows an empty state instead of 503'ing, which
+    was triggering an endless retry loop in the FE before. Write
+    endpoints (patch/delete below) still 503 on missing repo so admin
+    actions on non-existent storage surface as visible errors.
+    """
+    if story_repo is None:
+        return []
     with api_error("listing admin stories"):
-        stories = await r.list_stories(author_id=None, language_id=language_id, status=status)
+        stories = await story_repo.list_stories(author_id=None, language_id=language_id, status=status)
     return [_story_to_response(s) for s in stories]
 
 
