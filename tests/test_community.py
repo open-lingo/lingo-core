@@ -236,3 +236,34 @@ def test_api_categories_seeded(client: TestClient) -> None:
     assert resp.status_code == 200, resp.text
     slugs = {c["slug"] for c in resp.json()}
     assert {"general", "features", "bugs", "tips", "content"} <= slugs
+
+
+def test_thread_author_name_is_display_name_not_auth0_sub(client: TestClient) -> None:
+    """Threads (and posts) must record the author's display name, not the
+    raw ``auth0|…`` sub. Regression: pre-fix, the router persisted user.sub
+    into author_name which leaked Auth0 identifiers into the UI.
+    """
+    # Pick any seeded category for the new thread.
+    cats = client.get("/api/core/v1/community/categories").json()
+    assert cats, "categories should be seeded"
+    cat_id = cats[0]["id"]
+
+    resp = client.post(
+        "/api/core/v1/community/threads",
+        json={
+            "category_id": cat_id,
+            "title": "Test thread author resolution",
+            "excerpt": "x",
+            "body_markdown": "Body",
+            "tag_ids": [],
+            "content_links": [],
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    # The fixture registers the dev user with display_name="Alice".
+    assert body["author_name"] == "Alice", body
+    # Sanity: the persisted author_id remains the auth0 sub for now (other
+    # call sites still key on it); the surface change is purely on
+    # author_name.
+    assert body["author_id"].startswith("auth0|"), body

@@ -29,14 +29,34 @@ from app.community.schemas import (
     ThreadResponse,
     VoteRequest,
 )
-from app.db.protocols import CommunityRepository
-from app.db.provider import get_community_repo
+from app.db.protocols import CommunityRepository, UserRepository
+from app.db.provider import get_community_repo, get_user_repo
 from app.shared.errors import api_error
 
 router = APIRouter(tags=["community"])
 
 CommunityRepo = Annotated[CommunityRepository, Depends(get_community_repo)]
+UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 CurrentUser = Annotated[TokenPayload | None, Depends(get_community_user_optional)]
+
+
+async def _author_display_name(users: UserRepository, user: TokenPayload) -> str:
+    """Resolve the author's human-readable display name for a forum write.
+
+    Falls back to the Auth0 sub when the user record can't be loaded so a
+    transient lookup miss still produces a non-empty author name (the prior
+    behavior was to render the raw ``auth0|…`` sub directly, which leaked
+    Auth0 identifiers into the UI). When the registered user has neither a
+    display name nor a username (shouldn't happen post-registration), the
+    sub is used so the field stays non-empty.
+    """
+    if user.id:
+        record = await users.get_user_by_id(user.id)
+        if record:
+            name = record.get("display_name") or record.get("username")
+            if name:
+                return str(name)
+    return user.sub
 
 
 def _thread_to_response(thread: dict, tag_ids: list[str], content_links: list[dict]) -> ThreadResponse:
@@ -142,17 +162,19 @@ async def list_threads(
 async def create_thread(
     body: ThreadCreate,
     repo: CommunityRepo,
+    users: UserRepo,
     user: CurrentUser,
 ) -> Any:
     """Create a new thread. Auth required."""
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
     with api_error("creating thread"):
+        author_name = await _author_display_name(users, user)
         thread = await repo.create_thread(
             {
                 "category_id": body.category_id,
                 "author_id": user.sub,
-                "author_name": user.sub,  # TODO: resolve from user repo
+                "author_name": author_name,
                 "title": body.title,
                 "excerpt": body.excerpt or body.title[:200],
                 "body_markdown": body.body_markdown,
@@ -265,6 +287,7 @@ async def create_post(
     thread_id: str,
     body: PostCreate,
     repo: CommunityRepo,
+    users: UserRepo,
     user: CurrentUser,
 ) -> Any:
     """Create a reply in a thread. Auth required."""
@@ -274,12 +297,13 @@ async def create_post(
         thread = await repo.get_thread_by_id(thread_id)
         if not thread:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Thread not found")
+        author_name = await _author_display_name(users, user)
         post = await repo.create_post(
             {
                 "thread_id": thread_id,
                 "parent_id": body.parent_id,
                 "author_id": user.sub,
-                "author_name": user.sub,
+                "author_name": author_name,
                 "body_markdown": body.body_markdown,
             }
         )
