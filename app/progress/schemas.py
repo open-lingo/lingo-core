@@ -82,6 +82,11 @@ class BatchAttempt(BaseModel):
     # user actually finishes the lesson. False (default) = a real, final
     # attempt — fires events as before.
     isDraft: bool = False
+    # Test-out flag. True = an attempt synthesised from a placement-test
+    # pass or per-module test-out. Persists the lesson as completed (so
+    # the course map unlocks downstream content) but skips XP + lingots
+    # so the user can't farm the test-out flow for currency.
+    isTestOut: bool = False
 
     @field_validator("durationSec", mode="before")
     @classmethod

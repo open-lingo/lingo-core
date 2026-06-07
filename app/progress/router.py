@@ -323,11 +323,13 @@ async def _process_one_attempt(
     # XP / lingot computation (server-authoritative, admin-tunable via
     # PlatformSettings → xp_economy). Pre-config defaults match the legacy
     # constants in app.progress.xp.
-    if item.isDraft or not item.passed:
+    if item.isDraft or item.isTestOut or not item.passed:
         # Drafts: persisted but no XP / lingots — the lesson burst lands
         # on the final non-draft attempt (the natural lesson_completed
         # signal). Keeps reconciliation simple at the cost of a momentary
         # XP bar that stays still mid-lesson.
+        # Test-out: same treatment so placement / per-module test-out
+        # unlocks the lesson on the course map without awarding currency.
         xp_earned = 0
         lingots_earned = 0
     else:
@@ -442,16 +444,18 @@ async def reset_my_progress(
     progress: ProgressRepo,
     users: UserRepo,
 ) -> None:
-    """Wipe lesson/concept/day progress and reset stats (Start over)."""
+    """Wipe lesson/concept/day progress and reset streak (Start over).
+
+    Preserves XP and lingots — those are lifetime currency the user
+    earned and shouldn't evaporate when they restart a language. Same
+    rule for ``level``, which is derived from cumulative XP.
+    """
     await progress.delete_all_for_user(user.id)
     await users.update_user(
         user.id,
         {
             "streak": 0,
             "best_streak": 0,
-            "xp": 0,
-            "level": 1,
-            "lingots": 0,
             "last_active_date": None,
         },
     )
