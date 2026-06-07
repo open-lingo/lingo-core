@@ -34,6 +34,11 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "ruff>=0.9",
+    # moto[server] — ThreadedMotoServer for the new Dynamo repo tests.
+    # The in-process @mock_aws decorator is incompatible with aiobotocore;
+    # the threaded server is the supported pattern. Brings in flask /
+    # werkzeug as transitive deps for the server.
+    "moto[server]>=5.2",
 ]
 
 [tool.ruff]
