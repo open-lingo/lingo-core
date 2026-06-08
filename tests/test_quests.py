@@ -119,6 +119,26 @@ def test_list_quests_includes_seeded_row(client: TestClient, trevor: dict[str, A
     assert target["status"] == "active"
 
 
+def test_list_quests_auto_seeds_default_catalog_on_empty(
+    client: TestClient, trevor: dict[str, Any]
+) -> None:
+    """Fresh user with no quests gets the default catalogue lazily.
+
+    Avoids needing a scheduled job to mint per-user quests at midnight.
+    """
+    resp = client.get("/api/core/v1/quests", headers=_as("auth0|trevor-quests"))
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    types = {q["type"] for q in items}
+    # The default catalogue covers both daily and weekly buckets.
+    assert "daily" in types
+    assert "weekly" in types
+    # Second call doesn't re-seed (idempotent within the active window).
+    resp2 = client.get("/api/core/v1/quests", headers=_as("auth0|trevor-quests"))
+    assert resp2.status_code == 200
+    assert len(resp2.json()["items"]) == len(items)
+
+
 def test_progress_bumps_and_flips_to_claimable(client: TestClient, seeded_quest: dict[str, Any]) -> None:
     # Bump halfway — stays active.
     resp = client.post(

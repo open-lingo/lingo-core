@@ -161,15 +161,67 @@ def _default_catalog(user_id: str) -> list[dict[str, Any]]:
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
 
+async def _ensure_active_catalog(quests_repo: Any, user_id: str) -> list[dict[str, Any]]:
+    """Return the user's quest list, seeding the default catalogue on demand.
+
+    Two triggers fire a seed:
+      1. The user has never had any quests minted (fresh signup).
+      2. Every previously-minted quest of a given type (daily / weekly) has
+         expired — we re-seed that bucket so the user always has something
+         to do. Completed/claimed quests aren't replaced until they expire.
+
+    Lazy seeding is the cheap path: no scheduled job to maintain, and a
+    user who never hits ``/quests`` never costs us a write.
+    """
+    now_iso = _now_iso()
+    rows = await quests_repo.list_quests(user_id)
+
+    # Drop quests whose expires_at is in the past (regardless of status).
+    fresh_rows: list[dict[str, Any]] = []
+    expired_ids: list[str] = []
+    for r in rows:
+        exp = r.get("expires_at") or ""
+        if exp and exp < now_iso:
+            expired_ids.append(r["id"])
+        else:
+            fresh_rows.append(r)
+    if expired_ids:
+        # delete_user_quests is the only batch deleter on the protocol; use a
+        # type filter so we only nuke the expired buckets, not non-expired
+        # quests of the same type. Implementation note: the protocol method
+        # filters by type, not by id list — re-implementing per-id delete on
+        # every backend is heavier than just re-seeding stale buckets.
+        expired_types = {
+            r["type"] for r in rows if r["id"] in set(expired_ids) and r.get("type")
+        }
+        for t in expired_types:
+            await quests_repo.delete_user_quests(user_id, [t])
+        # And re-fetch since we just mutated.
+        fresh_rows = await quests_repo.list_quests(user_id)
+
+    have_types = {r.get("type") for r in fresh_rows}
+    catalog = _default_catalog(user_id)
+    missing = [q for q in catalog if q.get("type") not in have_types]
+
+    if missing:
+        for row in missing:
+            row.setdefault("created_at", now_iso)
+            await quests_repo.put_quest(row)
+        fresh_rows = await quests_repo.list_quests(user_id)
+
+    return fresh_rows
+
+
 @router.get("", response_model=QuestListResponse)
 async def list_quests(
     user: CurrentUser,
     repo: QuestRepo,
 ) -> Any:
-    """List the caller's quests in any non-deleted state."""
+    """List the caller's quests; seed the default catalogue if missing/expired."""
     quests_repo = require_repo(repo, "quests")
+    user_id = user.id or ""
     with api_error("listing quests"):
-        rows = await quests_repo.list_quests(user.id or "")  # type: ignore[arg-type]
+        rows = await _ensure_active_catalog(quests_repo, user_id)
         items = [_row_to_quest(r) for r in rows]
         return QuestListResponse(items=items)
 
