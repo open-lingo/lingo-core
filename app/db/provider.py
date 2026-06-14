@@ -134,8 +134,8 @@ async def init_repositories() -> None:
 
         _progress_repo = await _safe_connect("progress", DynamoProgressRepository(f"{prefix}progress", region))
 
-        # SQLite-first per maintainer instruction 2026-05-25 — the Dynamo
-        # social repo is a stub that raises NotImplementedError on use.
+        # Real Dynamo impl backed by lingo_social (friends/requests/blocks/
+        # activity/reactions/invites/DM threads). Cut over from SQLite-first.
         _social_repo = await _safe_connect("social", DynamoSocialRepository(f"{prefix}social", region))
 
         _quest_repo = await _safe_connect("quest", DynamoQuestRepository(f"{prefix}quests", region))
@@ -148,13 +148,14 @@ async def init_repositories() -> None:
             DynamoPlatformSettingsRepository(f"{prefix}platform_settings", region),
         )
 
-        # Tags — SQLite-first; Dynamo stub raises on use until the cut-over.
+        # Tags — real Dynamo impl backed by lingo_tags (tag CRUD + deck<->tag
+        # association GSI). Cut over from SQLite-first.
         from app.db.dynamo.tag import DynamoTagRepository
 
         _tag_repo = await _safe_connect("tag", DynamoTagRepository(f"{prefix}tags", region))
 
-        # Audit — SQLite-first per established pattern. Dynamo impl is a
-        # stub that raises on append/list until the production cut-over.
+        # Audit — real Dynamo impl backed by lingo_admin_audit (append +
+        # cursor-paginated list). Cut over from SQLite-first.
         from app.db.dynamo.audit import DynamoAuditRepository
 
         _audit_repo = await _safe_connect("audit", DynamoAuditRepository(f"{prefix}admin_audit", region))
@@ -194,8 +195,74 @@ async def init_repositories() -> None:
             ),
         )
 
+    _assert_backend_wiring()
+
     if _degraded:
         logger.warning("Provider booted in degraded mode: %s", sorted(_degraded))
+
+
+# Every domain the app serves. A repo singleton that is None outside
+# ``_degraded`` (i.e. not a runtime connect failure) means a domain was left
+# unwired — fail loudly rather than silently 503/return-[] in prod.
+_REQUIRED_DOMAINS: dict[str, str] = {
+    "user": "_user_repo",
+    "srs": "_srs_repo",
+    "deck": "_deck_repo",
+    "subscription": "_subscription_repo",
+    "story": "_story_repo",
+    "progress": "_progress_repo",
+    "social": "_social_repo",
+    "quest": "_quest_repo",
+    "platform_settings": "_platform_settings_repo",
+    "tag": "_tag_repo",
+    "audit": "_audit_repo",
+    "community": "_community_repo",
+}
+
+
+def _assert_backend_wiring() -> None:
+    """Fail loudly if any domain is mis-wired for the selected backend.
+
+    Distinguishes a *runtime* connect failure (acceptable degraded mode,
+    recorded in ``_degraded``) from a *wiring* bug — a domain repo that is
+    None for no reason, or that resolved to the wrong concrete class
+    (e.g. a Mock or a SQLite repo leaking into the dynamodb path). The
+    latter would silently mask missing data behind 503/empty responses in
+    prod; we want startup to crash instead.
+    """
+    g = globals()
+    expected_prefix = "Dynamo" if settings.DB_BACKEND == "dynamodb" else "Sqlite"
+
+    for domain, attr in _REQUIRED_DOMAINS.items():
+        repo = g.get(attr)
+        if repo is None:
+            # None is only acceptable when connect() failed at runtime.
+            if domain not in _degraded:
+                raise RuntimeError(
+                    f"Domain {domain!r} is unwired under DB_BACKEND="
+                    f"{settings.DB_BACKEND!r}: repo is None but the domain "
+                    f"is not in the degraded set. This is a wiring bug."
+                )
+            continue
+
+        cls_name = type(repo).__name__
+        # The community SQLite-connect-failure fallback to MockCommunityRepository
+        # is the one sanctioned non-backend class; it self-records by clearing
+        # itself from _degraded, so it only appears here for sqlite.
+        if domain == "community" and cls_name == "MockCommunityRepository":
+            if settings.DB_BACKEND == "dynamodb":
+                raise RuntimeError(
+                    "Community resolved to MockCommunityRepository under the "
+                    "dynamodb backend — the mock is a sqlite-only fallback."
+                )
+            continue
+
+        if not cls_name.startswith(expected_prefix):
+            raise RuntimeError(
+                f"Domain {domain!r} resolved to {cls_name!r} under "
+                f"DB_BACKEND={settings.DB_BACKEND!r}; expected a "
+                f"{expected_prefix}*Repository. Mis-wired backend."
+            )
 
 
 async def shutdown_repositories() -> None:
