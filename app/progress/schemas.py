@@ -281,3 +281,36 @@ class ShopPurchaseResponse(BaseModel):
     lingotsRemaining: int = Field(ge=0)
     owned: bool = False
     quantity: int = Field(default=0, ge=0)
+
+
+# ── Unlock map (server-backed atom unlock ladder) ────────────────────────────
+#
+# The client unlock ladder (`lingo:unlocked-atoms` in localStorage) decides
+# which course atoms a review lesson is allowed to surface. It was localStorage-
+# only, so clearing storage or switching device silently lost progression. We
+# back it up server-side in the user settings blob under
+# `settings.learning.unlockedAtoms`.
+#
+# Why settings, not a new SK: the set is per-user, sparse (a few hundred short
+# ids), and never read on the hot lesson path. `get_settings`/`update_settings`
+# already exist + mirror on both SQLite and Dynamo. A new SK would mean a new
+# protocol method + two repo impls for zero benefit.
+#
+# Reconcile is a UNION — the add endpoint never drops ids, so a stale device
+# pushing a subset can't regress another device's unlocks.
+
+
+class UnlockMapResponse(BaseModel):
+    """The full server-side unlocked-atom set. Canonical `lang:id` form."""
+
+    unlockedAtoms: list[str] = Field(default_factory=list)
+
+
+class UnlockMapAddRequest(BaseModel):
+    """Push newly-unlocked atom ids. Unioned into the stored set server-side."""
+
+    atomIds: list[str] = Field(
+        default_factory=list,
+        max_length=2000,
+        description="Atom ids to add. Canonical `lang:id`; bare ids are accepted and stored as-is (client canonicalizes).",
+    )
