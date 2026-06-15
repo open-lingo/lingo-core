@@ -150,9 +150,25 @@ class DynamoProgressRepository:
         client_attempt_id: str,
         steps: list[dict[str, Any]],
     ) -> None:
-        # Stub: prod Dynamo path isn't exercising drafts yet. When mid-lesson
-        # sync ships to prod, swap this for an UpdateItem on the client_item.
-        return None
+        # Draft mid-lesson recovery: persist the step list on the CLIENT# item
+        # so a half-finished lesson is recoverable across devices. No XP is
+        # awarded here (that lands once on the final lesson_completed attempt).
+        # ConditionExpression guards against creating an item for an attempt
+        # that put_attempt hasn't written yet — caller only invokes this when
+        # attempt_exists() already returned the row.
+        try:
+            await self._table.update_item(
+                Key={"PK": _pk(user_id), "SK": f"{_CLIENT_PREFIX}{client_attempt_id}"},
+                UpdateExpression="SET steps = :steps",
+                ConditionExpression="attribute_exists(PK)",
+                ExpressionAttributeValues={":steps": steps},
+            )
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                # Attempt row vanished between the existence check and here —
+                # nothing to update; the next full sync will recreate it.
+                return
+            raise
 
     async def put_attempt(self, user_id: str, attempt: dict[str, Any]) -> None:
         if await self.attempt_exists(user_id, attempt["clientAttemptId"]):
