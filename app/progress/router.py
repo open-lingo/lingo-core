@@ -37,6 +37,8 @@ from app.progress.schemas import (
     ShopPurchaseRequest,
     ShopPurchaseResponse,
     TouchResponse,
+    UnlockMapAddRequest,
+    UnlockMapResponse,
     UserStats,
 )
 from app.progress.shop_catalog import get_shop_item
@@ -585,3 +587,61 @@ async def purchase_shop_item(
         owned=body.itemId in purchases or qty > 0,
         quantity=qty,
     )
+
+
+# ── Unlock map ───────────────────────────────────────────────────────────────
+#
+# Server backup for the client unlock ladder. Stored at
+# settings.learning.unlockedAtoms. See progress/schemas.py for the rationale.
+
+
+def _read_unlocked_atoms(settings: dict[str, Any]) -> list[str]:
+    learning = settings.get("learning")
+    if not isinstance(learning, dict):
+        return []
+    stored = learning.get("unlockedAtoms")
+    if not isinstance(stored, list):
+        return []
+    # Defend against malformed blobs — only keep strings.
+    return [a for a in stored if isinstance(a, str)]
+
+
+@router.get("/me/unlocks", response_model=UnlockMapResponse)
+async def get_unlock_map(user: CurrentUser, users: UserRepo) -> Any:
+    """Read the server-side unlocked-atom set.
+
+    Called on hydrate/login. The client unions this with its local set so
+    progression survives a localStorage clear or a device switch. NOT on the
+    hot lesson path — the lesson reads the local set; this is a one-shot
+    reconcile read.
+    """
+    settings = await users.get_settings(user.id) or {}
+    return UnlockMapResponse(unlockedAtoms=_read_unlocked_atoms(settings))
+
+
+@router.post("/me/unlocks", response_model=UnlockMapResponse)
+async def add_unlock_map(
+    body: UnlockMapAddRequest,
+    user: CurrentUser,
+    users: UserRepo,
+) -> Any:
+    """Union newly-unlocked atom ids into the stored set.
+
+    Fire-and-forget from the client on each unlock. Reconcile is a UNION:
+    we never drop ids, so a stale device pushing a subset can't regress
+    another device's unlocks. Idempotent — re-pushing the same ids is a no-op
+    write-wise (the merged set is unchanged) but still returns the full set.
+    """
+    settings = await users.get_settings(user.id) or {}
+    current = _read_unlocked_atoms(settings)
+    merged = set(current)
+    merged.update(a for a in body.atomIds if isinstance(a, str) and a)
+    if len(merged) != len(current):
+        # Sorted for deterministic storage + stable test assertions; the order
+        # is irrelevant to the client (it rebuilds a Set on read).
+        new_list = sorted(merged)
+        # update_settings deep-merges dicts but REPLACES lists, which is exactly
+        # what we want here: we pass the already-unioned full list.
+        await users.update_settings(user.id, {"learning": {"unlockedAtoms": new_list}})
+        return UnlockMapResponse(unlockedAtoms=new_list)
+    return UnlockMapResponse(unlockedAtoms=sorted(merged))
