@@ -147,7 +147,18 @@ async def submit_attempt_batch(
             if last_active == yesterday_iso:
                 streak_after = streak_after + 1
             else:
-                streak_after = 1
+                # Gap day(s). Spend streak-freeze consumables (one per missed
+                # day) to bridge the gap before resetting — without this the
+                # shop item is sold but never honored. Only the first sync of a
+                # new day reaches here (checkStreak), so the extra settings
+                # round-trip is rare.
+                missed = _missed_days(last_active, today_iso)
+                if 0 < missed <= _STREAK_FREEZE_MAX_GAP and await _consume_streak_freezes(
+                    users, user.id, missed
+                ):
+                    streak_after = streak_after + 1
+                else:
+                    streak_after = 1
             best = int(user_record.get("best_streak") or user_record.get("bestStreak") or 0)
             patch["streak"] = streak_after
             patch["best_streak"] = max(best, streak_after)
@@ -229,6 +240,59 @@ async def _load_xp_config() -> XpEconomyConfig:
         return XpEconomyConfig(**stored)
     except Exception:  # noqa: BLE001 — bad stored data shouldn't break sync
         return XpEconomyConfig()
+
+
+def _is_test_lesson(lesson_id: str) -> bool:
+    """Row-test / recap lessons (ids ending ``-test`` / ``-recap``) earn a
+    bonus. Mirrors ``isTestLessonId`` in
+    ``lingo/src/features/progress/xpRules.ts`` — keep both in sync."""
+    return lesson_id.endswith("-test") or lesson_id.endswith("-recap")
+
+
+# Sanity cap on streak-freeze coverage — a gap larger than this just resets the
+# streak rather than draining a large freeze stash for an ancient absence.
+_STREAK_FREEZE_MAX_GAP = 30
+
+
+def _missed_days(last_active: Any, today_iso: str) -> int:
+    """Whole missed days strictly between ``last_active`` and today.
+
+    Returns 0 when ``last_active`` is today/yesterday, in the future, or
+    unparseable — callers treat 0 as "nothing to bridge → reset".
+    """
+    try:
+        gap = (date.fromisoformat(today_iso) - date.fromisoformat(str(last_active))).days
+    except (TypeError, ValueError):
+        return 0
+    return max(0, gap - 1)
+
+
+async def _consume_streak_freezes(
+    users: UserRepository, user_id: str, missed: int
+) -> bool:
+    """Spend ``missed`` streak-freeze consumables to bridge a gap day.
+
+    Returns True (and persists the decremented inventory) only if the user
+    holds at least ``missed`` freezes; otherwise leaves inventory untouched and
+    returns False so the caller resets the streak. The freeze preserves the
+    streak across the missed day(s); today's activity still adds the +1.
+    """
+    settings = await users.get_settings(user_id) or {}
+    shop_state = dict(settings.get("shop") or {})
+    inventory = dict(shop_state.get("inventory") or {})
+    try:
+        available = int(inventory.get("streak-freeze") or 0)
+    except (TypeError, ValueError):
+        available = 0
+    if available < missed:
+        return False
+    inventory["streak-freeze"] = available - missed
+    shop_state["inventory"] = inventory
+    # update_settings deep-merges, so passing the full shop_state preserves
+    # sibling keys (purchases, other inventory items); mirrors the write in
+    # purchase_shop_item.
+    await users.update_settings(user_id, {"shop": shop_state})
+    return True
 
 
 async def _process_one_attempt(
@@ -339,6 +403,12 @@ async def _process_one_attempt(
             xp_earned = xp_config.lesson_perfect_xp
         else:
             xp_earned = xp_config.lesson_pass_xp
+        # Row-test / recap lessons pay a premium on top (testing effect). The
+        # client already shows this number on the lesson-complete screen via
+        # xpRules.ts; the server must honor it or it under-awards what the UI
+        # promised.
+        if _is_test_lesson(item.lessonId):
+            xp_earned += xp_config.lesson_test_bonus_xp
         lingots_earned = xp_config.lingots_per_lesson
 
     # Eager rollup updates

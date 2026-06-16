@@ -37,6 +37,18 @@ class XpEconomyConfig(BaseModel):
     just picks whichever is larger when the attempt is perfect.
     """
 
+    lesson_test_bonus_xp: int = Field(default=10, ge=0, le=10_000)
+    """Extra XP for row-test / recap lessons (ids ending ``-test`` / ``-recap``),
+    ADDED on top of the pass/perfect payout — NOT a replacement total.
+
+    Retrieval practice under test conditions is the highest-value rep (the
+    testing effect), so tests pay a premium over the drills they cap. Mirrors
+    ``XP_TEST_BONUS`` in ``lingo/src/features/progress/xpRules.ts`` — change
+    both (the client estimates this number pre-sync; the server is
+    authoritative). Default 10 keeps an un-tuned deploy identical to the
+    client's hardcoded mirror.
+    """
+
     review_xp: int = Field(default=2, ge=0, le=10_000)
     """XP per SRS review (placeholder — review-time XP not yet wired)."""
 

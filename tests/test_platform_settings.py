@@ -64,6 +64,7 @@ def test_put_then_get_xp_roundtrips(api_client, monkeypatch) -> None:
     payload = {
         "lesson_pass_xp": 25,
         "lesson_perfect_xp": 50,
+        "lesson_test_bonus_xp": 20,
         "review_xp": 5,
         "streak_milestone_xp": 200,
         "deck_approved_xp": 500,
