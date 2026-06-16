@@ -17,7 +17,7 @@ FastAPI service for user management, SRS progress, course/deck manifests, storie
   - SQLite (`aiosqlite`) for local dev
   - DynamoDB (`aioboto3`) single-table + GSIs for prod
 - Linting: Ruff (E/F/I/UP), line-length 100. ⚠️ target = py312 but requires-python = py313 — inconsistent.
-- Testing: pytest + pytest-asyncio (`asyncio_mode = "auto"`). One smoke test exists; coverage is effectively zero.
+- Testing: pytest + pytest-asyncio (`asyncio_mode = "auto"`). ~40 test files cover the core paths (progress incl. streak-freeze, XP economy, SRS, quests, decks, auth, admin). Community/stories/some Dynamo paths are still thin; a few Dynamo tests need a live moto server.
 
 ## Source layout
 
@@ -60,6 +60,12 @@ app/
 - **Imports:** top-level only. No conditional imports, no imports inside functions.
 - **Logging:** `lingo.startup`, `lingo.auth`, `lingo.access` — structured per module.
 
+## Gamification / progress economy
+
+- **XP is server-authoritative AND admin-tunable.** The live values come from `XpEconomyConfig` (`app/platform_settings/schemas.py`, stored under the `xp_economy` key), loaded once per batch and applied in `app/progress/router.py::_process_one_attempt`. The constants in `app/progress/xp.py` are now just the **defaults the config mirrors** — `xp_for_attempt` there is vestigial (only `level_for_xp` is still imported). Row-test / recap lessons (ids ending `-test` / `-recap`) earn `lesson_test_bonus_xp` on top (testing effect). Client mirror of the defaults: `lingo/src/features/progress/xpRules.ts` — change both.
+- **Quests advance via EVENTS, not synchronously.** The batch handler publishes `lesson_completed` / `xp_awarded` (`app/events/publisher.py`, kombu) → consumed by **lingo-async** (separate service) → which calls back `POST /quests/_internal/{id}/progress`. Do NOT re-add synchronous quest advancement to the progress router.
+- **Streak-freeze is consumed.** The `streak-freeze` shop consumable is spent one-per-missed-day in the batch streak handler (`_consume_streak_freezes`) to bridge a gap before the streak resets; if the stash can't cover the whole gap it resets and burns nothing.
+
 ## Auth flow
 
 1. Frontend gets Auth0 JWT via `getAccessTokenSilently()`
@@ -84,7 +90,7 @@ When adding a new user-facing route, the default should be `get_acting_user`. Us
 - **Community persistence**: `MockCommunityRepository` is wired for all backends. Forum/addons data evaporates on Lambda cold start. SQLite + Dynamo impls are stubs.
 - **Stories on Dynamo**: `_story_repo = None` in provider — stories work in dev only.
 - **Admin role enforcement**: `is_admin()` returns truthy. All admin routes effectively open to any authed user.
-- **Tests**: one smoke test (`tests/test_smoke.py`). Critical paths uncovered.
+- **Test coverage gaps**: ~40 test files now cover progress/XP/SRS/quests/decks/auth/admin, but community persistence, stories, and several Dynamo repo paths remain thinly covered.
 
 If a feature lands in any of these areas, address the gap first or document the workaround.
 
@@ -98,21 +104,24 @@ If a feature lands in any of these areas, address the gap first or document the 
 ## Dev loop
 
 ```bash
-# install
-pip install -e ".[dev]"
+# install — the .venv is uv-managed and has NO system pip; use uv.
+# (kombu is a real dep now — the async-events publisher — so a stale venv
+# will ImportError on app import until you re-sync.)
+uv pip install -e ".[dev]"
 
+# tooling is NOT on PATH — call the venv binaries directly (or `source .venv/bin/activate`)
 # run (defaults to SQLite at ./lingo.db)
-uvicorn app.main:app --reload --port 8000
+.venv/bin/uvicorn app.main:app --reload --port 8000
 
 # seed fixtures
-python -m scripts.seed --reset
+.venv/bin/python -m scripts.seed --reset
 
 # test
-pytest
+.venv/bin/pytest
 
 # lint
-ruff check .
-ruff format .
+.venv/bin/ruff check .
+.venv/bin/ruff format .
 
 # build Lambda zip
 ./scripts/build-zip.sh
