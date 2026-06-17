@@ -1,79 +1,69 @@
-"""Regression test: admin-awarded XP must appear in the weekly/monthly
-leaderboard, not just on user.xp.
+"""Leaderboard read-path tests.
 
-Root cause that this test guards against:
-  ``_build_leaderboard`` reads ``progress_day_rollups`` (via
-  ``_xp_in_window``). Before this fix, admin XP grants only wrote
-  ``user.xp`` and silently skipped ``progress_day_rollups``, so the
-  leaderboard showed 0 XP for the target even after the award.
+Cost item 5 moved the global leaderboard read off the recompute-from-rollups
+path (a ``lingo_users`` Scan + per-user day-rollup fan-out) and onto the
+precomputed ``lingo_social_leaderboard`` table that ``lingo-async`` writes on
+every opted-in ``xp_awarded`` event. So the global board now reflects the
+precomputed bucket, NOT ``progress_day_rollups``.
+
+These tests stage the precomputed table directly (standing in for the async
+writer, which doesn't run in the test) and assert the read path surfaces it.
+The spotlight ``daily_xp`` array still derives from day-rollups, so the admin
+XP-grant → day-rollup write remains exercised by ``test_spotlight_daily_xp_is_array``.
 """
+
+from datetime import UTC, datetime
 
 
 def _admin_headers() -> dict[str, str]:
     return {"X-Dev-User": "dev|admin-user"}
 
 
-def test_award_xp_appears_in_weekly_leaderboard(api_client, monkeypatch) -> None:
-    """After awarding XP, the target user's ``xp_this_period`` in the weekly
-    leaderboard must reflect the award (was: always 0)."""
-    client, user_id, admin_user_id = api_client
-
-    from app.config import settings as cfg
-
-    monkeypatch.setattr(cfg, "ADMIN_USER_IDS", [admin_user_id])
-
-    # Sanity: user starts at 0 on the leaderboard.
-    lb_before = client.get("/api/core/v1/social/leaderboards/weekly").json()
-    me_before = next(
-        (e for e in lb_before["entries"] if e["user_id"] == user_id), None
-    )
-    assert me_before is not None, "user must appear in weekly leaderboard"
-    assert me_before["xp_this_period"] == 0, "expected 0 XP before award"
-
-    # Award XP via admin endpoint.
-    resp = client.post(
-        f"/api/core/v1/admin/users/{user_id}/award-xp",
-        json={"amount": 300, "reason": "regression test"},
-        headers=_admin_headers(),
-    )
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["xp"] == 300
-
-    # Leaderboard must now show the awarded amount.
-    lb_after = client.get("/api/core/v1/social/leaderboards/weekly").json()
-    me_after = next(
-        (e for e in lb_after["entries"] if e["user_id"] == user_id), None
-    )
-    assert me_after is not None, "user must still appear in weekly leaderboard"
-    assert me_after["xp_this_period"] == 300, (
-        f"expected 300 XP after award, got {me_after['xp_this_period']} — "
-        "admin XP grant did not write progress_day_rollups"
-    )
-    # Rank should be first (only user with non-zero XP in the test DB).
-    assert me_after["rank"] == 1
+def _weekly_bucket() -> str:
+    iso = datetime.now(UTC).date().isocalendar()
+    return f"ja#{iso.year:04d}-W{iso.week:02d}"
 
 
-def test_award_xp_appears_in_monthly_leaderboard(api_client, monkeypatch) -> None:
-    """Same regression for the monthly board."""
-    client, user_id, admin_user_id = api_client
+def _monthly_bucket() -> str:
+    d = datetime.now(UTC).date()
+    return f"ja#{d.year:04d}-{d.month:02d}"
 
-    from app.config import settings as cfg
 
-    monkeypatch.setattr(cfg, "ADMIN_USER_IDS", [admin_user_id])
+async def test_precomputed_weekly_board_surfaces_table_xp(api_client) -> None:
+    """A row in the precomputed weekly bucket surfaces with ranked XP +
+    hydrated display fields. (No ``lang`` → no concrete bucket → empty.)"""
+    client, user_id, _admin_user_id = api_client
 
-    resp = client.post(
-        f"/api/core/v1/admin/users/{user_id}/award-xp",
-        json={"amount": 150, "reason": "monthly regression"},
-        headers=_admin_headers(),
-    )
-    assert resp.status_code == 200, resp.text
+    from app.db.provider import get_leaderboard_repo
 
-    lb = client.get("/api/core/v1/social/leaderboards/monthly").json()
+    repo = get_leaderboard_repo()
+    await repo.record_xp(_weekly_bucket(), user_id, 300)
+
+    # Without lang there is no per-language bucket — board is empty.
+    no_lang = client.get("/api/core/v1/social/leaderboards/weekly").json()
+    assert all(e["user_id"] != user_id for e in no_lang["entries"])
+
+    lb = client.get("/api/core/v1/social/leaderboards/weekly?lang=ja").json()
+    me = next((e for e in lb["entries"] if e["user_id"] == user_id), None)
+    assert me is not None, "user must appear in the precomputed weekly board"
+    assert me["xp_this_period"] == 300
+    assert me["rank"] == 1
+    assert lb["my_rank"] == 1
+
+
+async def test_precomputed_monthly_board_surfaces_table_xp(api_client) -> None:
+    """Same for the monthly bucket."""
+    client, user_id, _admin_user_id = api_client
+
+    from app.db.provider import get_leaderboard_repo
+
+    repo = get_leaderboard_repo()
+    await repo.record_xp(_monthly_bucket(), user_id, 150)
+
+    lb = client.get("/api/core/v1/social/leaderboards/monthly?lang=ja").json()
     me = next((e for e in lb["entries"] if e["user_id"] == user_id), None)
     assert me is not None
-    assert me["xp_this_period"] == 150, (
-        f"expected 150 XP, got {me['xp_this_period']}"
-    )
+    assert me["xp_this_period"] == 150
 
 
 def test_spotlight_daily_xp_is_array(api_client, monkeypatch) -> None:

@@ -16,9 +16,10 @@ as a JSON string (state_json attribute) to avoid Decimal conversion hassles
 on nested structures. The dueDate attribute remains a plain string for the GSI.
 """
 
-import asyncio
 import json
 from typing import Any
+
+from botocore.exceptions import ClientError
 
 from app.db.dynamo._session import get_shared_resource
 
@@ -36,6 +37,18 @@ def _min_due(state: dict[str, Any]) -> str:
 
 
 def _max_last_review(state: dict[str, Any]) -> str:
+    """Freshest review marker for the LWW merge.
+
+    Prefer the top-level ``lastReviewedAt`` timestamp (sub-day precision) so
+    two same-day reviews are distinguishable; fall back to the modality
+    ``lastReviewDate`` (YYYY-MM-DD) for rows stored before the timestamp
+    shipped. A bare date sorts BEFORE any same-day timestamp, so the
+    timestamp-carrying side wins — which is correct (it has more info). Mirrors
+    the SQLite reference impl in ``app/db/sqlite/srs.py``.
+    """
+    ts = state.get("lastReviewedAt")
+    if ts:
+        return str(ts)
     r = state.get("recognition", {}).get("lastReviewDate", "")
     p = state.get("production", {}).get("lastReviewDate", "")
     return max(r, p)
@@ -141,46 +154,76 @@ class DynamoSRSRepository:
         return state if state else None
 
     async def upsert_cards(self, user_id: str, cards: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
-        card_ids = list(cards.keys())
-        existing_list = await asyncio.gather(
-            *[self.get_card(user_id, cid) for cid in card_ids],
-            return_exceptions=True,
-        )
-        existing_map: dict[str, dict[str, Any]] = {}
-        for cid, state in zip(card_ids, existing_list):
-            if isinstance(state, Exception) or state is None:
-                continue
-            existing_map[cid] = state
-
+        # Cost item 8 — write-if-newer. The old path did N GetItems (LWW
+        # pre-read) + N PutItems. We now attempt one conditional UpdateItem per
+        # card guarded on the stored ``lastReview`` marker: a stale client
+        # write fails the condition and is rejected without a pre-read. Only
+        # cards that LOSE the LWW race (or carry a bury change while losing —
+        # cross-device residue, rare) fall back to a single GetItem to merge +
+        # return the authoritative server state. The common "client pushed its
+        # own newer reviews" sync pays zero reads.
         result: dict[str, dict[str, Any]] = {}
         for card_id, incoming in cards.items():
-            existing = existing_map.get(card_id)
-
-            incoming_review = _max_last_review(incoming)
-            existing_review = _max_last_review(existing) if existing else ""
-            core_win = existing and existing_review >= incoming_review
-
-            bury_changed = existing and "buriedUntil" in incoming and incoming.get("buriedUntil") != existing.get("buriedUntil")
-
-            if core_win and not bury_changed:
-                result[card_id] = existing
-                continue
-
-            if core_win and bury_changed and existing:
-                incoming = {**existing, "buriedUntil": incoming.get("buriedUntil")}
-
-            due = _min_due(incoming)
-            item: dict[str, Any] = {
-                "PK": f"USER#{user_id}",
-                "SK": f"{_CARD_SK_PREFIX}{card_id}",
-                "user_id": user_id,
-                "dueDate": due,
-                "state_json": json.dumps(incoming, ensure_ascii=False),
-            }
-            await self._table.put_item(Item=item)
-            result[card_id] = incoming
-
+            result[card_id] = await self._upsert_one(user_id, card_id, incoming)
         return result
+
+    async def _upsert_one(self, user_id: str, card_id: str, incoming: dict[str, Any]) -> dict[str, Any]:
+        incoming_review = _max_last_review(incoming)
+        won = await self._write_if_newer(user_id, card_id, incoming, incoming_review)
+        if won:
+            return incoming
+
+        # Core lost the LWW race. Read the existing row once to merge any bury
+        # change and to return the authoritative state. ``lastReview`` LWW
+        # semantics are preserved exactly: a bare-date marker sorts before any
+        # same-day timestamp, so the timestamp-carrying side still wins.
+        existing = await self.get_card(user_id, card_id)
+        if existing is None:
+            # Lost a race that no longer exists (deleted between attempts);
+            # nothing authoritative to return — surface the incoming state.
+            return incoming
+
+        bury_changed = "buriedUntil" in incoming and incoming.get("buriedUntil") != existing.get("buriedUntil")
+        if not bury_changed:
+            return existing
+
+        merged = {**existing, "buriedUntil": incoming.get("buriedUntil")}
+        # Merged keeps the server-newer core, so its review marker is unchanged
+        # — force the write past the guard (bury-only update of the winner row).
+        await self._put_full(user_id, card_id, merged, _max_last_review(merged), guard=False)
+        return merged
+
+    async def _write_if_newer(
+        self, user_id: str, card_id: str, state: dict[str, Any], review_marker: str
+    ) -> bool:
+        """Conditional full-state write. Returns True if the write landed
+        (no prior row, or incoming review marker is strictly newer)."""
+        try:
+            await self._put_full(user_id, card_id, state, review_marker, guard=True)
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+
+    async def _put_full(
+        self, user_id: str, card_id: str, state: dict[str, Any], review_marker: str, *, guard: bool
+    ) -> None:
+        kwargs: dict[str, Any] = {
+            "Key": {"PK": f"USER#{user_id}", "SK": f"{_CARD_SK_PREFIX}{card_id}"},
+            "UpdateExpression": "SET user_id = :uid, dueDate = :due, state_json = :sj, lastReview = :lr",
+            "ExpressionAttributeValues": {
+                ":uid": user_id,
+                ":due": _min_due(state),
+                ":sj": json.dumps(state, ensure_ascii=False),
+                ":lr": review_marker,
+            },
+        }
+        if guard:
+            # Write only when there's no row yet OR the incoming review marker
+            # is strictly newer than the stored one (write-if-newer LWW).
+            kwargs["ConditionExpression"] = "attribute_not_exists(lastReview) OR lastReview < :lr"
+        await self._table.update_item(**kwargs)
 
     async def delete_cards(self, user_id: str, card_ids: list[str]) -> int:
         for card_id in card_ids:

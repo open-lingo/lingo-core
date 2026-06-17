@@ -22,6 +22,7 @@ from app.db.protocols import (
     AuditRepository,
     CommunityRepository,
     DeckRepository,
+    LeaderboardRepository,
     PlatformSettingsRepository,
     ProgressRepository,
     QuestRepository,
@@ -43,6 +44,7 @@ _subscription_repo: SubscriptionRepository | None = None
 _story_repo: StoryRepository | None = None
 _progress_repo: ProgressRepository | None = None
 _social_repo: SocialRepository | None = None
+_leaderboard_repo: LeaderboardRepository | None = None
 _quest_repo: QuestRepository | None = None
 _platform_settings_repo: PlatformSettingsRepository | None = None
 _tag_repo: TagRepository | None = None
@@ -70,11 +72,13 @@ async def init_repositories() -> None:
     """Create and connect the repository singletons based on config."""
     global _user_repo, _srs_repo, _deck_repo, _subscription_repo, _story_repo, _progress_repo
     global _social_repo, _quest_repo, _platform_settings_repo, _tag_repo, _audit_repo
+    global _leaderboard_repo
 
     _degraded.clear()
 
     if settings.DB_BACKEND == "sqlite":
         from app.db.sqlite.deck import SqliteDeckRepository
+        from app.db.sqlite.leaderboard import SqliteLeaderboardRepository
         from app.db.sqlite.platform_settings import SqlitePlatformSettingsRepository
         from app.db.sqlite.progress import SqliteProgressRepository
         from app.db.sqlite.quests import SqliteQuestRepository
@@ -92,6 +96,7 @@ async def init_repositories() -> None:
         _story_repo = await _safe_connect("story", SqliteStoryRepository(settings.SQLITE_PATH))
         _progress_repo = await _safe_connect("progress", SqliteProgressRepository(settings.SQLITE_PATH))
         _social_repo = await _safe_connect("social", SqliteSocialRepository(settings.SQLITE_PATH))
+        _leaderboard_repo = await _safe_connect("leaderboard", SqliteLeaderboardRepository(settings.SQLITE_PATH))
         _quest_repo = await _safe_connect("quest", SqliteQuestRepository(settings.SQLITE_PATH))
         _platform_settings_repo = await _safe_connect(
             "platform_settings",
@@ -105,6 +110,7 @@ async def init_repositories() -> None:
 
     elif settings.DB_BACKEND == "dynamodb":
         from app.db.dynamo.deck import DynamoDeckRepository
+        from app.db.dynamo.leaderboard import DynamoLeaderboardRepository
         from app.db.dynamo.progress import DynamoProgressRepository
         from app.db.dynamo.quests import DynamoQuestRepository
         from app.db.dynamo.social import DynamoSocialRepository
@@ -137,6 +143,13 @@ async def init_repositories() -> None:
         # Real Dynamo impl backed by lingo_social (friends/requests/blocks/
         # activity/reactions/invites/DM threads). Cut over from SQLite-first.
         _social_repo = await _safe_connect("social", DynamoSocialRepository(f"{prefix}social", region))
+
+        # Leaderboard read repo — backed by lingo_social_leaderboard (written by
+        # lingo-async). lingo-core only reads it; the recompute-from-rollups
+        # Scan path is gone (cost item 5).
+        _leaderboard_repo = await _safe_connect(
+            "leaderboard", DynamoLeaderboardRepository(f"{prefix}social_leaderboard", region)
+        )
 
         _quest_repo = await _safe_connect("quest", DynamoQuestRepository(f"{prefix}quests", region))
 
@@ -212,6 +225,7 @@ _REQUIRED_DOMAINS: dict[str, str] = {
     "story": "_story_repo",
     "progress": "_progress_repo",
     "social": "_social_repo",
+    "leaderboard": "_leaderboard_repo",
     "quest": "_quest_repo",
     "platform_settings": "_platform_settings_repo",
     "tag": "_tag_repo",
@@ -281,6 +295,8 @@ async def shutdown_repositories() -> None:
         await _progress_repo.close()  # type: ignore[union-attr]
     if _social_repo and hasattr(_social_repo, "close"):
         await _social_repo.close()  # type: ignore[union-attr]
+    if _leaderboard_repo and hasattr(_leaderboard_repo, "close"):
+        await _leaderboard_repo.close()  # type: ignore[union-attr]
     if _quest_repo and hasattr(_quest_repo, "close"):
         await _quest_repo.close()  # type: ignore[union-attr]
     if _platform_settings_repo and hasattr(_platform_settings_repo, "close"):
@@ -349,6 +365,10 @@ def get_progress_repo() -> ProgressRepository:
 
 def get_social_repo() -> SocialRepository | None:
     return _social_repo
+
+
+def get_leaderboard_repo() -> LeaderboardRepository | None:
+    return _leaderboard_repo
 
 
 def get_quest_repo() -> QuestRepository | None:

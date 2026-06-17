@@ -56,9 +56,9 @@ def test_batch_collapses_to_one_user_update(api_client, monkeypatch) -> None:
     call_count = {"n": 0}
     real_update = repo.update_user
 
-    async def counting_update(uid, patch):
+    async def counting_update(uid, patch, **kwargs):
         call_count["n"] += 1
-        return await real_update(uid, patch)
+        return await real_update(uid, patch, **kwargs)
 
     monkeypatch.setattr(repo, "update_user", counting_update)
 

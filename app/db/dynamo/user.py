@@ -115,8 +115,12 @@ class DynamoUserRepository:
         items = resp.get("Items", [])
         return self._strip_keys(items[0]) if items else None
 
-    async def update_user(self, user_id: str, patch: dict[str, Any]) -> dict[str, Any]:
-        current = await self.get_user_by_id(user_id)
+    async def update_user(
+        self, user_id: str, patch: dict[str, Any], *, current: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        # Cost item 6 — the lesson batch path passes the row it already read,
+        # letting us skip this GetItem. Copy so we don't mutate the caller's dict.
+        current = dict(current) if current is not None else await self.get_user_by_id(user_id)
         if current is None:
             raise LookupError(f"No user with id={user_id!r}")
 

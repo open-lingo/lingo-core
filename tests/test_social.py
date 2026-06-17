@@ -244,6 +244,60 @@ def test_leaderboard_bundle_shape(
     assert isinstance(spot["daily_xp"], list) and len(spot["daily_xp"]) == 7
 
 
+@pytest.mark.asyncio
+async def test_global_leaderboard_reads_precomputed_table(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    """The global weekly board ranks from the precomputed leaderboard table
+    (cost item 5), not from a users Scan + rollup recompute. Seed the table
+    directly via the SQLite repo's dev helper and assert the ranking + my_rank.
+    """
+    from datetime import UTC, datetime
+
+    from app.db.provider import get_leaderboard_repo
+
+    repo = get_leaderboard_repo()
+    iso = datetime.now(UTC).date().isocalendar()
+    bucket = f"ja#{iso.year:04d}-W{iso.week:02d}"
+
+    alice_id = users["alice"]["id"]
+    bob_id = users["bob"]["id"]
+    await repo.record_xp(bucket, bob_id, 500)
+    await repo.record_xp(bucket, alice_id, 300)
+
+    resp = client.get(
+        "/api/core/v1/social/leaderboards/weekly?lang=ja", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    ids = [e["user_id"] for e in body["entries"]]
+    # Bob (500) outranks Alice (300).
+    assert ids[:2] == [bob_id, alice_id]
+    bob_entry = next(e for e in body["entries"] if e["user_id"] == bob_id)
+    assert bob_entry["xp_this_period"] == 500
+    assert bob_entry["rank"] == 1
+    # my_rank for Alice is 2; display fields hydrated from the user row.
+    assert body["my_rank"] == 2
+    assert body["total"] >= 2
+    alice_entry = next(e for e in body["entries"] if e["user_id"] == alice_id)
+    assert alice_entry["username"] == "alice_t"
+
+
+def test_global_leaderboard_empty_without_lang(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    """No lang → no concrete per-language bucket exists → empty board, not a
+    Scan-based global board."""
+    resp = client.get(
+        "/api/core/v1/social/leaderboards/weekly", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["entries"] == []
+    assert body["my_rank"] is None
+    assert body["bucket"] == "weekly:all"
+
+
 def test_league_spotlight(client: TestClient, users: dict[str, dict[str, Any]]) -> None:
     resp = client.get("/api/core/v1/social/leaderboards/spotlight", headers=_as("auth0|alice"))
     assert resp.status_code == 200, resp.text

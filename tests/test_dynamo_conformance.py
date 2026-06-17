@@ -36,6 +36,7 @@ _DOMAINS: dict[str, tuple[str, str, str, str]] = {
     "story": ("story", "StoryRepository", "story", "DynamoStoryRepository"),
     "progress": ("progress", "ProgressRepository", "progress", "DynamoProgressRepository"),
     "social": ("social", "SocialRepository", "social", "DynamoSocialRepository"),
+    "leaderboard": ("leaderboard", "LeaderboardRepository", "leaderboard", "DynamoLeaderboardRepository"),
     "quests": ("quests", "QuestRepository", "quests", "DynamoQuestRepository"),
     "platform_settings": ("platform_settings", "PlatformSettingsRepository", "platform_settings", "DynamoPlatformSettingsRepository"),
     "tag": ("tag", "TagRepository", "tag", "DynamoTagRepository"),
