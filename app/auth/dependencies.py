@@ -453,15 +453,18 @@ def require_internal_service(
     user — e.g. ``/quests/_internal/{id}/progress``. Auth0 JWTs are
     rejected here so a leaked user token can't masquerade as the worker.
 
-    Re-imports ``settings`` per call so the conftest module-reload pattern
-    (which replaces the ``app.config.settings`` singleton) still picks up
-    test-time monkeypatches.
+    The token is resolved via ``resolve_internal_service_token`` (env wins;
+    SSM ``/lingo/internal-service-token`` is the empty-env prod fallback).
+    The resolver re-reads ``settings`` per call so the conftest module-reload
+    pattern (which replaces the ``app.config.settings`` singleton) still
+    picks up test-time monkeypatches.
     """
-    from app.config import settings as live_settings
+    from app.auth.internal_token import resolve_internal_service_token
 
-    if not live_settings.INTERNAL_SERVICE_TOKEN:
+    token = resolve_internal_service_token()
+    if not token:
         raise HTTPException(
             status_code=500, detail="INTERNAL_SERVICE_TOKEN not configured"
         )
-    if authorization != f"Bearer {live_settings.INTERNAL_SERVICE_TOKEN}":
+    if authorization != f"Bearer {token}":
         raise HTTPException(status_code=401, detail="invalid system token")
