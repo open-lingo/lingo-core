@@ -74,7 +74,7 @@ def _stub_user_repo(api_client, monkeypatch, *, days_ago: int, streak: int, free
         writes.append(patch)
         return patch
 
-    async def noop_update_user(_uid, patch):
+    async def noop_update_user(_uid, patch, **kwargs):
         return patch
 
     monkeypatch.setattr(repo, "get_user_by_id", fake_get_user_by_id)

@@ -21,8 +21,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_acting_user, get_community_user
 from app.auth.schemas import TokenPayload
-from app.db.protocols import DeckRepository, ProgressRepository, SocialRepository, UserRepository
-from app.db.provider import get_deck_repo, get_progress_repo, get_social_repo, get_user_repo
+from app.db.protocols import DeckRepository, LeaderboardRepository, ProgressRepository, SocialRepository, UserRepository
+from app.db.provider import get_deck_repo, get_leaderboard_repo, get_progress_repo, get_social_repo, get_user_repo
 from app.shared.errors import api_error
 from app.social.leagues import league_for_xp
 from app.social.schemas import (
@@ -75,6 +75,7 @@ CurrentUser = Annotated[TokenPayload, Depends(get_acting_user)]
 # resolve to the admin's own community-ban status, not the target's.
 CommunityUser = Annotated[TokenPayload, Depends(get_community_user)]
 SocialRepo = Annotated[SocialRepository, Depends(get_social_repo)]
+LeaderboardRepo = Annotated[LeaderboardRepository | None, Depends(get_leaderboard_repo)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 ProgressRepo = Annotated[ProgressRepository, Depends(get_progress_repo)]
 DeckRepo = Annotated[DeckRepository | None, Depends(get_deck_repo)]
@@ -118,6 +119,27 @@ def _now_iso() -> str:
 
 def _yyyymm(d: date) -> str:
     return f"{d.year:04d}-{d.month:02d}"
+
+
+def _bucket_string(period: str, lang: str | None, *, today: date | None = None) -> str | None:
+    """Compute the precomputed-leaderboard bucket string for ``period``.
+
+    MUST match ``lingo-async/app/leaderboard/updater.py``:
+      weekly:  ``{lang}#{YYYY}-W{ww}``
+      monthly: ``{lang}#{YYYY}-{MM}``
+
+    The table is partitioned per language — there is no cross-language "all"
+    bucket (the writer skips events with no language). So a global board needs
+    a concrete ``lang``; returns None when absent so callers degrade to an
+    empty board rather than querying a bucket that can't exist.
+    """
+    if not lang or lang == "all":
+        return None
+    d = today or _today()
+    if period == "weekly":
+        iso = d.isocalendar()
+        return f"{lang}#{iso.year:04d}-W{iso.week:02d}"
+    return f"{lang}#{d.year:04d}-{d.month:02d}"
 
 
 def _user_to_friend_item(user: dict[str, Any], friended_at: str) -> FriendItem:
@@ -383,24 +405,42 @@ async def _build_leaderboard(
     user: TokenPayload,
     users: UserRepository,
     progress: ProgressRepository,
-    bucket: str,
-    window_days: int,
+    leaderboard: LeaderboardRepository | None,
+    period: str,
+    lang: str | None,
     cohort_ids: list[str] | None,
     limit: int,
     offset: int,
+    bucket_label: str | None = None,
 ) -> LeaderboardResponse:
-    """Compute XP totals for the cohort and rank them. ``cohort_ids=None``
-    means "everyone we know about" (small dev cohort)."""
-    if cohort_ids is None:
-        # SQLite list_users overfetches; cap defensively.
-        records, _ = await users.list_users(limit=500)
-    else:
-        # Fan out the per-id reads in parallel.
-        fetched = await asyncio.gather(*(users.get_user_by_id(uid) for uid in cohort_ids))
-        records = [r for r in fetched if r]
+    """Rank a leaderboard.
 
-    # Fan out the XP-window reads in parallel — sequential awaits are the
-    # main reason leaderboards feel slow.
+    Global (``cohort_ids is None``) reads the precomputed
+    ``lingo_social_leaderboard`` table — a single bounded top-N Query plus a
+    bounded display-field hydration — instead of the old
+    ``list_users(500)`` Scan + per-user day-rollup fan-out (cost item 5).
+
+    Friends/cohort (``cohort_ids`` set) stays rollup-based: it's bounded by
+    the caller's friend count, and the table can't express an arbitrary
+    cohort filter cheaply.
+    """
+    bucket_label = bucket_label or f"{period}:{lang or 'all'}"
+    if cohort_ids is None:
+        return await _build_global_leaderboard(
+            user=user,
+            users=users,
+            leaderboard=leaderboard,
+            period=period,
+            lang=lang,
+            bucket_label=bucket_label,
+            limit=limit,
+            offset=offset,
+        )
+
+    window_days = 7 if period == "weekly" else 30
+    # Fan out the per-id reads in parallel.
+    fetched = await asyncio.gather(*(users.get_user_by_id(uid) for uid in cohort_ids))
+    records = [r for r in fetched if r]
     xps = await asyncio.gather(
         *(_xp_in_window(progress, record["id"], window_days) for record in records)
     )
@@ -425,9 +465,73 @@ async def _build_leaderboard(
 
     sliced = ranked[offset : offset + limit]
     return LeaderboardResponse(
-        bucket=bucket,
+        bucket=bucket_label,
         entries=sliced,
         total=len(ranked),
+        my_rank=my_rank,
+    )
+
+
+async def _build_global_leaderboard(
+    *,
+    user: TokenPayload,
+    users: UserRepository,
+    leaderboard: LeaderboardRepository | None,
+    period: str,
+    lang: str | None,
+    bucket_label: str,
+    limit: int,
+    offset: int,
+) -> LeaderboardResponse:
+    """Global board from the precomputed table.
+
+    Degrades to an empty board when the repo is unavailable or no language is
+    set (the table is per-language; there is no cross-language bucket)."""
+    bucket = _bucket_string(period, lang)
+    if leaderboard is None or bucket is None:
+        return LeaderboardResponse(bucket=bucket_label, entries=[], total=0, my_rank=None)
+
+    # Top of the bucket: one bounded, xp-sorted Query (GSI ScanIndexForward=
+    # false + Limit). We over-read by ``offset`` so a paged request can slice.
+    top_rows, total, my_entry = await asyncio.gather(
+        leaderboard.top_n(bucket, offset + limit),
+        leaderboard.bucket_size(bucket),
+        leaderboard.get_entry(bucket, user.id),
+    )
+
+    page_rows = top_rows[offset : offset + limit]
+    # Hydrate display fields for the page only (≤ limit ≤ 100). The rollup
+    # table stores xp + ids; usernames/avatars live on the user row. A
+    # follow-up that mirrors display fields onto the writer would drop even
+    # this bounded fan-out (see report).
+    user_map = await _users_by_ids(users, [r["user_id"] for r in page_rows])
+
+    entries: list[LeaderboardEntry] = []
+    for idx, row in enumerate(page_rows, start=offset + 1):
+        rec = user_map.get(row["user_id"])
+        if not rec:
+            continue
+        entries.append(
+            LeaderboardEntry(
+                user_id=row["user_id"],
+                username=rec["username"],
+                display_name=rec["display_name"],
+                profile_picture_key=rec.get("profile_picture_key"),
+                xp_this_period=int(row["xp"]),
+                rank=idx,
+            )
+        )
+
+    # my_rank: derived from my bucket XP via a bounded COUNT query (no
+    # whole-bucket read). None when I'm not on the board yet.
+    my_rank: int | None = None
+    if my_entry is not None and int(my_entry["xp"]) > 0:
+        my_rank = await leaderboard.rank_for_xp(bucket, int(my_entry["xp"]))
+
+    return LeaderboardResponse(
+        bucket=bucket_label,
+        entries=entries,
+        total=total,
         my_rank=my_rank,
     )
 
@@ -437,6 +541,7 @@ async def leaderboard_weekly(
     user: CurrentUser,
     users: UserRepo,
     progress: ProgressRepo,
+    leaderboard: LeaderboardRepo,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     lang: str | None = None,
@@ -445,8 +550,9 @@ async def leaderboard_weekly(
         user=user,
         users=users,
         progress=progress,
-        bucket=f"weekly:{lang or 'all'}",
-        window_days=7,
+        leaderboard=leaderboard,
+        period="weekly",
+        lang=lang,
         cohort_ids=None,
         limit=limit,
         offset=offset,
@@ -458,6 +564,7 @@ async def leaderboard_monthly(
     user: CurrentUser,
     users: UserRepo,
     progress: ProgressRepo,
+    leaderboard: LeaderboardRepo,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     lang: str | None = None,
@@ -466,8 +573,9 @@ async def leaderboard_monthly(
         user=user,
         users=users,
         progress=progress,
-        bucket=f"monthly:{lang or 'all'}",
-        window_days=30,
+        leaderboard=leaderboard,
+        period="monthly",
+        lang=lang,
         cohort_ids=None,
         limit=limit,
         offset=offset,
@@ -480,6 +588,7 @@ async def leaderboard_friends(
     social: SocialRepo,
     users: UserRepo,
     progress: ProgressRepo,
+    leaderboard: LeaderboardRepo,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     lang: str | None = None,
@@ -490,11 +599,13 @@ async def leaderboard_friends(
         user=user,
         users=users,
         progress=progress,
-        bucket=f"friends:{lang or 'all'}",
-        window_days=7,
+        leaderboard=leaderboard,
+        period="weekly",
+        lang=lang,
         cohort_ids=cohort,
         limit=limit,
         offset=offset,
+        bucket_label=f"friends:{lang or 'all'}",
     )
 
 
@@ -503,35 +614,36 @@ async def leaderboard_me(
     user: CurrentUser,
     users: UserRepo,
     progress: ProgressRepo,
+    leaderboard: LeaderboardRepo,
     lang: str | None = None,
 ) -> Any:
-    weekly = await _build_leaderboard(
-        user=user,
-        users=users,
-        progress=progress,
-        bucket=f"weekly:{lang or 'all'}",
-        window_days=7,
-        cohort_ids=None,
-        limit=1,
-        offset=0,
+    """My weekly + monthly slots.
+
+    Reads only my own bucket rows + a bounded rank COUNT — no board build at
+    all (the old impl built BOTH full boards just to pull my_rank/total).
+    """
+    weekly_bucket = _bucket_string("weekly", lang)
+    monthly_bucket = _bucket_string("monthly", lang)
+    weekly = await _my_slot(leaderboard, weekly_bucket, f"weekly:{lang or 'all'}", user.id)
+    monthly = await _my_slot(leaderboard, monthly_bucket, f"monthly:{lang or 'all'}", user.id)
+    return MyLeaderboardSummary(weekly=weekly, monthly=monthly, lang=lang)
+
+
+async def _my_slot(
+    leaderboard: LeaderboardRepository | None,
+    bucket: str | None,
+    bucket_label: str,
+    user_id: str,
+) -> MyLeaderboardSlot:
+    if leaderboard is None or bucket is None:
+        return MyLeaderboardSlot(bucket=bucket_label, xp=0, rank=None, total=0)
+    entry, total = await asyncio.gather(
+        leaderboard.get_entry(bucket, user_id),
+        leaderboard.bucket_size(bucket),
     )
-    monthly = await _build_leaderboard(
-        user=user,
-        users=users,
-        progress=progress,
-        bucket=f"monthly:{lang or 'all'}",
-        window_days=30,
-        cohort_ids=None,
-        limit=1,
-        offset=0,
-    )
-    my_weekly_xp = await _xp_in_window(progress, user.id, 7)
-    my_monthly_xp = await _xp_in_window(progress, user.id, 30)
-    return MyLeaderboardSummary(
-        weekly=MyLeaderboardSlot(bucket=weekly.bucket, xp=my_weekly_xp, rank=weekly.my_rank, total=weekly.total),
-        monthly=MyLeaderboardSlot(bucket=monthly.bucket, xp=my_monthly_xp, rank=monthly.my_rank, total=monthly.total),
-        lang=lang,
-    )
+    xp = int(entry["xp"]) if entry else 0
+    rank = await leaderboard.rank_for_xp(bucket, xp) if xp > 0 else None
+    return MyLeaderboardSlot(bucket=bucket_label, xp=xp, rank=rank, total=total)
 
 
 async def _build_league_spotlight(
@@ -540,56 +652,45 @@ async def _build_league_spotlight(
     social: SocialRepository,
     users: UserRepository,
     progress: ProgressRepository,
+    leaderboard: LeaderboardRepository | None,
     lang: str | None,
 ) -> LeagueSpotlightResponse:
     """Inner builder shared by ``/leaderboards/spotlight`` and the bundle
     endpoint. Kept as a free function so the bundle can fan it out via
-    ``asyncio.gather`` alongside the three flat boards."""
-    weekly_xp = await _xp_in_window(progress, user.id, 7)
+    ``asyncio.gather`` alongside the flat boards.
+
+    Cost item 5: the podium + my current rank now come from the precomputed
+    table (a bounded top-N board build), NOT the old ``list_users(500)`` Scan +
+    per-user rollup fan-out. The 7-day daily / friend-median charts stay
+    rollup-based — they're bounded by friend count, and the table holds no
+    per-day breakdown. ``rank_yesterday`` required an all-users historical
+    re-rank (the same Scan storm) that the precomputed table can't serve, so
+    it degrades to None (rank_delta 0). A future per-day snapshot table could
+    restore it.
+    """
+    league_tier_bucket = _bucket_string("weekly", lang)
+    weekly_xp = 0
+    if leaderboard is not None and league_tier_bucket is not None:
+        my_entry = await leaderboard.get_entry(league_tier_bucket, user.id)
+        weekly_xp = int(my_entry["xp"]) if my_entry else 0
     league, tier, promo, demo = _league_for_weekly_xp(weekly_xp)
 
-    # Build the all-users weekly leaderboard once so we can pull the podium +
-    # find me, and re-rank as of yesterday for the rank delta.
+    # Podium + my rank from the precomputed weekly board.
     board = await _build_leaderboard(
         user=user,
         users=users,
         progress=progress,
-        bucket=f"weekly:{lang or 'all'}",
-        window_days=7,
+        leaderboard=leaderboard,
+        period="weekly",
+        lang=lang,
         cohort_ids=None,
-        limit=500,
+        limit=3,
         offset=0,
     )
 
-    me_row: LeaderboardEntry | None = None
-    for entry in board.entries:
-        if entry.user_id == user.id:
-            me_row = entry
-            break
-
-    # Compute yesterday's rank — same cohort, but using the 7-day window ending
-    # yesterday. Fan the per-user rollup reads out in parallel.
-    yesterday_records, _ = await users.list_users(limit=500)
-    yest_today = _today() - timedelta(days=1)
-    yest_since = (yest_today - timedelta(days=6)).isoformat()
-    yest_until = yest_today.isoformat()
-    yest_rollup_lists = await asyncio.gather(
-        *(progress.get_day_rollups(r["id"], yest_since, yest_until) for r in yesterday_records)
+    me_row: LeaderboardEntry | None = next(
+        (e for e in board.entries if e.user_id == user.id), None
     )
-    yest_pairs: list[tuple[str, int]] = [
-        (record["id"], sum(int(r.get("xpEarned") or 0) for r in rows))
-        for record, rows in zip(yesterday_records, yest_rollup_lists, strict=True)
-    ]
-    yest_pairs.sort(key=lambda p: (-p[1], p[0]))
-    rank_yesterday: int | None = None
-    for idx, (uid, _xp) in enumerate(yest_pairs, start=1):
-        if uid == user.id:
-            rank_yesterday = idx
-            break
-
-    rank_delta = 0
-    if rank_yesterday is not None and board.my_rank is not None:
-        rank_delta = rank_yesterday - board.my_rank
 
     # Build 7-day arrays for the caller and the friend-median chart.
     # Index 0 = 6 days ago, index 6 = today. Fan all 7 + (7 × friends) reads
@@ -618,8 +719,8 @@ async def _build_league_spotlight(
         league_tier=tier,
         my_row=me_row,
         rank=board.my_rank,
-        rank_yesterday=rank_yesterday,
-        rank_delta_today=rank_delta,
+        rank_yesterday=None,
+        rank_delta_today=0,
         daily_xp=my_daily_xp,
         friend_median_daily_xp=friend_daily_xp,
         top_three=board.entries[:3],
@@ -634,11 +735,12 @@ async def leaderboard_spotlight(
     social: SocialRepo,
     users: UserRepo,
     progress: ProgressRepo,
+    leaderboard: LeaderboardRepo,
     lang: str | None = None,
 ) -> Any:
-    """League view: my league band, today vs yesterday rank, podium, friend median XP."""
+    """League view: my league band, podium, friend median XP."""
     return await _build_league_spotlight(
-        user=user, social=social, users=users, progress=progress, lang=lang
+        user=user, social=social, users=users, progress=progress, leaderboard=leaderboard, lang=lang
     )
 
 
@@ -648,6 +750,7 @@ async def leaderboard_bundle(
     social: SocialRepo,
     users: UserRepo,
     progress: ProgressRepo,
+    leaderboard: LeaderboardRepo,
     lang: str | None = None,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -672,8 +775,9 @@ async def leaderboard_bundle(
             user=user,
             users=users,
             progress=progress,
-            bucket=f"weekly:{lang or 'all'}",
-            window_days=7,
+            leaderboard=leaderboard,
+            period="weekly",
+            lang=lang,
             cohort_ids=None,
             limit=limit,
             offset=offset,
@@ -682,8 +786,9 @@ async def leaderboard_bundle(
             user=user,
             users=users,
             progress=progress,
-            bucket=f"monthly:{lang or 'all'}",
-            window_days=30,
+            leaderboard=leaderboard,
+            period="monthly",
+            lang=lang,
             cohort_ids=None,
             limit=limit,
             offset=offset,
@@ -692,14 +797,16 @@ async def leaderboard_bundle(
             user=user,
             users=users,
             progress=progress,
-            bucket=f"friends:{lang or 'all'}",
-            window_days=7,
+            leaderboard=leaderboard,
+            period="weekly",
+            lang=lang,
             cohort_ids=friend_cohort,
             limit=limit,
             offset=offset,
+            bucket_label=f"friends:{lang or 'all'}",
         ),
         _build_league_spotlight(
-            user=user, social=social, users=users, progress=progress, lang=lang
+            user=user, social=social, users=users, progress=progress, leaderboard=leaderboard, lang=lang
         ),
     )
     return LeaderboardBundleResponse(

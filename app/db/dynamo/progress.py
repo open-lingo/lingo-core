@@ -171,9 +171,12 @@ class DynamoProgressRepository:
             raise
 
     async def put_attempt(self, user_id: str, attempt: dict[str, Any]) -> None:
-        if await self.attempt_exists(user_id, attempt["clientAttemptId"]):
-            return
-
+        # Cost item 6 — dropped the leading attempt_exists GetItem. The caller
+        # (progress router) already runs its own idempotency check, and the
+        # TransactWrite below is guarded by attribute_not_exists(SK), so a
+        # duplicate is rejected by the conditional check rather than a pre-read.
+        # We swallow that specific failure to keep the documented "exists →
+        # no-op" idempotency contract for any other caller.
         lesson_id = attempt["lessonId"]
         attempted_at = attempt["attemptedAt"]
         base: dict[str, Any] = {
@@ -231,13 +234,24 @@ class DynamoProgressRepository:
                 ]
             )
         except ClientError as exc:
+            # Idempotency: a duplicate (user_id, clientAttemptId) trips the
+            # attribute_not_exists(SK) guard on one or both Puts. Treat that
+            # as a no-op — the row already exists, which is the contract.
+            reasons = exc.response.get("CancellationReasons") or []
+            codes = {r.get("Code") for r in reasons if isinstance(r, dict)}
+            err_code = exc.response.get("Error", {}).get("Code")
+            if (
+                err_code == "TransactionCanceledException"
+                and "ConditionalCheckFailed" in codes
+                and codes <= {"ConditionalCheckFailed", "None", None}
+            ):
+                return
             # DIAGNOSTIC (temporary): the boto summary only prints
             # "[ValidationError, None]" and hides which field is malformed.
             # The real per-item reason (with a human Message) lives in the
             # response's CancellationReasons. Log it plus the item-shape
             # fingerprint so we can pin the bad draft attempt, then re-raise
             # unchanged. Remove once root cause is fixed.
-            reasons = exc.response.get("CancellationReasons")
             logger.warning(
                 "put_attempt transact failed: code=%s reasons=%s "
                 "fingerprint={attempt_sk=%r client_sk=%r attemptedAt=%r "
@@ -317,42 +331,66 @@ class DynamoProgressRepository:
         return out
 
     async def update_lesson_rollup(self, user_id: str, lesson_id: str, attempt: dict[str, Any]) -> dict[str, Any]:
+        # Cost item 6 — was GetItem + PutItem (2 ops every call). Now a single
+        # atomic UpdateItem that raises bestScore (guarded by bestScore < :s),
+        # ADDs attemptCount, sets latestAttemptAt + firstPassedAt(if_not_exists).
+        # DynamoDB can't express SET-to-max in one expression, and the
+        # ConditionExpression gates the whole update — so when the incoming
+        # score does NOT beat the stored best we fall back to a second
+        # UpdateItem that bumps everything EXCEPT bestScore. Common case (first
+        # attempt or a new personal best) is 1 op; a non-improving retry is 2,
+        # still ≤ the old fixed cost and avoids a read on the hot path.
         sk = f"{_LESSON_PREFIX}{lesson_id}"
         key = {"PK": _pk(user_id), "SK": sk}
-        score = float(attempt["score"])
+        score = _to_decimal(float(attempt["score"]))
         attempted_at = attempt["attemptedAt"]
         passed = bool(attempt["passed"])
 
-        resp = await self._table.get_item(Key=key)
-        existing = resp.get("Item")
-        if not existing:
-            item: dict[str, Any] = {
-                **key,
-                "lessonId": lesson_id,
-                "bestScore": _to_decimal(score),
-                "latestAttemptAt": attempted_at,
-                "attemptCount": 1,
-            }
-            if passed:
-                item["firstPassedAt"] = attempted_at
-            await self._table.put_item(Item=item)
-            return _lesson_item_to_dict(item)
-
-        best = max(_decimal_to_float(existing.get("bestScore", 0)), score)
-        first_passed = existing.get("firstPassedAt")
-        if passed and not first_passed:
-            first_passed = attempted_at
-        item = {
-            **key,
-            "lessonId": lesson_id,
-            "bestScore": _to_decimal(best),
-            "latestAttemptAt": attempted_at,
-            "attemptCount": _decimal_to_int(existing.get("attemptCount", 0)) + 1,
+        set_clauses = [
+            "lessonId = :lid",
+            "latestAttemptAt = :ts",
+            "bestScore = :s",
+        ]
+        values: dict[str, Any] = {
+            ":lid": lesson_id,
+            ":ts": attempted_at,
+            ":s": score,
+            ":one": 1,
         }
-        if first_passed:
-            item["firstPassedAt"] = first_passed
-        await self._table.put_item(Item=item)
-        return _lesson_item_to_dict(item)
+        if passed:
+            set_clauses.append("firstPassedAt = if_not_exists(firstPassedAt, :ts)")
+        update_expr = "SET " + ", ".join(set_clauses) + " ADD attemptCount :one"
+
+        try:
+            resp = await self._table.update_item(
+                Key=key,
+                UpdateExpression=update_expr,
+                # First write wins the bestScore slot; later writes only when
+                # they strictly improve it. attribute_not_exists handles the
+                # create case (the row's bestScore starts unset).
+                ConditionExpression="attribute_not_exists(bestScore) OR bestScore < :s",
+                ExpressionAttributeValues=values,
+                ReturnValues="ALL_NEW",
+            )
+            return _lesson_item_to_dict(resp["Attributes"])
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+
+        # Incoming score did not beat the stored best — bump everything but
+        # bestScore. The row is guaranteed to exist (the condition only fails
+        # against an existing bestScore).
+        set_clauses_2 = ["lessonId = :lid", "latestAttemptAt = :ts"]
+        values_2: dict[str, Any] = {":lid": lesson_id, ":ts": attempted_at, ":one": 1}
+        if passed:
+            set_clauses_2.append("firstPassedAt = if_not_exists(firstPassedAt, :ts)")
+        resp = await self._table.update_item(
+            Key=key,
+            UpdateExpression="SET " + ", ".join(set_clauses_2) + " ADD attemptCount :one",
+            ExpressionAttributeValues=values_2,
+            ReturnValues="ALL_NEW",
+        )
+        return _lesson_item_to_dict(resp["Attributes"])
 
     async def get_lesson_rollups(self, user_id: str) -> list[dict[str, Any]]:
         rows = await _paginate_query(
@@ -371,7 +409,9 @@ class DynamoProgressRepository:
     ) -> dict[str, Any]:
         sk = f"{_DAY_PREFIX}{date}"
         key = {"PK": _pk(user_id), "SK": sk}
-        await self._table.update_item(
+        # Cost item 6 — ReturnValues="ALL_NEW" returns the post-update item, so
+        # the trailing GetItem (a second op every call) is gone.
+        resp = await self._table.update_item(
             Key=key,
             UpdateExpression=("ADD lessonsCompleted :lc, minutesActive :ma, xpEarned :xp SET #d = if_not_exists(#d, :date)"),
             ExpressionAttributeNames={"#d": "date"},
@@ -381,9 +421,9 @@ class DynamoProgressRepository:
                 ":xp": xp_inc,
                 ":date": date,
             },
+            ReturnValues="ALL_NEW",
         )
-        resp = await self._table.get_item(Key=key)
-        return _day_item_to_dict(resp["Item"])
+        return _day_item_to_dict(resp["Attributes"])
 
     async def get_day_rollups(self, user_id: str, since: str, until: str) -> list[dict[str, Any]]:
         rows = await _paginate_query(

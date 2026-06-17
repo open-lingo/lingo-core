@@ -20,8 +20,16 @@ class UserRepository(Protocol):
         """Look up a user by unique username (for public profiles, etc.)."""
         ...
 
-    async def update_user(self, user_id: str, patch: dict[str, Any]) -> dict[str, Any]:
-        """Merge *patch* into the user record and return the full result."""
+    async def update_user(
+        self, user_id: str, patch: dict[str, Any], *, current: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Merge *patch* into the user record and return the full result.
+
+        When the caller already holds a freshly-read record (e.g. the lesson
+        batch path reads the row once at the top), pass it as ``current`` to
+        skip the implementation's own read-before-write — saves one GetItem on
+        the hot path. The caller owns the freshness guarantee.
+        """
         ...
 
     async def list_users(

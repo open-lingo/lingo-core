@@ -166,7 +166,11 @@ async def submit_attempt_batch(
             streak_touched = True
 
     if total_xp_inc or total_lingots_inc or streak_touched:
-        await users.update_user(user.id, patch)
+        # Thread the row we already read at the top of the batch so update_user
+        # skips its own read-before-write (cost item 6). Nothing mutates the
+        # user row between that read and here — streak-freeze spends touch
+        # settings, not the row.
+        await users.update_user(user.id, patch, current=user_record)
 
     # Leaderboard hook + event enrichment — read settings ONCE when XP was
     # earned.  The settings blob is reused by both the social-repo write and

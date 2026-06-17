@@ -136,8 +136,12 @@ class SqliteUserRepository:
         row = await cur.fetchone()
         return self._row_to_dict(row) if row else None
 
-    async def update_user(self, user_id: str, patch: dict[str, Any]) -> dict[str, Any]:
-        current = await self.get_user_by_id(user_id)
+    async def update_user(
+        self, user_id: str, patch: dict[str, Any], *, current: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        # Cost item 6 — accept an already-read record to skip the read-before-
+        # write on the hot batch path. Copy so the caller's dict is untouched.
+        current = dict(current) if current is not None else await self.get_user_by_id(user_id)
         if current is None:
             raise LookupError(f"No user with id={user_id!r}")
 

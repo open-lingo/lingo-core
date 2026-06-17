@@ -10,6 +10,7 @@ re-export for backward compatibility:
 from app.db.protocols.audit import AuditRepository
 from app.db.protocols.community import CommunityRepository
 from app.db.protocols.deck import DeckRepository
+from app.db.protocols.leaderboard import LeaderboardRepository
 from app.db.protocols.platform_settings import PlatformSettingsRepository
 from app.db.protocols.progress import ProgressRepository
 from app.db.protocols.quests import QuestRepository
@@ -24,6 +25,7 @@ __all__ = [
     "AuditRepository",
     "UserRepository",
     "SRSRepository",
+    "LeaderboardRepository",
     "DeckRepository",
     "StoryRepository",
     "SubscriptionRepository",
