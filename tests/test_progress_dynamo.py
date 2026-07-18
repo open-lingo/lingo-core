@@ -15,9 +15,11 @@ from typing import Any
 import boto3
 import pytest
 import pytest_asyncio
+from botocore.exceptions import ClientError
 from moto.server import ThreadedMotoServer
 
 from app.db.dynamo import _session as dynamo_session
+from app.db.dynamo import progress as progress_module
 from app.db.dynamo.progress import DynamoProgressRepository
 
 _REGION = "us-east-1"
@@ -194,3 +196,67 @@ async def test_put_attempt_idempotent_on_duplicate_client_id(repo: DynamoProgres
     # Only one attempt row exists for the lesson.
     items, _ = await repo.list_attempts(_USER, lesson_id="l9", limit=10)
     assert len(items) == 1
+
+
+def _transaction_conflict() -> ClientError:
+    """The exact prod cancellation shape: TransactWriteItems cancelled because a
+    concurrent transaction holds the same items."""
+    return ClientError(
+        {
+            "Error": {"Code": "TransactionCanceledException", "Message": "Transaction cancelled"},
+            "CancellationReasons": [
+                {"Code": "TransactionConflict", "Message": "Transaction is ongoing for the item"},
+                {"Code": "TransactionConflict", "Message": "Transaction is ongoing for the item"},
+            ],
+        },
+        "TransactWriteItems",
+    )
+
+
+async def test_put_attempt_retries_on_transaction_conflict(
+    repo: DynamoProgressRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A transient TransactionConflict (concurrent double-submit) must be retried,
+    # not surfaced as a 500. First call raises the conflict, second delegates to
+    # the real client and lands the write.
+    monkeypatch.setattr(progress_module, "_TRANSACT_BASE_BACKOFF_SEC", 0.0)
+    client = repo._table.meta.client
+    real = client.transact_write_items
+    calls = {"n": 0}
+
+    async def flaky(**kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _transaction_conflict()
+        return await real(**kwargs)
+
+    monkeypatch.setattr(client, "transact_write_items", flaky)
+    a = _attempt(cid="conflict-1", lesson="l10", ts="2026-07-18T01:37:00.756Z", score=0.75, passed=True)
+    await repo.put_attempt(_USER, a)  # must not raise
+
+    assert calls["n"] == 2  # one conflict, one success
+    found = await repo.attempt_exists(_USER, "conflict-1")
+    assert found is not None
+    assert found["attemptId"] == "a-conflict-1"
+
+
+async def test_put_attempt_reraises_after_exhausting_conflict_retries(
+    repo: DynamoProgressRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A persistent conflict (never clears) must eventually re-raise rather than
+    # loop forever — the retry budget is bounded.
+    monkeypatch.setattr(progress_module, "_TRANSACT_BASE_BACKOFF_SEC", 0.0)
+    client = repo._table.meta.client
+    calls = {"n": 0}
+
+    async def always_conflict(**kwargs: Any) -> Any:
+        calls["n"] += 1
+        raise _transaction_conflict()
+
+    monkeypatch.setattr(client, "transact_write_items", always_conflict)
+    a = _attempt(cid="conflict-2", lesson="l11", ts="2026-07-18T02:00:00.000Z", score=0.9, passed=True)
+    with pytest.raises(ClientError):
+        await repo.put_attempt(_USER, a)
+
+    # Initial try + _TRANSACT_MAX_RETRIES retries.
+    assert calls["n"] == progress_module._TRANSACT_MAX_RETRIES + 1

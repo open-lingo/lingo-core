@@ -12,8 +12,10 @@ GSI ``UserAttempts-Index``: hash ``user_id``, range ``attemptedAt``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 from decimal import Decimal
 from typing import Any, Final
 
@@ -26,6 +28,23 @@ from app.db.dynamo._session import get_shared_resource
 logger: Final = logging.getLogger("lingo.dynamo")
 
 _SERIALIZER = TypeSerializer()
+
+# put_attempt double-submit handling. Two near-simultaneous batch syncs (client
+# retry, or a double-tap on "finish lesson") issue TransactWriteItems against
+# the SAME attempt/client items and DynamoDB cancels one with a
+# TransactionConflict ("Transaction is ongoing for the item"). That is a
+# transient contention signal, NOT a client error — retry with jittered backoff.
+# On the retry the winning transaction has usually committed the rows, so our
+# attribute_not_exists guard then trips ConditionalCheckFailed and the write
+# collapses into the documented idempotent no-op. Bounded so a pathological
+# hot item can't stall the request indefinitely (worst case ~1.5s total).
+_TRANSACT_MAX_RETRIES: Final = 5
+_TRANSACT_BASE_BACKOFF_SEC: Final = 0.05
+
+
+def _transact_backoff(attempt_no: int) -> float:
+    """Full-jitter exponential backoff for a conflicted TransactWriteItems."""
+    return random.uniform(0, _TRANSACT_BASE_BACKOFF_SEC * (2**attempt_no))
 
 
 def _to_attr_map(item: dict[str, Any]) -> dict[str, Any]:
@@ -214,60 +233,72 @@ class DynamoProgressRepository:
         # actual: M` ValidationError on every write — the bug that left
         # lingo_progress at 0 items for ~12 days.
         client = self._table.meta.client
-        try:
-            await client.transact_write_items(
-                TransactItems=[
-                    {
-                        "Put": {
-                            "TableName": self._table_name,
-                            "Item": attempt_item,
-                            "ConditionExpression": "attribute_not_exists(SK)",
-                        }
-                    },
-                    {
-                        "Put": {
-                            "TableName": self._table_name,
-                            "Item": client_item,
-                            "ConditionExpression": "attribute_not_exists(SK)",
-                        }
-                    },
-                ]
-            )
-        except ClientError as exc:
-            # Idempotency: a duplicate (user_id, clientAttemptId) trips the
-            # attribute_not_exists(SK) guard on one or both Puts. Treat that
-            # as a no-op — the row already exists, which is the contract.
-            reasons = exc.response.get("CancellationReasons") or []
-            codes = {r.get("Code") for r in reasons if isinstance(r, dict)}
-            err_code = exc.response.get("Error", {}).get("Code")
-            if (
-                err_code == "TransactionCanceledException"
-                and "ConditionalCheckFailed" in codes
-                and codes <= {"ConditionalCheckFailed", "None", None}
-            ):
+        transact_items = [
+            {
+                "Put": {
+                    "TableName": self._table_name,
+                    "Item": attempt_item,
+                    "ConditionExpression": "attribute_not_exists(SK)",
+                }
+            },
+            {
+                "Put": {
+                    "TableName": self._table_name,
+                    "Item": client_item,
+                    "ConditionExpression": "attribute_not_exists(SK)",
+                }
+            },
+        ]
+        for retry_no in range(_TRANSACT_MAX_RETRIES + 1):
+            try:
+                await client.transact_write_items(TransactItems=transact_items)
                 return
-            # DIAGNOSTIC (temporary): the boto summary only prints
-            # "[ValidationError, None]" and hides which field is malformed.
-            # The real per-item reason (with a human Message) lives in the
-            # response's CancellationReasons. Log it plus the item-shape
-            # fingerprint so we can pin the bad draft attempt, then re-raise
-            # unchanged. Remove once root cause is fixed.
-            logger.warning(
-                "put_attempt transact failed: code=%s reasons=%s "
-                "fingerprint={attempt_sk=%r client_sk=%r attemptedAt=%r "
-                "lessonId=%r score=%r durationSec=%r isDraft=%s steps=%d}",
-                exc.response.get("Error", {}).get("Code"),
-                reasons,
-                attempt_item["SK"],
-                client_item["SK"],
-                attempted_at,
-                lesson_id,
-                base["score"],
-                base["durationSec"],
-                attempt["clientAttemptId"].startswith("draft:"),
-                len(base["steps"]),
-            )
-            raise
+            except ClientError as exc:
+                reasons = exc.response.get("CancellationReasons") or []
+                codes = {r.get("Code") for r in reasons if isinstance(r, dict)}
+                err_code = exc.response.get("Error", {}).get("Code")
+                # Idempotency: a duplicate (user_id, clientAttemptId) trips the
+                # attribute_not_exists(SK) guard on one or both Puts. Treat that
+                # as a no-op — the row already exists, which is the contract.
+                if (
+                    err_code == "TransactionCanceledException"
+                    and "ConditionalCheckFailed" in codes
+                    and codes <= {"ConditionalCheckFailed", "None", None}
+                ):
+                    return
+                # Concurrent double-submit: another in-flight TransactWriteItems
+                # holds these items ("Transaction is ongoing for the item").
+                # Back off and retry — the guard turns the eventual write into
+                # the idempotent no-op above once the winner commits. Recurs 12x
+                # in prod over 7 days as an unhandled 500 before this landed.
+                if (
+                    err_code == "TransactionCanceledException"
+                    and "TransactionConflict" in codes
+                    and retry_no < _TRANSACT_MAX_RETRIES
+                ):
+                    await asyncio.sleep(_transact_backoff(retry_no))
+                    continue
+                # Anything else (or conflict past the retry budget): log the
+                # per-item reasons — the boto summary only prints
+                # "[ValidationError, None]" and hides which field is malformed —
+                # plus the item-shape fingerprint, then re-raise unchanged.
+                logger.warning(
+                    "put_attempt transact failed: code=%s reasons=%s retries=%d "
+                    "fingerprint={attempt_sk=%r client_sk=%r attemptedAt=%r "
+                    "lessonId=%r score=%r durationSec=%r isDraft=%s steps=%d}",
+                    err_code,
+                    reasons,
+                    retry_no,
+                    attempt_item["SK"],
+                    client_item["SK"],
+                    attempted_at,
+                    lesson_id,
+                    base["score"],
+                    base["durationSec"],
+                    attempt["clientAttemptId"].startswith("draft:"),
+                    len(base["steps"]),
+                )
+                raise
 
     async def list_attempts(
         self,
