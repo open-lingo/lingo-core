@@ -175,20 +175,25 @@ class SqliteQuestRepository:
         return await self.get_quest(user_id, quest_id)
 
     async def claim(self, user_id: str, quest_id: str) -> dict[str, Any] | None:
-        current = await self.get_quest(user_id, quest_id)
-        if current is None:
-            return None
-        if current["status"] == "completed":
-            return current
-        if current["status"] != "claimable":
-            return None
-        await self._conn().execute(
+        """Transition ``claimable`` -> ``completed`` and stamp ``reward_granted``.
+
+        Transition-only contract: returns the freshly-completed row ONLY when
+        THIS call performed the flip; None otherwise (missing, not-claimable,
+        or already-completed). A single conditional UPDATE keyed on
+        ``status = 'claimable'`` makes it atomic — concurrent claims serialize
+        on the shared aiosqlite connection, so exactly one gets rowcount == 1
+        and the other gets 0. Mirrors the Dynamo ConditionExpression so the
+        router grants rewards exactly once on both backends.
+        """
+        cur = await self._conn().execute(
             """UPDATE quests
                SET status = 'completed', reward_granted = 1
-               WHERE user_id = ? AND id = ?""",
+               WHERE user_id = ? AND id = ? AND status = 'claimable'""",
             (user_id, quest_id),
         )
         await self._conn().commit()
+        if not cur.rowcount:
+            return None
         return await self.get_quest(user_id, quest_id)
 
     async def delete_user_quests(self, user_id: str, types: list[str] | None = None) -> int:

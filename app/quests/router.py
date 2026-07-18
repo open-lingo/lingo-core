@@ -276,6 +276,19 @@ async def claim_quest(
 
         claimed = await quests_repo.claim(user_id, quest_id)
         if claimed is None:
+            # claim() is transition-only: None means THIS request did not flip
+            # claimable -> completed. Either a concurrent claim won the race, or
+            # the quest became unclaimable. Re-read to decide: if it's now
+            # completed, respond idempotently with zero grants (the winner already
+            # credited the user) — never double-award. Anything else is a 409.
+            latest = await quests_repo.get_quest(user_id, quest_id)
+            if latest is not None and latest["status"] == "completed":
+                return QuestClaimResponse(
+                    quest=_row_to_quest(latest),
+                    lingots_granted=0,
+                    xp_granted=0,
+                    reward_granted=True,
+                )
             raise HTTPException(status.HTTP_409_CONFLICT, "Quest could not be claimed")
 
         lingots_inc = int(current.get("reward_lingots") or 0)

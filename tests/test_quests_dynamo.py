@@ -225,9 +225,12 @@ async def test_claim_when_claimable(repo: DynamoQuestRepository) -> None:
     assert claimed["reward_granted"] is True
 
 
-async def test_claim_when_already_completed_is_idempotent(
+async def test_claim_when_already_completed_returns_none(
     repo: DynamoQuestRepository,
 ) -> None:
+    """Transition-only contract: claiming an already-completed quest performs
+    no flip, so it returns None. The row stays completed. This is what keeps
+    reward crediting exactly-once — the router only grants on a non-None row."""
     await repo.put_quest(
         _quest(
             "q",
@@ -238,9 +241,12 @@ async def test_claim_when_already_completed_is_idempotent(
         ),
     )
     result = await repo.claim("u1", "q")
-    assert result is not None
-    assert result["status"] == "completed"
-    assert result["reward_granted"] is True
+    assert result is None
+    # Row is untouched.
+    got = await repo.get_quest("u1", "q")
+    assert got is not None
+    assert got["status"] == "completed"
+    assert got["reward_granted"] is True
 
 
 async def test_claim_when_not_yet_claimable_returns_none(
@@ -320,6 +326,9 @@ async def test_update_then_claim_full_lifecycle(repo: DynamoQuestRepository) -> 
     claimed = await repo.claim("u1", "q")
     assert claimed and claimed["status"] == "completed" and claimed["reward_granted"]
 
-    # Idempotent re-claim.
+    # Re-claim performs no transition (transition-only contract) -> None,
+    # while the row stays completed.
     again = await repo.claim("u1", "q")
-    assert again and again["status"] == "completed"
+    assert again is None
+    final = await repo.get_quest("u1", "q")
+    assert final and final["status"] == "completed"

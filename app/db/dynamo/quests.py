@@ -190,13 +190,14 @@ class DynamoQuestRepository:
         return _item_to_quest(attrs) if attrs else None
 
     async def claim(self, user_id: str, quest_id: str) -> dict[str, Any] | None:
-        """Mark the quest ``completed`` and stamp ``reward_granted`` true.
+        """Transition ``claimable`` -> ``completed`` and stamp ``reward_granted``.
 
-        Atomic via ConditionExpression ``status = claimable``. On condition
-        failure we read back the row to disambiguate:
-        - status == completed → return current row (idempotent no-op)
-        - anything else → return None (caller surfaces 409)
-        Returns None if the row doesn't exist.
+        Transition-only contract: returns the freshly-completed row ONLY when
+        THIS call performed the flip. Returns None in every other case —
+        missing row, not-yet-claimable, or already-completed by a concurrent
+        request. This is what makes reward crediting exactly-once: the router
+        grants only when it gets a row back, so a concurrent claim loser
+        (ConditionalCheckFailed) never double-awards.
         """
         try:
             resp = await self._table.update_item(
@@ -214,12 +215,8 @@ class DynamoQuestRepository:
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
                 raise
-            # Condition failed — disambiguate via fresh read.
-            current = await self.get_quest(user_id, quest_id)
-            if current is None:
-                return None
-            if current["status"] == "completed":
-                return current
+            # Condition failed: row missing, not claimable, or already claimed
+            # by a concurrent request. No transition happened here.
             return None
 
         attrs = resp.get("Attributes")

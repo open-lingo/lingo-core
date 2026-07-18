@@ -35,9 +35,12 @@ class QuestRepository(Protocol):
         ...
 
     async def claim(self, user_id: str, quest_id: str) -> dict[str, Any] | None:
-        """Mark the quest ``completed`` and stamp ``reward_granted`` true.
-        No-op + return current row if already completed. Returns None if the
-        quest doesn't exist or isn't yet claimable."""
+        """Atomically transition ``claimable`` -> ``completed`` and stamp
+        ``reward_granted`` true. Transition-only: returns the freshly-completed
+        row ONLY when THIS call performed the flip. Returns None in every other
+        case — missing row, not-yet-claimable, or already-completed (including
+        a concurrent claim that lost the race). This exactly-once contract lets
+        the router credit rewards precisely once even under concurrent claims."""
         ...
 
     async def delete_user_quests(self, user_id: str, types: list[str] | None = None) -> int:

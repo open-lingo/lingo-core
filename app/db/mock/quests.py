@@ -59,13 +59,12 @@ class MockQuestRepository:
         return deepcopy(row)
 
     async def claim(self, user_id: str, quest_id: str) -> dict[str, Any] | None:
+        # Transition-only: return the freshly-completed row ONLY when this call
+        # flips claimable -> completed; None otherwise (missing, not-claimable,
+        # already-completed). Matches the SQLite/Dynamo contract so the router
+        # credits rewards exactly once.
         row = self._quests.get(user_id, {}).get(quest_id)
-        if not row:
-            return None
-        status = row.get("status")
-        if status == "completed":
-            return deepcopy(row)
-        if status != "claimable":
+        if not row or row.get("status") != "claimable":
             return None
         row["status"] = "completed"
         row["reward_granted"] = True
