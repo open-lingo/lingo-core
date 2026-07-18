@@ -11,14 +11,35 @@ Username uniqueness is enforced via a second GSI:
   GSI "Username-Index"  hash = GSI1PK (= USERNAME#<username>)
 """
 
+import json
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 from app.db.dynamo._session import get_shared_resource
 
 _RECORD_SK = "RECORD"
 _SETTINGS_SK = "SETTINGS"
+
+
+def _demote_decimals(obj: Any) -> Any:
+    """Normalize DynamoDB ``Decimal`` numbers back to native ``int``/``float``.
+
+    DynamoDB deserializes every number as ``Decimal``; the SQLite repo returns
+    the settings blob through ``json.loads``, which yields native ``int``/
+    ``float``. Without this, the two backends diverge inside the settings blob —
+    e.g. ``purchase_shop_item`` filters inventory with ``isinstance(v, (int,
+    float))``, which a ``Decimal`` silently fails, wiping stored consumable
+    counts on every prod purchase while dev (SQLite) worked fine.
+    """
+    if isinstance(obj, Decimal):
+        return int(obj) if obj % 1 == 0 else float(obj)
+    if isinstance(obj, dict):
+        return {k: _demote_decimals(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_demote_decimals(v) for v in obj]
+    return obj
 
 
 class DynamoUserRepository:
@@ -230,7 +251,32 @@ class DynamoUserRepository:
     async def get_settings(self, user_id: str) -> dict[str, Any] | None:
         resp = await self._table.get_item(Key={"PK": self._pk(user_id), "SK": _SETTINGS_SK})
         item = resp.get("Item")
-        return self._strip_keys(item) if item else None
+        return _demote_decimals(self._strip_keys(item)) if item else None
+
+    async def get_settings_bulk(self, user_ids: list[str]) -> dict[str, dict[str, Any]]:
+        # Audit #19: one BatchGetItem per ≤100 keys instead of N sequential
+        # GetItems. Recovers the uuid from the PK (settings items carry no id
+        # attribute). Retries UnprocessedKeys a bounded number of times.
+        if not user_ids:
+            return {}
+        unique = list(dict.fromkeys(user_ids))
+        resource = await get_shared_resource(self._region)
+        result: dict[str, dict[str, Any]] = {}
+        for i in range(0, len(unique), 100):
+            chunk = unique[i : i + 100]
+            pending = [{"PK": self._pk(uid), "SK": _SETTINGS_SK} for uid in chunk]
+            for _ in range(4):  # bounded retry loop for throttled UnprocessedKeys
+                if not pending:
+                    break
+                resp = await resource.batch_get_item(
+                    RequestItems={self._table_name: {"Keys": pending}}
+                )
+                for item in resp.get("Responses", {}).get(self._table_name, []):
+                    uid = str(item["PK"]).split("#", 1)[1]
+                    result[uid] = _demote_decimals(self._strip_keys(item))
+                unprocessed = resp.get("UnprocessedKeys", {}).get(self._table_name, {})
+                pending = unprocessed.get("Keys", []) if unprocessed else []
+        return result
 
     async def update_settings(self, user_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         def _deep_merge(base: dict[str, Any], update: dict[str, Any]) -> None:
@@ -242,6 +288,13 @@ class DynamoUserRepository:
 
         current = await self.get_settings(user_id) or {}
         _deep_merge(current, patch)
-        item = {"PK": self._pk(user_id), "SK": _SETTINGS_SK, **current}
+        # DynamoDB's serializer rejects native floats ("Float types are not
+        # supported. Use Decimal types instead."), so a settings blob carrying
+        # any float (e.g. a target-retention preference) would 500 the write on
+        # prod while SQLite persisted it fine. Round-trip through JSON with
+        # parse_float=Decimal to promote floats; get_settings demotes them back
+        # so callers see native numbers on both backends.
+        item_body = json.loads(json.dumps(current), parse_float=Decimal)
+        item = {"PK": self._pk(user_id), "SK": _SETTINGS_SK, **item_body}
         await self._table.put_item(Item=item)
         return current

@@ -169,3 +169,51 @@ async def test_dynamo_unlock_map_round_trip(dynamo_user_repo) -> None:
     await dynamo_user_repo.update_settings(user_id, {"learning": {"unlockedAtoms": merged}})
     settings = await dynamo_user_repo.get_settings(user_id)
     assert settings["learning"]["unlockedAtoms"] == ["ja:a", "ja:b", "ja:c"]
+
+
+async def test_dynamo_settings_numbers_are_native_not_decimal(dynamo_user_repo) -> None:
+    """DynamoDB deserializes numbers as Decimal; get_settings must demote them
+    to native int/float so consumers behave identically to the SQLite backend.
+    Regression guard for the shop-inventory ``isinstance(v, (int, float))``
+    filter, which a Decimal silently fails."""
+    from decimal import Decimal
+
+    user_id = "u-dynamo-nums"
+    await dynamo_user_repo.update_settings(
+        user_id, {"shop": {"inventory": {"streak-freeze": 3}}, "learning": {"targetRetention": 0.95}}
+    )
+    settings = await dynamo_user_repo.get_settings(user_id)
+
+    qty = settings["shop"]["inventory"]["streak-freeze"]
+    assert qty == 3
+    assert type(qty) is int and not isinstance(qty, Decimal)
+    assert isinstance(qty, (int, float))  # the exact filter used in purchase_shop_item
+
+    retention = settings["learning"]["targetRetention"]
+    assert type(retention) is float and not isinstance(retention, Decimal)
+
+
+async def test_dynamo_shop_inventory_increments_across_purchases(dynamo_user_repo) -> None:
+    """Mirror purchase_shop_item's inventory reconstruction against the prod
+    backend: buying a consumable twice must stockpile to 2, and must not wipe a
+    sibling consumable. Before the Decimal demotion fix the isinstance filter
+    dropped the previously-stored Decimal counts, resetting quantity to 1 and
+    losing other items on every purchase."""
+    user_id = "u-dynamo-shop"
+
+    # Seed an existing consumable stash (as a prior purchase would have).
+    await dynamo_user_repo.update_settings(
+        user_id, {"shop": {"inventory": {"streak-freeze": 1, "xp-boost": 2}}}
+    )
+
+    # Replay the router's reconstruction on the re-read settings.
+    settings = await dynamo_user_repo.get_settings(user_id) or {}
+    shop_state = dict(settings.get("shop") or {})
+    inventory = {str(k): int(v) for k, v in (shop_state.get("inventory") or {}).items() if isinstance(v, (int, float))}
+    inventory["streak-freeze"] = inventory.get("streak-freeze", 0) + 1
+    shop_state["inventory"] = inventory
+    await dynamo_user_repo.update_settings(user_id, {"shop": shop_state})
+
+    final = await dynamo_user_repo.get_settings(user_id)
+    assert final["shop"]["inventory"]["streak-freeze"] == 2
+    assert final["shop"]["inventory"]["xp-boost"] == 2  # sibling not wiped
