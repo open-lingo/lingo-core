@@ -105,6 +105,7 @@ class EdgeTtsProvider(TtsProvider):
     LANG_CONFIG: dict[str, dict[str, str]] = {
         "ja": {"default_voice": "ja-JP-NanamiNeural"},
         "es": {"default_voice": "es-MX-DaliaNeural"},
+        "ko": {"default_voice": "ko-KR-SunHiNeural"},
     }
 
     # Edge-TTS currently exposes only two ja voices (Microsoft retired the
@@ -121,6 +122,10 @@ class EdgeTtsProvider(TtsProvider):
         "es": [
             "es-MX-DaliaNeural",    # Female
             "es-MX-JorgeNeural",    # Male
+        ],
+        "ko": [
+            "ko-KR-SunHiNeural",    # Female (course default)
+            "ko-KR-InJoonNeural",   # Male
         ],
     }
 
