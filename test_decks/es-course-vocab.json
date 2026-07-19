@@ -1,0 +1,1743 @@
+{
+  "name": "es-course-vocab",
+  "languageId": "es",
+  "_note": "Auto-emitted by src/features/flashcards/data/__tests__/emitCourseVocabTtsDecks.test.ts (EMIT_COURSE_VOCAB_TTS_DECKS=1). Front-of-card spoken surface for every SRS-eligible course flashcard atom. Edit the catalog, re-emit, then run the TTS generator (--lang es).",
+  "cards": [
+    {
+      "id": "es-vocab-0000",
+      "front": "España"
+    },
+    {
+      "id": "es-vocab-0001",
+      "front": "Estados Unidos"
+    },
+    {
+      "id": "es-vocab-0002",
+      "front": "México"
+    },
+    {
+      "id": "es-vocab-0003",
+      "front": "a"
+    },
+    {
+      "id": "es-vocab-0004",
+      "front": "a pie"
+    },
+    {
+      "id": "es-vocab-0005",
+      "front": "a veces"
+    },
+    {
+      "id": "es-vocab-0006",
+      "front": "abrir"
+    },
+    {
+      "id": "es-vocab-0007",
+      "front": "abuela"
+    },
+    {
+      "id": "es-vocab-0008",
+      "front": "abuelo"
+    },
+    {
+      "id": "es-vocab-0009",
+      "front": "acostarse"
+    },
+    {
+      "id": "es-vocab-0010",
+      "front": "adiós"
+    },
+    {
+      "id": "es-vocab-0011",
+      "front": "aeropuerto"
+    },
+    {
+      "id": "es-vocab-0012",
+      "front": "agua"
+    },
+    {
+      "id": "es-vocab-0013",
+      "front": "ahora"
+    },
+    {
+      "id": "es-vocab-0014",
+      "front": "al"
+    },
+    {
+      "id": "es-vocab-0015",
+      "front": "al lado de"
+    },
+    {
+      "id": "es-vocab-0016",
+      "front": "almorzar"
+    },
+    {
+      "id": "es-vocab-0017",
+      "front": "almuerzo"
+    },
+    {
+      "id": "es-vocab-0018",
+      "front": "alto"
+    },
+    {
+      "id": "es-vocab-0019",
+      "front": "amarillo"
+    },
+    {
+      "id": "es-vocab-0020",
+      "front": "amiga"
+    },
+    {
+      "id": "es-vocab-0021",
+      "front": "amigo"
+    },
+    {
+      "id": "es-vocab-0022",
+      "front": "antes de"
+    },
+    {
+      "id": "es-vocab-0023",
+      "front": "apartamento"
+    },
+    {
+      "id": "es-vocab-0024",
+      "front": "aprender"
+    },
+    {
+      "id": "es-vocab-0025",
+      "front": "aquí"
+    },
+    {
+      "id": "es-vocab-0026",
+      "front": "arroz"
+    },
+    {
+      "id": "es-vocab-0027",
+      "front": "autobús"
+    },
+    {
+      "id": "es-vocab-0028",
+      "front": "avión"
+    },
+    {
+      "id": "es-vocab-0029",
+      "front": "ayuda"
+    },
+    {
+      "id": "es-vocab-0030",
+      "front": "azul"
+    },
+    {
+      "id": "es-vocab-0031",
+      "front": "año"
+    },
+    {
+      "id": "es-vocab-0032",
+      "front": "años"
+    },
+    {
+      "id": "es-vocab-0033",
+      "front": "bailar"
+    },
+    {
+      "id": "es-vocab-0034",
+      "front": "bajo"
+    },
+    {
+      "id": "es-vocab-0035",
+      "front": "banco"
+    },
+    {
+      "id": "es-vocab-0036",
+      "front": "barato"
+    },
+    {
+      "id": "es-vocab-0037",
+      "front": "bañarse"
+    },
+    {
+      "id": "es-vocab-0038",
+      "front": "baño"
+    },
+    {
+      "id": "es-vocab-0039",
+      "front": "beber"
+    },
+    {
+      "id": "es-vocab-0040",
+      "front": "bicicleta"
+    },
+    {
+      "id": "es-vocab-0041",
+      "front": "bien"
+    },
+    {
+      "id": "es-vocab-0042",
+      "front": "blanco"
+    },
+    {
+      "id": "es-vocab-0043",
+      "front": "boleto"
+    },
+    {
+      "id": "es-vocab-0044",
+      "front": "bonito"
+    },
+    {
+      "id": "es-vocab-0045",
+      "front": "buenas noches"
+    },
+    {
+      "id": "es-vocab-0046",
+      "front": "buenas tardes"
+    },
+    {
+      "id": "es-vocab-0047",
+      "front": "bueno"
+    },
+    {
+      "id": "es-vocab-0048",
+      "front": "buenos días"
+    },
+    {
+      "id": "es-vocab-0049",
+      "front": "buscar"
+    },
+    {
+      "id": "es-vocab-0050",
+      "front": "café"
+    },
+    {
+      "id": "es-vocab-0051",
+      "front": "calle"
+    },
+    {
+      "id": "es-vocab-0052",
+      "front": "calor"
+    },
+    {
+      "id": "es-vocab-0053",
+      "front": "cama"
+    },
+    {
+      "id": "es-vocab-0054",
+      "front": "caminar"
+    },
+    {
+      "id": "es-vocab-0055",
+      "front": "camisa"
+    },
+    {
+      "id": "es-vocab-0056",
+      "front": "camiseta"
+    },
+    {
+      "id": "es-vocab-0057",
+      "front": "cansado"
+    },
+    {
+      "id": "es-vocab-0058",
+      "front": "cantar"
+    },
+    {
+      "id": "es-vocab-0059",
+      "front": "cara"
+    },
+    {
+      "id": "es-vocab-0060",
+      "front": "carne"
+    },
+    {
+      "id": "es-vocab-0061",
+      "front": "caro"
+    },
+    {
+      "id": "es-vocab-0062",
+      "front": "carro"
+    },
+    {
+      "id": "es-vocab-0063",
+      "front": "carta"
+    },
+    {
+      "id": "es-vocab-0064",
+      "front": "casa"
+    },
+    {
+      "id": "es-vocab-0065",
+      "front": "catorce"
+    },
+    {
+      "id": "es-vocab-0066",
+      "front": "celular"
+    },
+    {
+      "id": "es-vocab-0067",
+      "front": "cena"
+    },
+    {
+      "id": "es-vocab-0068",
+      "front": "centro"
+    },
+    {
+      "id": "es-vocab-0069",
+      "front": "cepillarse"
+    },
+    {
+      "id": "es-vocab-0070",
+      "front": "cerca"
+    },
+    {
+      "id": "es-vocab-0071",
+      "front": "cero"
+    },
+    {
+      "id": "es-vocab-0072",
+      "front": "cerrar"
+    },
+    {
+      "id": "es-vocab-0073",
+      "front": "cerveza"
+    },
+    {
+      "id": "es-vocab-0074",
+      "front": "chaqueta"
+    },
+    {
+      "id": "es-vocab-0075",
+      "front": "cien"
+    },
+    {
+      "id": "es-vocab-0076",
+      "front": "cinco"
+    },
+    {
+      "id": "es-vocab-0077",
+      "front": "cincuenta"
+    },
+    {
+      "id": "es-vocab-0078",
+      "front": "cine"
+    },
+    {
+      "id": "es-vocab-0079",
+      "front": "ciudad"
+    },
+    {
+      "id": "es-vocab-0080",
+      "front": "clima"
+    },
+    {
+      "id": "es-vocab-0081",
+      "front": "cocina"
+    },
+    {
+      "id": "es-vocab-0082",
+      "front": "cocinar"
+    },
+    {
+      "id": "es-vocab-0083",
+      "front": "color"
+    },
+    {
+      "id": "es-vocab-0084",
+      "front": "comedor"
+    },
+    {
+      "id": "es-vocab-0085",
+      "front": "comer"
+    },
+    {
+      "id": "es-vocab-0086",
+      "front": "comida"
+    },
+    {
+      "id": "es-vocab-0087",
+      "front": "comiendo"
+    },
+    {
+      "id": "es-vocab-0088",
+      "front": "comprar"
+    },
+    {
+      "id": "es-vocab-0089",
+      "front": "comprender"
+    },
+    {
+      "id": "es-vocab-0090",
+      "front": "computadora"
+    },
+    {
+      "id": "es-vocab-0091",
+      "front": "con"
+    },
+    {
+      "id": "es-vocab-0092",
+      "front": "conocer"
+    },
+    {
+      "id": "es-vocab-0093",
+      "front": "conozco"
+    },
+    {
+      "id": "es-vocab-0094",
+      "front": "contento"
+    },
+    {
+      "id": "es-vocab-0095",
+      "front": "correr"
+    },
+    {
+      "id": "es-vocab-0096",
+      "front": "cosa"
+    },
+    {
+      "id": "es-vocab-0097",
+      "front": "cuadro"
+    },
+    {
+      "id": "es-vocab-0098",
+      "front": "cuarenta"
+    },
+    {
+      "id": "es-vocab-0099",
+      "front": "cuarto"
+    },
+    {
+      "id": "es-vocab-0100",
+      "front": "cuatro"
+    },
+    {
+      "id": "es-vocab-0101",
+      "front": "cuesta"
+    },
+    {
+      "id": "es-vocab-0102",
+      "front": "cuál"
+    },
+    {
+      "id": "es-vocab-0103",
+      "front": "cuándo"
+    },
+    {
+      "id": "es-vocab-0104",
+      "front": "cuánto"
+    },
+    {
+      "id": "es-vocab-0105",
+      "front": "cómo"
+    },
+    {
+      "id": "es-vocab-0106",
+      "front": "de"
+    },
+    {
+      "id": "es-vocab-0107",
+      "front": "del"
+    },
+    {
+      "id": "es-vocab-0108",
+      "front": "deporte"
+    },
+    {
+      "id": "es-vocab-0109",
+      "front": "derecha"
+    },
+    {
+      "id": "es-vocab-0110",
+      "front": "derecho"
+    },
+    {
+      "id": "es-vocab-0111",
+      "front": "desayunar"
+    },
+    {
+      "id": "es-vocab-0112",
+      "front": "desayuno"
+    },
+    {
+      "id": "es-vocab-0113",
+      "front": "descansar"
+    },
+    {
+      "id": "es-vocab-0114",
+      "front": "despertarse"
+    },
+    {
+      "id": "es-vocab-0115",
+      "front": "después"
+    },
+    {
+      "id": "es-vocab-0116",
+      "front": "después de"
+    },
+    {
+      "id": "es-vocab-0117",
+      "front": "diente"
+    },
+    {
+      "id": "es-vocab-0118",
+      "front": "diez"
+    },
+    {
+      "id": "es-vocab-0119",
+      "front": "difícil"
+    },
+    {
+      "id": "es-vocab-0120",
+      "front": "dinero"
+    },
+    {
+      "id": "es-vocab-0121",
+      "front": "doce"
+    },
+    {
+      "id": "es-vocab-0122",
+      "front": "doctor"
+    },
+    {
+      "id": "es-vocab-0123",
+      "front": "doctora"
+    },
+    {
+      "id": "es-vocab-0124",
+      "front": "domingo"
+    },
+    {
+      "id": "es-vocab-0125",
+      "front": "dormir"
+    },
+    {
+      "id": "es-vocab-0126",
+      "front": "dormitorio"
+    },
+    {
+      "id": "es-vocab-0127",
+      "front": "dos"
+    },
+    {
+      "id": "es-vocab-0128",
+      "front": "doscientos"
+    },
+    {
+      "id": "es-vocab-0129",
+      "front": "ducharse"
+    },
+    {
+      "id": "es-vocab-0130",
+      "front": "día"
+    },
+    {
+      "id": "es-vocab-0131",
+      "front": "dólar"
+    },
+    {
+      "id": "es-vocab-0132",
+      "front": "dónde"
+    },
+    {
+      "id": "es-vocab-0133",
+      "front": "efectivo"
+    },
+    {
+      "id": "es-vocab-0134",
+      "front": "el"
+    },
+    {
+      "id": "es-vocab-0135",
+      "front": "ella"
+    },
+    {
+      "id": "es-vocab-0136",
+      "front": "ellas"
+    },
+    {
+      "id": "es-vocab-0137",
+      "front": "ellos"
+    },
+    {
+      "id": "es-vocab-0138",
+      "front": "empezar"
+    },
+    {
+      "id": "es-vocab-0139",
+      "front": "en"
+    },
+    {
+      "id": "es-vocab-0140",
+      "front": "enero"
+    },
+    {
+      "id": "es-vocab-0141",
+      "front": "enfermo"
+    },
+    {
+      "id": "es-vocab-0142",
+      "front": "ensalada"
+    },
+    {
+      "id": "es-vocab-0143",
+      "front": "entender"
+    },
+    {
+      "id": "es-vocab-0144",
+      "front": "eres"
+    },
+    {
+      "id": "es-vocab-0145",
+      "front": "es"
+    },
+    {
+      "id": "es-vocab-0146",
+      "front": "esa"
+    },
+    {
+      "id": "es-vocab-0147",
+      "front": "escribir"
+    },
+    {
+      "id": "es-vocab-0148",
+      "front": "escuchar"
+    },
+    {
+      "id": "es-vocab-0149",
+      "front": "escuela"
+    },
+    {
+      "id": "es-vocab-0150",
+      "front": "ese"
+    },
+    {
+      "id": "es-vocab-0151",
+      "front": "español"
+    },
+    {
+      "id": "es-vocab-0152",
+      "front": "esposa"
+    },
+    {
+      "id": "es-vocab-0153",
+      "front": "esposo"
+    },
+    {
+      "id": "es-vocab-0154",
+      "front": "esquina"
+    },
+    {
+      "id": "es-vocab-0155",
+      "front": "esta"
+    },
+    {
+      "id": "es-vocab-0156",
+      "front": "esta noche"
+    },
+    {
+      "id": "es-vocab-0157",
+      "front": "estadounidense"
+    },
+    {
+      "id": "es-vocab-0158",
+      "front": "estamos"
+    },
+    {
+      "id": "es-vocab-0159",
+      "front": "estar"
+    },
+    {
+      "id": "es-vocab-0160",
+      "front": "este"
+    },
+    {
+      "id": "es-vocab-0161",
+      "front": "este fin de semana"
+    },
+    {
+      "id": "es-vocab-0162",
+      "front": "estoy"
+    },
+    {
+      "id": "es-vocab-0163",
+      "front": "estoy aprendiendo"
+    },
+    {
+      "id": "es-vocab-0164",
+      "front": "estudiante"
+    },
+    {
+      "id": "es-vocab-0165",
+      "front": "estudiar"
+    },
+    {
+      "id": "es-vocab-0166",
+      "front": "estufa"
+    },
+    {
+      "id": "es-vocab-0167",
+      "front": "está"
+    },
+    {
+      "id": "es-vocab-0168",
+      "front": "están"
+    },
+    {
+      "id": "es-vocab-0169",
+      "front": "estás"
+    },
+    {
+      "id": "es-vocab-0170",
+      "front": "falda"
+    },
+    {
+      "id": "es-vocab-0171",
+      "front": "familia"
+    },
+    {
+      "id": "es-vocab-0172",
+      "front": "favorito"
+    },
+    {
+      "id": "es-vocab-0173",
+      "front": "feo"
+    },
+    {
+      "id": "es-vocab-0174",
+      "front": "fiesta"
+    },
+    {
+      "id": "es-vocab-0175",
+      "front": "fruta"
+    },
+    {
+      "id": "es-vocab-0176",
+      "front": "frío"
+    },
+    {
+      "id": "es-vocab-0177",
+      "front": "fácil"
+    },
+    {
+      "id": "es-vocab-0178",
+      "front": "fútbol"
+    },
+    {
+      "id": "es-vocab-0179",
+      "front": "gato"
+    },
+    {
+      "id": "es-vocab-0180",
+      "front": "gracias"
+    },
+    {
+      "id": "es-vocab-0181",
+      "front": "grande"
+    },
+    {
+      "id": "es-vocab-0182",
+      "front": "gustar"
+    },
+    {
+      "id": "es-vocab-0183",
+      "front": "habitación"
+    },
+    {
+      "id": "es-vocab-0184",
+      "front": "hablando"
+    },
+    {
+      "id": "es-vocab-0185",
+      "front": "hablar"
+    },
+    {
+      "id": "es-vocab-0186",
+      "front": "hace calor"
+    },
+    {
+      "id": "es-vocab-0187",
+      "front": "hace frío"
+    },
+    {
+      "id": "es-vocab-0188",
+      "front": "hacer"
+    },
+    {
+      "id": "es-vocab-0189",
+      "front": "hago"
+    },
+    {
+      "id": "es-vocab-0190",
+      "front": "hasta luego"
+    },
+    {
+      "id": "es-vocab-0191",
+      "front": "hay"
+    },
+    {
+      "id": "es-vocab-0192",
+      "front": "hermana"
+    },
+    {
+      "id": "es-vocab-0193",
+      "front": "hermano"
+    },
+    {
+      "id": "es-vocab-0194",
+      "front": "hija"
+    },
+    {
+      "id": "es-vocab-0195",
+      "front": "hijo"
+    },
+    {
+      "id": "es-vocab-0196",
+      "front": "hola"
+    },
+    {
+      "id": "es-vocab-0197",
+      "front": "hora"
+    },
+    {
+      "id": "es-vocab-0198",
+      "front": "hotel"
+    },
+    {
+      "id": "es-vocab-0199",
+      "front": "hoy"
+    },
+    {
+      "id": "es-vocab-0200",
+      "front": "huevo"
+    },
+    {
+      "id": "es-vocab-0201",
+      "front": "idea"
+    },
+    {
+      "id": "es-vocab-0202",
+      "front": "iglesia"
+    },
+    {
+      "id": "es-vocab-0203",
+      "front": "inglés"
+    },
+    {
+      "id": "es-vocab-0204",
+      "front": "inteligente"
+    },
+    {
+      "id": "es-vocab-0205",
+      "front": "interesante"
+    },
+    {
+      "id": "es-vocab-0206",
+      "front": "invierno"
+    },
+    {
+      "id": "es-vocab-0207",
+      "front": "ir"
+    },
+    {
+      "id": "es-vocab-0208",
+      "front": "izquierda"
+    },
+    {
+      "id": "es-vocab-0209",
+      "front": "jardín"
+    },
+    {
+      "id": "es-vocab-0210",
+      "front": "jueves"
+    },
+    {
+      "id": "es-vocab-0211",
+      "front": "jugar"
+    },
+    {
+      "id": "es-vocab-0212",
+      "front": "jugo"
+    },
+    {
+      "id": "es-vocab-0213",
+      "front": "la"
+    },
+    {
+      "id": "es-vocab-0214",
+      "front": "la cuenta"
+    },
+    {
+      "id": "es-vocab-0215",
+      "front": "las"
+    },
+    {
+      "id": "es-vocab-0216",
+      "front": "lavarse"
+    },
+    {
+      "id": "es-vocab-0217",
+      "front": "le gusta"
+    },
+    {
+      "id": "es-vocab-0218",
+      "front": "leche"
+    },
+    {
+      "id": "es-vocab-0219",
+      "front": "leer"
+    },
+    {
+      "id": "es-vocab-0220",
+      "front": "lejos"
+    },
+    {
+      "id": "es-vocab-0221",
+      "front": "levantarse"
+    },
+    {
+      "id": "es-vocab-0222",
+      "front": "libro"
+    },
+    {
+      "id": "es-vocab-0223",
+      "front": "libro favorito"
+    },
+    {
+      "id": "es-vocab-0224",
+      "front": "llave"
+    },
+    {
+      "id": "es-vocab-0225",
+      "front": "llegar"
+    },
+    {
+      "id": "es-vocab-0226",
+      "front": "llevar"
+    },
+    {
+      "id": "es-vocab-0227",
+      "front": "llueve"
+    },
+    {
+      "id": "es-vocab-0228",
+      "front": "lluvia"
+    },
+    {
+      "id": "es-vocab-0229",
+      "front": "los"
+    },
+    {
+      "id": "es-vocab-0230",
+      "front": "luego"
+    },
+    {
+      "id": "es-vocab-0231",
+      "front": "lunes"
+    },
+    {
+      "id": "es-vocab-0232",
+      "front": "lámpara"
+    },
+    {
+      "id": "es-vocab-0233",
+      "front": "lápiz"
+    },
+    {
+      "id": "es-vocab-0234",
+      "front": "madre"
+    },
+    {
+      "id": "es-vocab-0235",
+      "front": "maestra"
+    },
+    {
+      "id": "es-vocab-0236",
+      "front": "maestro"
+    },
+    {
+      "id": "es-vocab-0237",
+      "front": "mal"
+    },
+    {
+      "id": "es-vocab-0238",
+      "front": "maleta"
+    },
+    {
+      "id": "es-vocab-0239",
+      "front": "malo"
+    },
+    {
+      "id": "es-vocab-0240",
+      "front": "mamá"
+    },
+    {
+      "id": "es-vocab-0241",
+      "front": "mano"
+    },
+    {
+      "id": "es-vocab-0242",
+      "front": "manzana"
+    },
+    {
+      "id": "es-vocab-0243",
+      "front": "mapa"
+    },
+    {
+      "id": "es-vocab-0244",
+      "front": "martes"
+    },
+    {
+      "id": "es-vocab-0245",
+      "front": "mañana"
+    },
+    {
+      "id": "es-vocab-0246",
+      "front": "me gusta"
+    },
+    {
+      "id": "es-vocab-0247",
+      "front": "me levanto"
+    },
+    {
+      "id": "es-vocab-0248",
+      "front": "me llamo"
+    },
+    {
+      "id": "es-vocab-0249",
+      "front": "media"
+    },
+    {
+      "id": "es-vocab-0250",
+      "front": "menos"
+    },
+    {
+      "id": "es-vocab-0251",
+      "front": "mercado"
+    },
+    {
+      "id": "es-vocab-0252",
+      "front": "mes"
+    },
+    {
+      "id": "es-vocab-0253",
+      "front": "mesa"
+    },
+    {
+      "id": "es-vocab-0254",
+      "front": "metro"
+    },
+    {
+      "id": "es-vocab-0255",
+      "front": "mexicana"
+    },
+    {
+      "id": "es-vocab-0256",
+      "front": "mexicano"
+    },
+    {
+      "id": "es-vocab-0257",
+      "front": "mi"
+    },
+    {
+      "id": "es-vocab-0258",
+      "front": "mil"
+    },
+    {
+      "id": "es-vocab-0259",
+      "front": "minuto"
+    },
+    {
+      "id": "es-vocab-0260",
+      "front": "mirar"
+    },
+    {
+      "id": "es-vocab-0261",
+      "front": "miércoles"
+    },
+    {
+      "id": "es-vocab-0262",
+      "front": "mochila"
+    },
+    {
+      "id": "es-vocab-0263",
+      "front": "mucho"
+    },
+    {
+      "id": "es-vocab-0264",
+      "front": "mucho gusto"
+    },
+    {
+      "id": "es-vocab-0265",
+      "front": "museo"
+    },
+    {
+      "id": "es-vocab-0266",
+      "front": "muy"
+    },
+    {
+      "id": "es-vocab-0267",
+      "front": "más"
+    },
+    {
+      "id": "es-vocab-0268",
+      "front": "más despacio"
+    },
+    {
+      "id": "es-vocab-0269",
+      "front": "música"
+    },
+    {
+      "id": "es-vocab-0270",
+      "front": "naranja"
+    },
+    {
+      "id": "es-vocab-0271",
+      "front": "necesitar"
+    },
+    {
+      "id": "es-vocab-0272",
+      "front": "negro"
+    },
+    {
+      "id": "es-vocab-0273",
+      "front": "nieva"
+    },
+    {
+      "id": "es-vocab-0274",
+      "front": "nieve"
+    },
+    {
+      "id": "es-vocab-0275",
+      "front": "niña"
+    },
+    {
+      "id": "es-vocab-0276",
+      "front": "niño"
+    },
+    {
+      "id": "es-vocab-0277",
+      "front": "no"
+    },
+    {
+      "id": "es-vocab-0278",
+      "front": "no entiendo"
+    },
+    {
+      "id": "es-vocab-0279",
+      "front": "nosotros"
+    },
+    {
+      "id": "es-vocab-0280",
+      "front": "noventa"
+    },
+    {
+      "id": "es-vocab-0281",
+      "front": "nueve"
+    },
+    {
+      "id": "es-vocab-0282",
+      "front": "nuevo"
+    },
+    {
+      "id": "es-vocab-0283",
+      "front": "nunca"
+    },
+    {
+      "id": "es-vocab-0284",
+      "front": "o"
+    },
+    {
+      "id": "es-vocab-0285",
+      "front": "ochenta"
+    },
+    {
+      "id": "es-vocab-0286",
+      "front": "ocho"
+    },
+    {
+      "id": "es-vocab-0287",
+      "front": "once"
+    },
+    {
+      "id": "es-vocab-0288",
+      "front": "otoño"
+    },
+    {
+      "id": "es-vocab-0289",
+      "front": "padre"
+    },
+    {
+      "id": "es-vocab-0290",
+      "front": "pagar"
+    },
+    {
+      "id": "es-vocab-0291",
+      "front": "pan"
+    },
+    {
+      "id": "es-vocab-0292",
+      "front": "pantalones"
+    },
+    {
+      "id": "es-vocab-0293",
+      "front": "papel"
+    },
+    {
+      "id": "es-vocab-0294",
+      "front": "papá"
+    },
+    {
+      "id": "es-vocab-0295",
+      "front": "parque"
+    },
+    {
+      "id": "es-vocab-0296",
+      "front": "partido"
+    },
+    {
+      "id": "es-vocab-0297",
+      "front": "pasaporte"
+    },
+    {
+      "id": "es-vocab-0298",
+      "front": "pedir"
+    },
+    {
+      "id": "es-vocab-0299",
+      "front": "pelo"
+    },
+    {
+      "id": "es-vocab-0300",
+      "front": "película"
+    },
+    {
+      "id": "es-vocab-0301",
+      "front": "pensar"
+    },
+    {
+      "id": "es-vocab-0302",
+      "front": "pequeño"
+    },
+    {
+      "id": "es-vocab-0303",
+      "front": "perdón"
+    },
+    {
+      "id": "es-vocab-0304",
+      "front": "periódico"
+    },
+    {
+      "id": "es-vocab-0305",
+      "front": "pero"
+    },
+    {
+      "id": "es-vocab-0306",
+      "front": "perro"
+    },
+    {
+      "id": "es-vocab-0307",
+      "front": "pescado"
+    },
+    {
+      "id": "es-vocab-0308",
+      "front": "peso"
+    },
+    {
+      "id": "es-vocab-0309",
+      "front": "piso"
+    },
+    {
+      "id": "es-vocab-0310",
+      "front": "playa"
+    },
+    {
+      "id": "es-vocab-0311",
+      "front": "pluma"
+    },
+    {
+      "id": "es-vocab-0312",
+      "front": "poco"
+    },
+    {
+      "id": "es-vocab-0313",
+      "front": "poder"
+    },
+    {
+      "id": "es-vocab-0314",
+      "front": "pollo"
+    },
+    {
+      "id": "es-vocab-0315",
+      "front": "por favor"
+    },
+    {
+      "id": "es-vocab-0316",
+      "front": "por la mañana"
+    },
+    {
+      "id": "es-vocab-0317",
+      "front": "por la noche"
+    },
+    {
+      "id": "es-vocab-0318",
+      "front": "por la tarde"
+    },
+    {
+      "id": "es-vocab-0319",
+      "front": "por qué"
+    },
+    {
+      "id": "es-vocab-0320",
+      "front": "porque"
+    },
+    {
+      "id": "es-vocab-0321",
+      "front": "precio"
+    },
+    {
+      "id": "es-vocab-0322",
+      "front": "preferir"
+    },
+    {
+      "id": "es-vocab-0323",
+      "front": "primavera"
+    },
+    {
+      "id": "es-vocab-0324",
+      "front": "primero"
+    },
+    {
+      "id": "es-vocab-0325",
+      "front": "puedes"
+    },
+    {
+      "id": "es-vocab-0326",
+      "front": "puedo"
+    },
+    {
+      "id": "es-vocab-0327",
+      "front": "puerta"
+    },
+    {
+      "id": "es-vocab-0328",
+      "front": "que"
+    },
+    {
+      "id": "es-vocab-0329",
+      "front": "querer"
+    },
+    {
+      "id": "es-vocab-0330",
+      "front": "queso"
+    },
+    {
+      "id": "es-vocab-0331",
+      "front": "quiero"
+    },
+    {
+      "id": "es-vocab-0332",
+      "front": "quince"
+    },
+    {
+      "id": "es-vocab-0333",
+      "front": "quisiera"
+    },
+    {
+      "id": "es-vocab-0334",
+      "front": "quién"
+    },
+    {
+      "id": "es-vocab-0335",
+      "front": "qué"
+    },
+    {
+      "id": "es-vocab-0336",
+      "front": "recibir"
+    },
+    {
+      "id": "es-vocab-0337",
+      "front": "refrigerador"
+    },
+    {
+      "id": "es-vocab-0338",
+      "front": "reservación"
+    },
+    {
+      "id": "es-vocab-0339",
+      "front": "restaurante"
+    },
+    {
+      "id": "es-vocab-0340",
+      "front": "rico"
+    },
+    {
+      "id": "es-vocab-0341",
+      "front": "rojo"
+    },
+    {
+      "id": "es-vocab-0342",
+      "front": "ropa"
+    },
+    {
+      "id": "es-vocab-0343",
+      "front": "rutina"
+    },
+    {
+      "id": "es-vocab-0344",
+      "front": "saber"
+    },
+    {
+      "id": "es-vocab-0345",
+      "front": "sala"
+    },
+    {
+      "id": "es-vocab-0346",
+      "front": "salgo"
+    },
+    {
+      "id": "es-vocab-0347",
+      "front": "salir"
+    },
+    {
+      "id": "es-vocab-0348",
+      "front": "se levanta"
+    },
+    {
+      "id": "es-vocab-0349",
+      "front": "seis"
+    },
+    {
+      "id": "es-vocab-0350",
+      "front": "semana"
+    },
+    {
+      "id": "es-vocab-0351",
+      "front": "ser"
+    },
+    {
+      "id": "es-vocab-0352",
+      "front": "servir"
+    },
+    {
+      "id": "es-vocab-0353",
+      "front": "sesenta"
+    },
+    {
+      "id": "es-vocab-0354",
+      "front": "setenta"
+    },
+    {
+      "id": "es-vocab-0355",
+      "front": "señor"
+    },
+    {
+      "id": "es-vocab-0356",
+      "front": "señora"
+    },
+    {
+      "id": "es-vocab-0357",
+      "front": "siempre"
+    },
+    {
+      "id": "es-vocab-0358",
+      "front": "siete"
+    },
+    {
+      "id": "es-vocab-0359",
+      "front": "silla"
+    },
+    {
+      "id": "es-vocab-0360",
+      "front": "simpático"
+    },
+    {
+      "id": "es-vocab-0361",
+      "front": "sin"
+    },
+    {
+      "id": "es-vocab-0362",
+      "front": "sofá"
+    },
+    {
+      "id": "es-vocab-0363",
+      "front": "sol"
+    },
+    {
+      "id": "es-vocab-0364",
+      "front": "sombrero"
+    },
+    {
+      "id": "es-vocab-0365",
+      "front": "sopa"
+    },
+    {
+      "id": "es-vocab-0366",
+      "front": "soy"
+    },
+    {
+      "id": "es-vocab-0367",
+      "front": "su"
+    },
+    {
+      "id": "es-vocab-0368",
+      "front": "sábado"
+    },
+    {
+      "id": "es-vocab-0369",
+      "front": "sé"
+    },
+    {
+      "id": "es-vocab-0370",
+      "front": "sí"
+    },
+    {
+      "id": "es-vocab-0371",
+      "front": "también"
+    },
+    {
+      "id": "es-vocab-0372",
+      "front": "tarde"
+    },
+    {
+      "id": "es-vocab-0373",
+      "front": "tarjeta"
+    },
+    {
+      "id": "es-vocab-0374",
+      "front": "taxi"
+    },
+    {
+      "id": "es-vocab-0375",
+      "front": "te gusta"
+    },
+    {
+      "id": "es-vocab-0376",
+      "front": "televisión"
+    },
+    {
+      "id": "es-vocab-0377",
+      "front": "teléfono"
+    },
+    {
+      "id": "es-vocab-0378",
+      "front": "temprano"
+    },
+    {
+      "id": "es-vocab-0379",
+      "front": "tener"
+    },
+    {
+      "id": "es-vocab-0380",
+      "front": "tengo"
+    },
+    {
+      "id": "es-vocab-0381",
+      "front": "tengo hambre"
+    },
+    {
+      "id": "es-vocab-0382",
+      "front": "tengo sed"
+    },
+    {
+      "id": "es-vocab-0383",
+      "front": "tienda"
+    },
+    {
+      "id": "es-vocab-0384",
+      "front": "tiene"
+    },
+    {
+      "id": "es-vocab-0385",
+      "front": "tienes"
+    },
+    {
+      "id": "es-vocab-0386",
+      "front": "todos los días"
+    },
+    {
+      "id": "es-vocab-0387",
+      "front": "trabajar"
+    },
+    {
+      "id": "es-vocab-0388",
+      "front": "trabajo"
+    },
+    {
+      "id": "es-vocab-0389",
+      "front": "trece"
+    },
+    {
+      "id": "es-vocab-0390",
+      "front": "treinta"
+    },
+    {
+      "id": "es-vocab-0391",
+      "front": "tren"
+    },
+    {
+      "id": "es-vocab-0392",
+      "front": "tres"
+    },
+    {
+      "id": "es-vocab-0393",
+      "front": "tu"
+    },
+    {
+      "id": "es-vocab-0394",
+      "front": "té"
+    },
+    {
+      "id": "es-vocab-0395",
+      "front": "tú"
+    },
+    {
+      "id": "es-vocab-0396",
+      "front": "un"
+    },
+    {
+      "id": "es-vocab-0397",
+      "front": "una"
+    },
+    {
+      "id": "es-vocab-0398",
+      "front": "uno"
+    },
+    {
+      "id": "es-vocab-0399",
+      "front": "usar"
+    },
+    {
+      "id": "es-vocab-0400",
+      "front": "usted"
+    },
+    {
+      "id": "es-vocab-0401",
+      "front": "ustedes"
+    },
+    {
+      "id": "es-vocab-0402",
+      "front": "va"
+    },
+    {
+      "id": "es-vocab-0403",
+      "front": "vamos"
+    },
+    {
+      "id": "es-vocab-0404",
+      "front": "van"
+    },
+    {
+      "id": "es-vocab-0405",
+      "front": "vas"
+    },
+    {
+      "id": "es-vocab-0406",
+      "front": "veinte"
+    },
+    {
+      "id": "es-vocab-0407",
+      "front": "vender"
+    },
+    {
+      "id": "es-vocab-0408",
+      "front": "vengo"
+    },
+    {
+      "id": "es-vocab-0409",
+      "front": "venir"
+    },
+    {
+      "id": "es-vocab-0410",
+      "front": "ventana"
+    },
+    {
+      "id": "es-vocab-0411",
+      "front": "verano"
+    },
+    {
+      "id": "es-vocab-0412",
+      "front": "verde"
+    },
+    {
+      "id": "es-vocab-0413",
+      "front": "vestido"
+    },
+    {
+      "id": "es-vocab-0414",
+      "front": "vestirse"
+    },
+    {
+      "id": "es-vocab-0415",
+      "front": "viaje"
+    },
+    {
+      "id": "es-vocab-0416",
+      "front": "viejo"
+    },
+    {
+      "id": "es-vocab-0417",
+      "front": "viento"
+    },
+    {
+      "id": "es-vocab-0418",
+      "front": "viernes"
+    },
+    {
+      "id": "es-vocab-0419",
+      "front": "vivir"
+    },
+    {
+      "id": "es-vocab-0420",
+      "front": "volver"
+    },
+    {
+      "id": "es-vocab-0421",
+      "front": "voy"
+    },
+    {
+      "id": "es-vocab-0422",
+      "front": "y"
+    },
+    {
+      "id": "es-vocab-0423",
+      "front": "yo"
+    },
+    {
+      "id": "es-vocab-0424",
+      "front": "zapatos"
+    },
+    {
+      "id": "es-vocab-0425",
+      "front": "¿cuánto cuesta?"
+    },
+    {
+      "id": "es-vocab-0426",
+      "front": "¿cuántos años tienes?"
+    },
+    {
+      "id": "es-vocab-0427",
+      "front": "¿cómo te llamas?"
+    },
+    {
+      "id": "es-vocab-0428",
+      "front": "¿de dónde eres?"
+    },
+    {
+      "id": "es-vocab-0429",
+      "front": "¿habla inglés?"
+    },
+    {
+      "id": "es-vocab-0430",
+      "front": "¿me puede ayudar?"
+    },
+    {
+      "id": "es-vocab-0431",
+      "front": "¿puedo pasar?"
+    },
+    {
+      "id": "es-vocab-0432",
+      "front": "¿qué hora es?"
+    },
+    {
+      "id": "es-vocab-0433",
+      "front": "él"
+    }
+  ]
+}

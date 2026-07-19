@@ -1,0 +1,1143 @@
+{
+  "name": "ko-course-vocab",
+  "languageId": "ko",
+  "_note": "Auto-emitted by src/features/flashcards/data/__tests__/emitCourseVocabTtsDecks.test.ts (EMIT_COURSE_VOCAB_TTS_DECKS=1). Front-of-card spoken surface for every SRS-eligible course flashcard atom. Edit the catalog, re-emit, then run the TTS generator (--lang ko).",
+  "cards": [
+    {
+      "id": "ko-vocab-0000",
+      "front": "가"
+    },
+    {
+      "id": "ko-vocab-0001",
+      "front": "가게"
+    },
+    {
+      "id": "ko-vocab-0002",
+      "front": "가고 싶어요"
+    },
+    {
+      "id": "ko-vocab-0003",
+      "front": "가끔"
+    },
+    {
+      "id": "ko-vocab-0004",
+      "front": "가방"
+    },
+    {
+      "id": "ko-vocab-0005",
+      "front": "가요"
+    },
+    {
+      "id": "ko-vocab-0006",
+      "front": "가을"
+    },
+    {
+      "id": "ko-vocab-0007",
+      "front": "가장"
+    },
+    {
+      "id": "ko-vocab-0008",
+      "front": "가족"
+    },
+    {
+      "id": "ko-vocab-0009",
+      "front": "감기"
+    },
+    {
+      "id": "ko-vocab-0010",
+      "front": "감사합니다"
+    },
+    {
+      "id": "ko-vocab-0011",
+      "front": "갔어요"
+    },
+    {
+      "id": "ko-vocab-0012",
+      "front": "개"
+    },
+    {
+      "id": "ko-vocab-0013",
+      "front": "거기"
+    },
+    {
+      "id": "ko-vocab-0014",
+      "front": "건강"
+    },
+    {
+      "id": "ko-vocab-0015",
+      "front": "게임"
+    },
+    {
+      "id": "ko-vocab-0016",
+      "front": "겨울"
+    },
+    {
+      "id": "ko-vocab-0017",
+      "front": "결정하다"
+    },
+    {
+      "id": "ko-vocab-0018",
+      "front": "결혼"
+    },
+    {
+      "id": "ko-vocab-0019",
+      "front": "계획"
+    },
+    {
+      "id": "ko-vocab-0020",
+      "front": "고"
+    },
+    {
+      "id": "ko-vocab-0021",
+      "front": "고기"
+    },
+    {
+      "id": "ko-vocab-0022",
+      "front": "고마워요"
+    },
+    {
+      "id": "ko-vocab-0023",
+      "front": "공부"
+    },
+    {
+      "id": "ko-vocab-0024",
+      "front": "과"
+    },
+    {
+      "id": "ko-vocab-0025",
+      "front": "과일"
+    },
+    {
+      "id": "ko-vocab-0026",
+      "front": "괜찮아요"
+    },
+    {
+      "id": "ko-vocab-0027",
+      "front": "교실"
+    },
+    {
+      "id": "ko-vocab-0028",
+      "front": "구두"
+    },
+    {
+      "id": "ko-vocab-0029",
+      "front": "귀"
+    },
+    {
+      "id": "ko-vocab-0030",
+      "front": "그"
+    },
+    {
+      "id": "ko-vocab-0031",
+      "front": "그거"
+    },
+    {
+      "id": "ko-vocab-0032",
+      "front": "그래서"
+    },
+    {
+      "id": "ko-vocab-0033",
+      "front": "그런데"
+    },
+    {
+      "id": "ko-vocab-0034",
+      "front": "그리고"
+    },
+    {
+      "id": "ko-vocab-0035",
+      "front": "그림"
+    },
+    {
+      "id": "ko-vocab-0036",
+      "front": "금요일"
+    },
+    {
+      "id": "ko-vocab-0037",
+      "front": "기다려 주세요"
+    },
+    {
+      "id": "ko-vocab-0038",
+      "front": "기차"
+    },
+    {
+      "id": "ko-vocab-0039",
+      "front": "김치"
+    },
+    {
+      "id": "ko-vocab-0040",
+      "front": "까지"
+    },
+    {
+      "id": "ko-vocab-0041",
+      "front": "꼬리"
+    },
+    {
+      "id": "ko-vocab-0042",
+      "front": "나"
+    },
+    {
+      "id": "ko-vocab-0043",
+      "front": "나무"
+    },
+    {
+      "id": "ko-vocab-0044",
+      "front": "날씨"
+    },
+    {
+      "id": "ko-vocab-0045",
+      "front": "너"
+    },
+    {
+      "id": "ko-vocab-0046",
+      "front": "너무"
+    },
+    {
+      "id": "ko-vocab-0047",
+      "front": "네"
+    },
+    {
+      "id": "ko-vocab-0048",
+      "front": "넷"
+    },
+    {
+      "id": "ko-vocab-0049",
+      "front": "노래"
+    },
+    {
+      "id": "ko-vocab-0050",
+      "front": "누구"
+    },
+    {
+      "id": "ko-vocab-0051",
+      "front": "누나"
+    },
+    {
+      "id": "ko-vocab-0052",
+      "front": "눈"
+    },
+    {
+      "id": "ko-vocab-0053",
+      "front": "는"
+    },
+    {
+      "id": "ko-vocab-0054",
+      "front": "늦다"
+    },
+    {
+      "id": "ko-vocab-0055",
+      "front": "다리"
+    },
+    {
+      "id": "ko-vocab-0056",
+      "front": "다섯"
+    },
+    {
+      "id": "ko-vocab-0057",
+      "front": "다시 말해주세요"
+    },
+    {
+      "id": "ko-vocab-0058",
+      "front": "담배"
+    },
+    {
+      "id": "ko-vocab-0059",
+      "front": "더"
+    },
+    {
+      "id": "ko-vocab-0060",
+      "front": "더워요"
+    },
+    {
+      "id": "ko-vocab-0061",
+      "front": "덜"
+    },
+    {
+      "id": "ko-vocab-0062",
+      "front": "도"
+    },
+    {
+      "id": "ko-vocab-0063",
+      "front": "도와주세요"
+    },
+    {
+      "id": "ko-vocab-0064",
+      "front": "도착"
+    },
+    {
+      "id": "ko-vocab-0065",
+      "front": "동생"
+    },
+    {
+      "id": "ko-vocab-0066",
+      "front": "둘"
+    },
+    {
+      "id": "ko-vocab-0067",
+      "front": "똑바로"
+    },
+    {
+      "id": "ko-vocab-0068",
+      "front": "라면"
+    },
+    {
+      "id": "ko-vocab-0069",
+      "front": "랑"
+    },
+    {
+      "id": "ko-vocab-0070",
+      "front": "로"
+    },
+    {
+      "id": "ko-vocab-0071",
+      "front": "를"
+    },
+    {
+      "id": "ko-vocab-0072",
+      "front": "마셔요"
+    },
+    {
+      "id": "ko-vocab-0073",
+      "front": "마셨어요"
+    },
+    {
+      "id": "ko-vocab-0074",
+      "front": "만"
+    },
+    {
+      "id": "ko-vocab-0075",
+      "front": "맑아요"
+    },
+    {
+      "id": "ko-vocab-0076",
+      "front": "맛있어요"
+    },
+    {
+      "id": "ko-vocab-0077",
+      "front": "맛있었어요"
+    },
+    {
+      "id": "ko-vocab-0078",
+      "front": "머리"
+    },
+    {
+      "id": "ko-vocab-0079",
+      "front": "먹고 싶어요"
+    },
+    {
+      "id": "ko-vocab-0080",
+      "front": "먹어요"
+    },
+    {
+      "id": "ko-vocab-0081",
+      "front": "먹었어요"
+    },
+    {
+      "id": "ko-vocab-0082",
+      "front": "명"
+    },
+    {
+      "id": "ko-vocab-0083",
+      "front": "몇"
+    },
+    {
+      "id": "ko-vocab-0084",
+      "front": "모두"
+    },
+    {
+      "id": "ko-vocab-0085",
+      "front": "모자"
+    },
+    {
+      "id": "ko-vocab-0086",
+      "front": "목"
+    },
+    {
+      "id": "ko-vocab-0087",
+      "front": "목요일"
+    },
+    {
+      "id": "ko-vocab-0088",
+      "front": "못"
+    },
+    {
+      "id": "ko-vocab-0089",
+      "front": "못해요"
+    },
+    {
+      "id": "ko-vocab-0090",
+      "front": "문"
+    },
+    {
+      "id": "ko-vocab-0091",
+      "front": "물"
+    },
+    {
+      "id": "ko-vocab-0092",
+      "front": "물 주세요"
+    },
+    {
+      "id": "ko-vocab-0093",
+      "front": "뭐"
+    },
+    {
+      "id": "ko-vocab-0094",
+      "front": "바다"
+    },
+    {
+      "id": "ko-vocab-0095",
+      "front": "바람"
+    },
+    {
+      "id": "ko-vocab-0096",
+      "front": "바보"
+    },
+    {
+      "id": "ko-vocab-0097",
+      "front": "반"
+    },
+    {
+      "id": "ko-vocab-0098",
+      "front": "반갑습니다"
+    },
+    {
+      "id": "ko-vocab-0099",
+      "front": "발"
+    },
+    {
+      "id": "ko-vocab-0100",
+      "front": "밥"
+    },
+    {
+      "id": "ko-vocab-0101",
+      "front": "배"
+    },
+    {
+      "id": "ko-vocab-0102",
+      "front": "백"
+    },
+    {
+      "id": "ko-vocab-0103",
+      "front": "버스"
+    },
+    {
+      "id": "ko-vocab-0104",
+      "front": "번"
+    },
+    {
+      "id": "ko-vocab-0105",
+      "front": "별로"
+    },
+    {
+      "id": "ko-vocab-0106",
+      "front": "병원"
+    },
+    {
+      "id": "ko-vocab-0107",
+      "front": "봄"
+    },
+    {
+      "id": "ko-vocab-0108",
+      "front": "봐요"
+    },
+    {
+      "id": "ko-vocab-0109",
+      "front": "봤어요"
+    },
+    {
+      "id": "ko-vocab-0110",
+      "front": "부모님"
+    },
+    {
+      "id": "ko-vocab-0111",
+      "front": "부터"
+    },
+    {
+      "id": "ko-vocab-0112",
+      "front": "분"
+    },
+    {
+      "id": "ko-vocab-0113",
+      "front": "불고기"
+    },
+    {
+      "id": "ko-vocab-0114",
+      "front": "비"
+    },
+    {
+      "id": "ko-vocab-0115",
+      "front": "비빔밥"
+    },
+    {
+      "id": "ko-vocab-0116",
+      "front": "비싸요"
+    },
+    {
+      "id": "ko-vocab-0117",
+      "front": "비행기"
+    },
+    {
+      "id": "ko-vocab-0118",
+      "front": "빵"
+    },
+    {
+      "id": "ko-vocab-0119",
+      "front": "사"
+    },
+    {
+      "id": "ko-vocab-0120",
+      "front": "사과"
+    },
+    {
+      "id": "ko-vocab-0121",
+      "front": "사이"
+    },
+    {
+      "id": "ko-vocab-0122",
+      "front": "사진"
+    },
+    {
+      "id": "ko-vocab-0123",
+      "front": "살"
+    },
+    {
+      "id": "ko-vocab-0124",
+      "front": "삼"
+    },
+    {
+      "id": "ko-vocab-0125",
+      "front": "생선"
+    },
+    {
+      "id": "ko-vocab-0126",
+      "front": "서른"
+    },
+    {
+      "id": "ko-vocab-0127",
+      "front": "선생님"
+    },
+    {
+      "id": "ko-vocab-0128",
+      "front": "셋"
+    },
+    {
+      "id": "ko-vocab-0129",
+      "front": "소"
+    },
+    {
+      "id": "ko-vocab-0130",
+      "front": "손"
+    },
+    {
+      "id": "ko-vocab-0131",
+      "front": "수영"
+    },
+    {
+      "id": "ko-vocab-0132",
+      "front": "수요일"
+    },
+    {
+      "id": "ko-vocab-0133",
+      "front": "시"
+    },
+    {
+      "id": "ko-vocab-0134",
+      "front": "시월"
+    },
+    {
+      "id": "ko-vocab-0135",
+      "front": "시험"
+    },
+    {
+      "id": "ko-vocab-0136",
+      "front": "식당"
+    },
+    {
+      "id": "ko-vocab-0137",
+      "front": "실수"
+    },
+    {
+      "id": "ko-vocab-0138",
+      "front": "싫어해요"
+    },
+    {
+      "id": "ko-vocab-0139",
+      "front": "십"
+    },
+    {
+      "id": "ko-vocab-0140",
+      "front": "싸다"
+    },
+    {
+      "id": "ko-vocab-0141",
+      "front": "아기"
+    },
+    {
+      "id": "ko-vocab-0142",
+      "front": "아니요"
+    },
+    {
+      "id": "ko-vocab-0143",
+      "front": "아빠"
+    },
+    {
+      "id": "ko-vocab-0144",
+      "front": "아이"
+    },
+    {
+      "id": "ko-vocab-0145",
+      "front": "아파요"
+    },
+    {
+      "id": "ko-vocab-0146",
+      "front": "아홉"
+    },
+    {
+      "id": "ko-vocab-0147",
+      "front": "안"
+    },
+    {
+      "id": "ko-vocab-0148",
+      "front": "안녕"
+    },
+    {
+      "id": "ko-vocab-0149",
+      "front": "안녕하세요"
+    },
+    {
+      "id": "ko-vocab-0150",
+      "front": "안녕히 가세요"
+    },
+    {
+      "id": "ko-vocab-0151",
+      "front": "안녕히 계세요"
+    },
+    {
+      "id": "ko-vocab-0152",
+      "front": "야구"
+    },
+    {
+      "id": "ko-vocab-0153",
+      "front": "약"
+    },
+    {
+      "id": "ko-vocab-0154",
+      "front": "약속"
+    },
+    {
+      "id": "ko-vocab-0155",
+      "front": "어디"
+    },
+    {
+      "id": "ko-vocab-0156",
+      "front": "어디예요?"
+    },
+    {
+      "id": "ko-vocab-0157",
+      "front": "어머니"
+    },
+    {
+      "id": "ko-vocab-0158",
+      "front": "어제"
+    },
+    {
+      "id": "ko-vocab-0159",
+      "front": "언니"
+    },
+    {
+      "id": "ko-vocab-0160",
+      "front": "얼마"
+    },
+    {
+      "id": "ko-vocab-0161",
+      "front": "얼마예요?"
+    },
+    {
+      "id": "ko-vocab-0162",
+      "front": "엄마"
+    },
+    {
+      "id": "ko-vocab-0163",
+      "front": "없어요"
+    },
+    {
+      "id": "ko-vocab-0164",
+      "front": "에"
+    },
+    {
+      "id": "ko-vocab-0165",
+      "front": "에서"
+    },
+    {
+      "id": "ko-vocab-0166",
+      "front": "여기"
+    },
+    {
+      "id": "ko-vocab-0167",
+      "front": "여덟"
+    },
+    {
+      "id": "ko-vocab-0168",
+      "front": "여름"
+    },
+    {
+      "id": "ko-vocab-0169",
+      "front": "여섯"
+    },
+    {
+      "id": "ko-vocab-0170",
+      "front": "여행"
+    },
+    {
+      "id": "ko-vocab-0171",
+      "front": "역"
+    },
+    {
+      "id": "ko-vocab-0172",
+      "front": "연습"
+    },
+    {
+      "id": "ko-vocab-0173",
+      "front": "열"
+    },
+    {
+      "id": "ko-vocab-0174",
+      "front": "영화"
+    },
+    {
+      "id": "ko-vocab-0175",
+      "front": "예뻐요"
+    },
+    {
+      "id": "ko-vocab-0176",
+      "front": "오"
+    },
+    {
+      "id": "ko-vocab-0177",
+      "front": "오늘"
+    },
+    {
+      "id": "ko-vocab-0178",
+      "front": "오른쪽"
+    },
+    {
+      "id": "ko-vocab-0179",
+      "front": "오빠"
+    },
+    {
+      "id": "ko-vocab-0180",
+      "front": "오이"
+    },
+    {
+      "id": "ko-vocab-0181",
+      "front": "온천"
+    },
+    {
+      "id": "ko-vocab-0182",
+      "front": "와"
+    },
+    {
+      "id": "ko-vocab-0183",
+      "front": "와요"
+    },
+    {
+      "id": "ko-vocab-0184",
+      "front": "왔어요"
+    },
+    {
+      "id": "ko-vocab-0185",
+      "front": "외국"
+    },
+    {
+      "id": "ko-vocab-0186",
+      "front": "왼쪽"
+    },
+    {
+      "id": "ko-vocab-0187",
+      "front": "요리"
+    },
+    {
+      "id": "ko-vocab-0188",
+      "front": "우리"
+    },
+    {
+      "id": "ko-vocab-0189",
+      "front": "우유"
+    },
+    {
+      "id": "ko-vocab-0190",
+      "front": "운동"
+    },
+    {
+      "id": "ko-vocab-0191",
+      "front": "운전"
+    },
+    {
+      "id": "ko-vocab-0192",
+      "front": "원"
+    },
+    {
+      "id": "ko-vocab-0193",
+      "front": "월"
+    },
+    {
+      "id": "ko-vocab-0194",
+      "front": "월요일"
+    },
+    {
+      "id": "ko-vocab-0195",
+      "front": "유월"
+    },
+    {
+      "id": "ko-vocab-0196",
+      "front": "육"
+    },
+    {
+      "id": "ko-vocab-0197",
+      "front": "으로"
+    },
+    {
+      "id": "ko-vocab-0198",
+      "front": "은"
+    },
+    {
+      "id": "ko-vocab-0199",
+      "front": "을"
+    },
+    {
+      "id": "ko-vocab-0200",
+      "front": "음악"
+    },
+    {
+      "id": "ko-vocab-0201",
+      "front": "의"
+    },
+    {
+      "id": "ko-vocab-0202",
+      "front": "의자"
+    },
+    {
+      "id": "ko-vocab-0203",
+      "front": "이"
+    },
+    {
+      "id": "ko-vocab-0204",
+      "front": "이거"
+    },
+    {
+      "id": "ko-vocab-0205",
+      "front": "이거 주세요"
+    },
+    {
+      "id": "ko-vocab-0206",
+      "front": "이름"
+    },
+    {
+      "id": "ko-vocab-0207",
+      "front": "일"
+    },
+    {
+      "id": "ko-vocab-0208",
+      "front": "일곱"
+    },
+    {
+      "id": "ko-vocab-0209",
+      "front": "일요일"
+    },
+    {
+      "id": "ko-vocab-0210",
+      "front": "일주일"
+    },
+    {
+      "id": "ko-vocab-0211",
+      "front": "입"
+    },
+    {
+      "id": "ko-vocab-0212",
+      "front": "있어요"
+    },
+    {
+      "id": "ko-vocab-0213",
+      "front": "잊어버리다"
+    },
+    {
+      "id": "ko-vocab-0214",
+      "front": "자"
+    },
+    {
+      "id": "ko-vocab-0215",
+      "front": "자주"
+    },
+    {
+      "id": "ko-vocab-0216",
+      "front": "작아요"
+    },
+    {
+      "id": "ko-vocab-0217",
+      "front": "잔"
+    },
+    {
+      "id": "ko-vocab-0218",
+      "front": "잘해요"
+    },
+    {
+      "id": "ko-vocab-0219",
+      "front": "잠시만요"
+    },
+    {
+      "id": "ko-vocab-0220",
+      "front": "저"
+    },
+    {
+      "id": "ko-vocab-0221",
+      "front": "저거"
+    },
+    {
+      "id": "ko-vocab-0222",
+      "front": "전혀"
+    },
+    {
+      "id": "ko-vocab-0223",
+      "front": "전화"
+    },
+    {
+      "id": "ko-vocab-0224",
+      "front": "제"
+    },
+    {
+      "id": "ko-vocab-0225",
+      "front": "제일"
+    },
+    {
+      "id": "ko-vocab-0226",
+      "front": "조심하다"
+    },
+    {
+      "id": "ko-vocab-0227",
+      "front": "졸업"
+    },
+    {
+      "id": "ko-vocab-0228",
+      "front": "좋아요"
+    },
+    {
+      "id": "ko-vocab-0229",
+      "front": "좋아해요"
+    },
+    {
+      "id": "ko-vocab-0230",
+      "front": "좋았어요"
+    },
+    {
+      "id": "ko-vocab-0231",
+      "front": "죄송합니다"
+    },
+    {
+      "id": "ko-vocab-0232",
+      "front": "주세요"
+    },
+    {
+      "id": "ko-vocab-0233",
+      "front": "준비"
+    },
+    {
+      "id": "ko-vocab-0234",
+      "front": "중에서"
+    },
+    {
+      "id": "ko-vocab-0235",
+      "front": "지금"
+    },
+    {
+      "id": "ko-vocab-0236",
+      "front": "지도"
+    },
+    {
+      "id": "ko-vocab-0237",
+      "front": "지만"
+    },
+    {
+      "id": "ko-vocab-0238",
+      "front": "지하철"
+    },
+    {
+      "id": "ko-vocab-0239",
+      "front": "집"
+    },
+    {
+      "id": "ko-vocab-0240",
+      "front": "짜다"
+    },
+    {
+      "id": "ko-vocab-0241",
+      "front": "차"
+    },
+    {
+      "id": "ko-vocab-0242",
+      "front": "채소"
+    },
+    {
+      "id": "ko-vocab-0243",
+      "front": "책"
+    },
+    {
+      "id": "ko-vocab-0244",
+      "front": "천"
+    },
+    {
+      "id": "ko-vocab-0245",
+      "front": "추워요"
+    },
+    {
+      "id": "ko-vocab-0246",
+      "front": "축제"
+    },
+    {
+      "id": "ko-vocab-0247",
+      "front": "출발"
+    },
+    {
+      "id": "ko-vocab-0248",
+      "front": "취미"
+    },
+    {
+      "id": "ko-vocab-0249",
+      "front": "치마"
+    },
+    {
+      "id": "ko-vocab-0250",
+      "front": "친구"
+    },
+    {
+      "id": "ko-vocab-0251",
+      "front": "칠"
+    },
+    {
+      "id": "ko-vocab-0252",
+      "front": "커요"
+    },
+    {
+      "id": "ko-vocab-0253",
+      "front": "커피"
+    },
+    {
+      "id": "ko-vocab-0254",
+      "front": "코"
+    },
+    {
+      "id": "ko-vocab-0255",
+      "front": "쿠키"
+    },
+    {
+      "id": "ko-vocab-0256",
+      "front": "키"
+    },
+    {
+      "id": "ko-vocab-0257",
+      "front": "타다"
+    },
+    {
+      "id": "ko-vocab-0258",
+      "front": "타요"
+    },
+    {
+      "id": "ko-vocab-0259",
+      "front": "택시"
+    },
+    {
+      "id": "ko-vocab-0260",
+      "front": "토끼"
+    },
+    {
+      "id": "ko-vocab-0261",
+      "front": "토요일"
+    },
+    {
+      "id": "ko-vocab-0262",
+      "front": "팔"
+    },
+    {
+      "id": "ko-vocab-0263",
+      "front": "펜"
+    },
+    {
+      "id": "ko-vocab-0264",
+      "front": "포도"
+    },
+    {
+      "id": "ko-vocab-0265",
+      "front": "피"
+    },
+    {
+      "id": "ko-vocab-0266",
+      "front": "피곤하다"
+    },
+    {
+      "id": "ko-vocab-0267",
+      "front": "하고"
+    },
+    {
+      "id": "ko-vocab-0268",
+      "front": "하나"
+    },
+    {
+      "id": "ko-vocab-0269",
+      "front": "하루"
+    },
+    {
+      "id": "ko-vocab-0270",
+      "front": "하지만"
+    },
+    {
+      "id": "ko-vocab-0271",
+      "front": "학교"
+    },
+    {
+      "id": "ko-vocab-0272",
+      "front": "학생"
+    },
+    {
+      "id": "ko-vocab-0273",
+      "front": "한국어 못해요"
+    },
+    {
+      "id": "ko-vocab-0274",
+      "front": "항상"
+    },
+    {
+      "id": "ko-vocab-0275",
+      "front": "해요"
+    },
+    {
+      "id": "ko-vocab-0276",
+      "front": "핸드폰"
+    },
+    {
+      "id": "ko-vocab-0277",
+      "front": "했어요"
+    },
+    {
+      "id": "ko-vocab-0278",
+      "front": "형"
+    },
+    {
+      "id": "ko-vocab-0279",
+      "front": "호두"
+    },
+    {
+      "id": "ko-vocab-0280",
+      "front": "화요일"
+    },
+    {
+      "id": "ko-vocab-0281",
+      "front": "화장실이 어디예요?"
+    },
+    {
+      "id": "ko-vocab-0282",
+      "front": "회사"
+    },
+    {
+      "id": "ko-vocab-0283",
+      "front": "흐려요"
+    }
+  ]
+}

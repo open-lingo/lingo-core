@@ -1,0 +1,3039 @@
+{
+  "name": "ja-course-vocab",
+  "languageId": "ja",
+  "_note": "Auto-emitted by src/features/flashcards/data/__tests__/emitCourseVocabTtsDecks.test.ts (EMIT_COURSE_VOCAB_TTS_DECKS=1). Front-of-card spoken surface for every SRS-eligible course flashcard atom. Edit the catalog, re-emit, then run the TTS generator (--lang ja).",
+  "cards": [
+    {
+      "id": "ja-vocab-0000",
+      "front": "あい"
+    },
+    {
+      "id": "ja-vocab-0001",
+      "front": "あう"
+    },
+    {
+      "id": "ja-vocab-0002",
+      "front": "あお"
+    },
+    {
+      "id": "ja-vocab-0003",
+      "front": "あおい"
+    },
+    {
+      "id": "ja-vocab-0004",
+      "front": "あか"
+    },
+    {
+      "id": "ja-vocab-0005",
+      "front": "あかい"
+    },
+    {
+      "id": "ja-vocab-0006",
+      "front": "あかるい"
+    },
+    {
+      "id": "ja-vocab-0007",
+      "front": "あき"
+    },
+    {
+      "id": "ja-vocab-0008",
+      "front": "あく"
+    },
+    {
+      "id": "ja-vocab-0009",
+      "front": "あける"
+    },
+    {
+      "id": "ja-vocab-0010",
+      "front": "あげる"
+    },
+    {
+      "id": "ja-vocab-0011",
+      "front": "あさ"
+    },
+    {
+      "id": "ja-vocab-0012",
+      "front": "あさごはん"
+    },
+    {
+      "id": "ja-vocab-0013",
+      "front": "あさって"
+    },
+    {
+      "id": "ja-vocab-0014",
+      "front": "あし"
+    },
+    {
+      "id": "ja-vocab-0015",
+      "front": "あした"
+    },
+    {
+      "id": "ja-vocab-0016",
+      "front": "あそこ"
+    },
+    {
+      "id": "ja-vocab-0017",
+      "front": "あそぶ"
+    },
+    {
+      "id": "ja-vocab-0018",
+      "front": "あたたかい"
+    },
+    {
+      "id": "ja-vocab-0019",
+      "front": "あたま"
+    },
+    {
+      "id": "ja-vocab-0020",
+      "front": "あたらしい"
+    },
+    {
+      "id": "ja-vocab-0021",
+      "front": "あちら"
+    },
+    {
+      "id": "ja-vocab-0022",
+      "front": "あっち"
+    },
+    {
+      "id": "ja-vocab-0023",
+      "front": "あつい"
+    },
+    {
+      "id": "ja-vocab-0024",
+      "front": "あと"
+    },
+    {
+      "id": "ja-vocab-0025",
+      "front": "あなた"
+    },
+    {
+      "id": "ja-vocab-0026",
+      "front": "あに"
+    },
+    {
+      "id": "ja-vocab-0027",
+      "front": "あね"
+    },
+    {
+      "id": "ja-vocab-0028",
+      "front": "あの"
+    },
+    {
+      "id": "ja-vocab-0029",
+      "front": "あびる"
+    },
+    {
+      "id": "ja-vocab-0030",
+      "front": "あぶない"
+    },
+    {
+      "id": "ja-vocab-0031",
+      "front": "あまい"
+    },
+    {
+      "id": "ja-vocab-0032",
+      "front": "あまり"
+    },
+    {
+      "id": "ja-vocab-0033",
+      "front": "あめ"
+    },
+    {
+      "id": "ja-vocab-0034",
+      "front": "あらう"
+    },
+    {
+      "id": "ja-vocab-0035",
+      "front": "ありがとうございます"
+    },
+    {
+      "id": "ja-vocab-0036",
+      "front": "あります"
+    },
+    {
+      "id": "ja-vocab-0037",
+      "front": "ある"
+    },
+    {
+      "id": "ja-vocab-0038",
+      "front": "あるく"
+    },
+    {
+      "id": "ja-vocab-0039",
+      "front": "あれ"
+    },
+    {
+      "id": "ja-vocab-0040",
+      "front": "あれは おおきいです"
+    },
+    {
+      "id": "ja-vocab-0041",
+      "front": "いい / よい"
+    },
+    {
+      "id": "ja-vocab-0042",
+      "front": "いいえ"
+    },
+    {
+      "id": "ja-vocab-0043",
+      "front": "いう"
+    },
+    {
+      "id": "ja-vocab-0044",
+      "front": "いえ"
+    },
+    {
+      "id": "ja-vocab-0045",
+      "front": "いかが"
+    },
+    {
+      "id": "ja-vocab-0046",
+      "front": "いきます"
+    },
+    {
+      "id": "ja-vocab-0047",
+      "front": "いく"
+    },
+    {
+      "id": "ja-vocab-0048",
+      "front": "いくつ"
+    },
+    {
+      "id": "ja-vocab-0049",
+      "front": "いくら"
+    },
+    {
+      "id": "ja-vocab-0050",
+      "front": "いくらですか"
+    },
+    {
+      "id": "ja-vocab-0051",
+      "front": "いけ"
+    },
+    {
+      "id": "ja-vocab-0052",
+      "front": "いしゃ"
+    },
+    {
+      "id": "ja-vocab-0053",
+      "front": "いす"
+    },
+    {
+      "id": "ja-vocab-0054",
+      "front": "いそがしい"
+    },
+    {
+      "id": "ja-vocab-0055",
+      "front": "いそぐ"
+    },
+    {
+      "id": "ja-vocab-0056",
+      "front": "いたい"
+    },
+    {
+      "id": "ja-vocab-0057",
+      "front": "いち"
+    },
+    {
+      "id": "ja-vocab-0058",
+      "front": "いちにち"
+    },
+    {
+      "id": "ja-vocab-0059",
+      "front": "いちばん"
+    },
+    {
+      "id": "ja-vocab-0060",
+      "front": "いっしょ"
+    },
+    {
+      "id": "ja-vocab-0061",
+      "front": "いつ"
+    },
+    {
+      "id": "ja-vocab-0062",
+      "front": "いつか"
+    },
+    {
+      "id": "ja-vocab-0063",
+      "front": "いつつ"
+    },
+    {
+      "id": "ja-vocab-0064",
+      "front": "いつも"
+    },
+    {
+      "id": "ja-vocab-0065",
+      "front": "いぬ"
+    },
+    {
+      "id": "ja-vocab-0066",
+      "front": "いま"
+    },
+    {
+      "id": "ja-vocab-0067",
+      "front": "います"
+    },
+    {
+      "id": "ja-vocab-0068",
+      "front": "いみ"
+    },
+    {
+      "id": "ja-vocab-0069",
+      "front": "いもうと"
+    },
+    {
+      "id": "ja-vocab-0070",
+      "front": "いや"
+    },
+    {
+      "id": "ja-vocab-0071",
+      "front": "いらっしゃいませ"
+    },
+    {
+      "id": "ja-vocab-0072",
+      "front": "いりぐち"
+    },
+    {
+      "id": "ja-vocab-0073",
+      "front": "いる"
+    },
+    {
+      "id": "ja-vocab-0074",
+      "front": "いれる"
+    },
+    {
+      "id": "ja-vocab-0075",
+      "front": "いろ"
+    },
+    {
+      "id": "ja-vocab-0076",
+      "front": "いろいろ"
+    },
+    {
+      "id": "ja-vocab-0077",
+      "front": "うえ"
+    },
+    {
+      "id": "ja-vocab-0078",
+      "front": "うしろ"
+    },
+    {
+      "id": "ja-vocab-0079",
+      "front": "うすい"
+    },
+    {
+      "id": "ja-vocab-0080",
+      "front": "うた"
+    },
+    {
+      "id": "ja-vocab-0081",
+      "front": "うたう"
+    },
+    {
+      "id": "ja-vocab-0082",
+      "front": "うち"
+    },
+    {
+      "id": "ja-vocab-0083",
+      "front": "うま"
+    },
+    {
+      "id": "ja-vocab-0084",
+      "front": "うまれる"
+    },
+    {
+      "id": "ja-vocab-0085",
+      "front": "うみ"
+    },
+    {
+      "id": "ja-vocab-0086",
+      "front": "うる"
+    },
+    {
+      "id": "ja-vocab-0087",
+      "front": "うるさい"
+    },
+    {
+      "id": "ja-vocab-0088",
+      "front": "うわぎ"
+    },
+    {
+      "id": "ja-vocab-0089",
+      "front": "え"
+    },
+    {
+      "id": "ja-vocab-0090",
+      "front": "えいが"
+    },
+    {
+      "id": "ja-vocab-0091",
+      "front": "えいがかん"
+    },
+    {
+      "id": "ja-vocab-0092",
+      "front": "えいご"
+    },
+    {
+      "id": "ja-vocab-0093",
+      "front": "ええ"
+    },
+    {
+      "id": "ja-vocab-0094",
+      "front": "えき"
+    },
+    {
+      "id": "ja-vocab-0095",
+      "front": "えび"
+    },
+    {
+      "id": "ja-vocab-0096",
+      "front": "えらぶ"
+    },
+    {
+      "id": "ja-vocab-0097",
+      "front": "えん"
+    },
+    {
+      "id": "ja-vocab-0098",
+      "front": "えんぴつ"
+    },
+    {
+      "id": "ja-vocab-0099",
+      "front": "おいしい"
+    },
+    {
+      "id": "ja-vocab-0100",
+      "front": "おおい"
+    },
+    {
+      "id": "ja-vocab-0101",
+      "front": "おおきい"
+    },
+    {
+      "id": "ja-vocab-0102",
+      "front": "おおきな"
+    },
+    {
+      "id": "ja-vocab-0103",
+      "front": "おおぜい"
+    },
+    {
+      "id": "ja-vocab-0104",
+      "front": "おかあさん"
+    },
+    {
+      "id": "ja-vocab-0105",
+      "front": "おかし"
+    },
+    {
+      "id": "ja-vocab-0106",
+      "front": "おかね"
+    },
+    {
+      "id": "ja-vocab-0107",
+      "front": "おきる"
+    },
+    {
+      "id": "ja-vocab-0108",
+      "front": "おく"
+    },
+    {
+      "id": "ja-vocab-0109",
+      "front": "おくさん"
+    },
+    {
+      "id": "ja-vocab-0110",
+      "front": "おさけ"
+    },
+    {
+      "id": "ja-vocab-0111",
+      "front": "おさななじみ"
+    },
+    {
+      "id": "ja-vocab-0112",
+      "front": "おさら"
+    },
+    {
+      "id": "ja-vocab-0113",
+      "front": "おしえる"
+    },
+    {
+      "id": "ja-vocab-0114",
+      "front": "おじいさん"
+    },
+    {
+      "id": "ja-vocab-0115",
+      "front": "おす"
+    },
+    {
+      "id": "ja-vocab-0116",
+      "front": "おそい"
+    },
+    {
+      "id": "ja-vocab-0117",
+      "front": "おちゃ"
+    },
+    {
+      "id": "ja-vocab-0118",
+      "front": "おてあらい"
+    },
+    {
+      "id": "ja-vocab-0119",
+      "front": "おとうさん"
+    },
+    {
+      "id": "ja-vocab-0120",
+      "front": "おとうと"
+    },
+    {
+      "id": "ja-vocab-0121",
+      "front": "おとこ"
+    },
+    {
+      "id": "ja-vocab-0122",
+      "front": "おとこのこ"
+    },
+    {
+      "id": "ja-vocab-0123",
+      "front": "おととい"
+    },
+    {
+      "id": "ja-vocab-0124",
+      "front": "おととし"
+    },
+    {
+      "id": "ja-vocab-0125",
+      "front": "おとな"
+    },
+    {
+      "id": "ja-vocab-0126",
+      "front": "おなか"
+    },
+    {
+      "id": "ja-vocab-0127",
+      "front": "おなじ"
+    },
+    {
+      "id": "ja-vocab-0128",
+      "front": "おにいさん"
+    },
+    {
+      "id": "ja-vocab-0129",
+      "front": "おねえさん"
+    },
+    {
+      "id": "ja-vocab-0130",
+      "front": "おねがいします"
+    },
+    {
+      "id": "ja-vocab-0131",
+      "front": "おばあさん"
+    },
+    {
+      "id": "ja-vocab-0132",
+      "front": "おばさん"
+    },
+    {
+      "id": "ja-vocab-0133",
+      "front": "おふろ"
+    },
+    {
+      "id": "ja-vocab-0134",
+      "front": "おべんとう"
+    },
+    {
+      "id": "ja-vocab-0135",
+      "front": "おぼえる"
+    },
+    {
+      "id": "ja-vocab-0136",
+      "front": "おまわりさん"
+    },
+    {
+      "id": "ja-vocab-0137",
+      "front": "おもい"
+    },
+    {
+      "id": "ja-vocab-0138",
+      "front": "おもしろい"
+    },
+    {
+      "id": "ja-vocab-0139",
+      "front": "およぐ"
+    },
+    {
+      "id": "ja-vocab-0140",
+      "front": "おりる"
+    },
+    {
+      "id": "ja-vocab-0141",
+      "front": "おわる"
+    },
+    {
+      "id": "ja-vocab-0142",
+      "front": "おんがく"
+    },
+    {
+      "id": "ja-vocab-0143",
+      "front": "おんな"
+    },
+    {
+      "id": "ja-vocab-0144",
+      "front": "おんなのこ"
+    },
+    {
+      "id": "ja-vocab-0145",
+      "front": "か"
+    },
+    {
+      "id": "ja-vocab-0146",
+      "front": "かい"
+    },
+    {
+      "id": "ja-vocab-0147",
+      "front": "かいしゃ"
+    },
+    {
+      "id": "ja-vocab-0148",
+      "front": "かいだん"
+    },
+    {
+      "id": "ja-vocab-0149",
+      "front": "かいもの"
+    },
+    {
+      "id": "ja-vocab-0150",
+      "front": "かう"
+    },
+    {
+      "id": "ja-vocab-0151",
+      "front": "かえす"
+    },
+    {
+      "id": "ja-vocab-0152",
+      "front": "かえる"
+    },
+    {
+      "id": "ja-vocab-0153",
+      "front": "かお"
+    },
+    {
+      "id": "ja-vocab-0154",
+      "front": "かかる"
+    },
+    {
+      "id": "ja-vocab-0155",
+      "front": "かきます"
+    },
+    {
+      "id": "ja-vocab-0156",
+      "front": "かぎ"
+    },
+    {
+      "id": "ja-vocab-0157",
+      "front": "かく"
+    },
+    {
+      "id": "ja-vocab-0158",
+      "front": "かける"
+    },
+    {
+      "id": "ja-vocab-0159",
+      "front": "かさ"
+    },
+    {
+      "id": "ja-vocab-0160",
+      "front": "かしこまりました"
+    },
+    {
+      "id": "ja-vocab-0161",
+      "front": "かす"
+    },
+    {
+      "id": "ja-vocab-0162",
+      "front": "かぜ"
+    },
+    {
+      "id": "ja-vocab-0163",
+      "front": "かぞく"
+    },
+    {
+      "id": "ja-vocab-0164",
+      "front": "かた"
+    },
+    {
+      "id": "ja-vocab-0165",
+      "front": "かたづける"
+    },
+    {
+      "id": "ja-vocab-0166",
+      "front": "かてい"
+    },
+    {
+      "id": "ja-vocab-0167",
+      "front": "かど"
+    },
+    {
+      "id": "ja-vocab-0168",
+      "front": "かばん"
+    },
+    {
+      "id": "ja-vocab-0169",
+      "front": "かびん"
+    },
+    {
+      "id": "ja-vocab-0170",
+      "front": "かみ"
+    },
+    {
+      "id": "ja-vocab-0171",
+      "front": "かめ"
+    },
+    {
+      "id": "ja-vocab-0172",
+      "front": "かようび"
+    },
+    {
+      "id": "ja-vocab-0173",
+      "front": "から"
+    },
+    {
+      "id": "ja-vocab-0174",
+      "front": "からい"
+    },
+    {
+      "id": "ja-vocab-0175",
+      "front": "からだ"
+    },
+    {
+      "id": "ja-vocab-0176",
+      "front": "かりる"
+    },
+    {
+      "id": "ja-vocab-0177",
+      "front": "かるい"
+    },
+    {
+      "id": "ja-vocab-0178",
+      "front": "かわ"
+    },
+    {
+      "id": "ja-vocab-0179",
+      "front": "かわいい"
+    },
+    {
+      "id": "ja-vocab-0180",
+      "front": "かんじ"
+    },
+    {
+      "id": "ja-vocab-0181",
+      "front": "が"
+    },
+    {
+      "id": "ja-vocab-0182",
+      "front": "がいこく"
+    },
+    {
+      "id": "ja-vocab-0183",
+      "front": "がいこくじん"
+    },
+    {
+      "id": "ja-vocab-0184",
+      "front": "がくせい"
+    },
+    {
+      "id": "ja-vocab-0185",
+      "front": "がっこう"
+    },
+    {
+      "id": "ja-vocab-0186",
+      "front": "き"
+    },
+    {
+      "id": "ja-vocab-0187",
+      "front": "きいろ"
+    },
+    {
+      "id": "ja-vocab-0188",
+      "front": "きいろい"
+    },
+    {
+      "id": "ja-vocab-0189",
+      "front": "きえる"
+    },
+    {
+      "id": "ja-vocab-0190",
+      "front": "きく"
+    },
+    {
+      "id": "ja-vocab-0191",
+      "front": "きた"
+    },
+    {
+      "id": "ja-vocab-0192",
+      "front": "きたない"
+    },
+    {
+      "id": "ja-vocab-0193",
+      "front": "きっさてん"
+    },
+    {
+      "id": "ja-vocab-0194",
+      "front": "きって"
+    },
+    {
+      "id": "ja-vocab-0195",
+      "front": "きっぷ"
+    },
+    {
+      "id": "ja-vocab-0196",
+      "front": "きになる"
+    },
+    {
+      "id": "ja-vocab-0197",
+      "front": "きのう"
+    },
+    {
+      "id": "ja-vocab-0198",
+      "front": "きのこ"
+    },
+    {
+      "id": "ja-vocab-0199",
+      "front": "きゅう"
+    },
+    {
+      "id": "ja-vocab-0200",
+      "front": "きゅうり"
+    },
+    {
+      "id": "ja-vocab-0201",
+      "front": "きょう"
+    },
+    {
+      "id": "ja-vocab-0202",
+      "front": "きょうしつ"
+    },
+    {
+      "id": "ja-vocab-0203",
+      "front": "きょうだい"
+    },
+    {
+      "id": "ja-vocab-0204",
+      "front": "きょねん"
+    },
+    {
+      "id": "ja-vocab-0205",
+      "front": "きらい"
+    },
+    {
+      "id": "ja-vocab-0206",
+      "front": "きる"
+    },
+    {
+      "id": "ja-vocab-0207",
+      "front": "きれい"
+    },
+    {
+      "id": "ja-vocab-0208",
+      "front": "きんようび"
+    },
+    {
+      "id": "ja-vocab-0209",
+      "front": "ぎゅうにく"
+    },
+    {
+      "id": "ja-vocab-0210",
+      "front": "ぎゅうにゅう"
+    },
+    {
+      "id": "ja-vocab-0211",
+      "front": "ぎんこう"
+    },
+    {
+      "id": "ja-vocab-0212",
+      "front": "く"
+    },
+    {
+      "id": "ja-vocab-0213",
+      "front": "くうこう"
+    },
+    {
+      "id": "ja-vocab-0214",
+      "front": "くすり"
+    },
+    {
+      "id": "ja-vocab-0215",
+      "front": "ください"
+    },
+    {
+      "id": "ja-vocab-0216",
+      "front": "くだもの"
+    },
+    {
+      "id": "ja-vocab-0217",
+      "front": "くち"
+    },
+    {
+      "id": "ja-vocab-0218",
+      "front": "くつ"
+    },
+    {
+      "id": "ja-vocab-0219",
+      "front": "くつした"
+    },
+    {
+      "id": "ja-vocab-0220",
+      "front": "くに"
+    },
+    {
+      "id": "ja-vocab-0221",
+      "front": "くもり"
+    },
+    {
+      "id": "ja-vocab-0222",
+      "front": "くもる"
+    },
+    {
+      "id": "ja-vocab-0223",
+      "front": "くらい"
+    },
+    {
+      "id": "ja-vocab-0224",
+      "front": "くる"
+    },
+    {
+      "id": "ja-vocab-0225",
+      "front": "くるま"
+    },
+    {
+      "id": "ja-vocab-0226",
+      "front": "くろ"
+    },
+    {
+      "id": "ja-vocab-0227",
+      "front": "くろい"
+    },
+    {
+      "id": "ja-vocab-0228",
+      "front": "けいかん"
+    },
+    {
+      "id": "ja-vocab-0229",
+      "front": "けいご"
+    },
+    {
+      "id": "ja-vocab-0230",
+      "front": "けいたい"
+    },
+    {
+      "id": "ja-vocab-0231",
+      "front": "けさ"
+    },
+    {
+      "id": "ja-vocab-0232",
+      "front": "けす"
+    },
+    {
+      "id": "ja-vocab-0233",
+      "front": "けっこう"
+    },
+    {
+      "id": "ja-vocab-0234",
+      "front": "けっこん"
+    },
+    {
+      "id": "ja-vocab-0235",
+      "front": "げつようび"
+    },
+    {
+      "id": "ja-vocab-0236",
+      "front": "げんかん"
+    },
+    {
+      "id": "ja-vocab-0237",
+      "front": "げんき"
+    },
+    {
+      "id": "ja-vocab-0238",
+      "front": "こうえん"
+    },
+    {
+      "id": "ja-vocab-0239",
+      "front": "こうさてん"
+    },
+    {
+      "id": "ja-vocab-0240",
+      "front": "こうちゃ"
+    },
+    {
+      "id": "ja-vocab-0241",
+      "front": "こうはい"
+    },
+    {
+      "id": "ja-vocab-0242",
+      "front": "こうばん"
+    },
+    {
+      "id": "ja-vocab-0243",
+      "front": "こえ"
+    },
+    {
+      "id": "ja-vocab-0244",
+      "front": "ここ"
+    },
+    {
+      "id": "ja-vocab-0245",
+      "front": "ここのか"
+    },
+    {
+      "id": "ja-vocab-0246",
+      "front": "ここのつ"
+    },
+    {
+      "id": "ja-vocab-0247",
+      "front": "こたえる"
+    },
+    {
+      "id": "ja-vocab-0248",
+      "front": "こちら"
+    },
+    {
+      "id": "ja-vocab-0249",
+      "front": "こっち"
+    },
+    {
+      "id": "ja-vocab-0250",
+      "front": "ことし"
+    },
+    {
+      "id": "ja-vocab-0251",
+      "front": "ことば"
+    },
+    {
+      "id": "ja-vocab-0252",
+      "front": "こども"
+    },
+    {
+      "id": "ja-vocab-0253",
+      "front": "この"
+    },
+    {
+      "id": "ja-vocab-0254",
+      "front": "こまる"
+    },
+    {
+      "id": "ja-vocab-0255",
+      "front": "これ"
+    },
+    {
+      "id": "ja-vocab-0256",
+      "front": "これは あおいです"
+    },
+    {
+      "id": "ja-vocab-0257",
+      "front": "こんげつ"
+    },
+    {
+      "id": "ja-vocab-0258",
+      "front": "こんしゅう"
+    },
+    {
+      "id": "ja-vocab-0259",
+      "front": "こんな"
+    },
+    {
+      "id": "ja-vocab-0260",
+      "front": "こんにちは"
+    },
+    {
+      "id": "ja-vocab-0261",
+      "front": "こんばん"
+    },
+    {
+      "id": "ja-vocab-0262",
+      "front": "ご"
+    },
+    {
+      "id": "ja-vocab-0263",
+      "front": "ごご"
+    },
+    {
+      "id": "ja-vocab-0264",
+      "front": "ごぜん"
+    },
+    {
+      "id": "ja-vocab-0265",
+      "front": "ごちゅうもんは"
+    },
+    {
+      "id": "ja-vocab-0266",
+      "front": "ごにん"
+    },
+    {
+      "id": "ja-vocab-0267",
+      "front": "ごはん"
+    },
+    {
+      "id": "ja-vocab-0268",
+      "front": "ごめんなさい"
+    },
+    {
+      "id": "ja-vocab-0269",
+      "front": "さあ"
+    },
+    {
+      "id": "ja-vocab-0270",
+      "front": "さいふ"
+    },
+    {
+      "id": "ja-vocab-0271",
+      "front": "さかな"
+    },
+    {
+      "id": "ja-vocab-0272",
+      "front": "さがす"
+    },
+    {
+      "id": "ja-vocab-0273",
+      "front": "さき"
+    },
+    {
+      "id": "ja-vocab-0274",
+      "front": "さく"
+    },
+    {
+      "id": "ja-vocab-0275",
+      "front": "さくぶん"
+    },
+    {
+      "id": "ja-vocab-0276",
+      "front": "さくら"
+    },
+    {
+      "id": "ja-vocab-0277",
+      "front": "さけ"
+    },
+    {
+      "id": "ja-vocab-0278",
+      "front": "さす"
+    },
+    {
+      "id": "ja-vocab-0279",
+      "front": "さとう"
+    },
+    {
+      "id": "ja-vocab-0280",
+      "front": "さむい"
+    },
+    {
+      "id": "ja-vocab-0281",
+      "front": "さらいねん"
+    },
+    {
+      "id": "ja-vocab-0282",
+      "front": "さん"
+    },
+    {
+      "id": "ja-vocab-0283",
+      "front": "さんにん"
+    },
+    {
+      "id": "ja-vocab-0284",
+      "front": "さんぽ"
+    },
+    {
+      "id": "ja-vocab-0285",
+      "front": "さんぽする"
+    },
+    {
+      "id": "ja-vocab-0286",
+      "front": "ざっし"
+    },
+    {
+      "id": "ja-vocab-0287",
+      "front": "し"
+    },
+    {
+      "id": "ja-vocab-0288",
+      "front": "しお"
+    },
+    {
+      "id": "ja-vocab-0289",
+      "front": "しかし"
+    },
+    {
+      "id": "ja-vocab-0290",
+      "front": "しごと"
+    },
+    {
+      "id": "ja-vocab-0291",
+      "front": "しずか"
+    },
+    {
+      "id": "ja-vocab-0292",
+      "front": "した"
+    },
+    {
+      "id": "ja-vocab-0293",
+      "front": "したしい"
+    },
+    {
+      "id": "ja-vocab-0294",
+      "front": "しち"
+    },
+    {
+      "id": "ja-vocab-0295",
+      "front": "しつもん"
+    },
+    {
+      "id": "ja-vocab-0296",
+      "front": "しつれい"
+    },
+    {
+      "id": "ja-vocab-0297",
+      "front": "しぬ"
+    },
+    {
+      "id": "ja-vocab-0298",
+      "front": "しまる"
+    },
+    {
+      "id": "ja-vocab-0299",
+      "front": "しめる"
+    },
+    {
+      "id": "ja-vocab-0300",
+      "front": "しゃしん"
+    },
+    {
+      "id": "ja-vocab-0301",
+      "front": "しゅくだい"
+    },
+    {
+      "id": "ja-vocab-0302",
+      "front": "しょうゆ"
+    },
+    {
+      "id": "ja-vocab-0303",
+      "front": "しょくどう"
+    },
+    {
+      "id": "ja-vocab-0304",
+      "front": "しりあい"
+    },
+    {
+      "id": "ja-vocab-0305",
+      "front": "しる"
+    },
+    {
+      "id": "ja-vocab-0306",
+      "front": "しろ"
+    },
+    {
+      "id": "ja-vocab-0307",
+      "front": "しろい"
+    },
+    {
+      "id": "ja-vocab-0308",
+      "front": "しんぶん"
+    },
+    {
+      "id": "ja-vocab-0309",
+      "front": "じかん"
+    },
+    {
+      "id": "ja-vocab-0310",
+      "front": "じしょ"
+    },
+    {
+      "id": "ja-vocab-0311",
+      "front": "じてんしゃ"
+    },
+    {
+      "id": "ja-vocab-0312",
+      "front": "じどうしゃ"
+    },
+    {
+      "id": "ja-vocab-0313",
+      "front": "じびき"
+    },
+    {
+      "id": "ja-vocab-0314",
+      "front": "じぶん"
+    },
+    {
+      "id": "ja-vocab-0315",
+      "front": "じゃ / じゃあ"
+    },
+    {
+      "id": "ja-vocab-0316",
+      "front": "じゃないです"
+    },
+    {
+      "id": "ja-vocab-0317",
+      "front": "じゅう"
+    },
+    {
+      "id": "ja-vocab-0318",
+      "front": "じゅぎょう"
+    },
+    {
+      "id": "ja-vocab-0319",
+      "front": "じょうし"
+    },
+    {
+      "id": "ja-vocab-0320",
+      "front": "じょうず"
+    },
+    {
+      "id": "ja-vocab-0321",
+      "front": "じょうぶ"
+    },
+    {
+      "id": "ja-vocab-0322",
+      "front": "すいようび"
+    },
+    {
+      "id": "ja-vocab-0323",
+      "front": "すう"
+    },
+    {
+      "id": "ja-vocab-0324",
+      "front": "すき"
+    },
+    {
+      "id": "ja-vocab-0325",
+      "front": "すくない"
+    },
+    {
+      "id": "ja-vocab-0326",
+      "front": "すぐに"
+    },
+    {
+      "id": "ja-vocab-0327",
+      "front": "すこし"
+    },
+    {
+      "id": "ja-vocab-0328",
+      "front": "すし"
+    },
+    {
+      "id": "ja-vocab-0329",
+      "front": "すずしい"
+    },
+    {
+      "id": "ja-vocab-0330",
+      "front": "すみません"
+    },
+    {
+      "id": "ja-vocab-0331",
+      "front": "すむ"
+    },
+    {
+      "id": "ja-vocab-0332",
+      "front": "する"
+    },
+    {
+      "id": "ja-vocab-0333",
+      "front": "すわる"
+    },
+    {
+      "id": "ja-vocab-0334",
+      "front": "せ"
+    },
+    {
+      "id": "ja-vocab-0335",
+      "front": "せいと"
+    },
+    {
+      "id": "ja-vocab-0336",
+      "front": "せっけん"
+    },
+    {
+      "id": "ja-vocab-0337",
+      "front": "せびろ"
+    },
+    {
+      "id": "ja-vocab-0338",
+      "front": "せまい"
+    },
+    {
+      "id": "ja-vocab-0339",
+      "front": "せん"
+    },
+    {
+      "id": "ja-vocab-0340",
+      "front": "せんげつ"
+    },
+    {
+      "id": "ja-vocab-0341",
+      "front": "せんしゅう"
+    },
+    {
+      "id": "ja-vocab-0342",
+      "front": "せんせい"
+    },
+    {
+      "id": "ja-vocab-0343",
+      "front": "せんたく"
+    },
+    {
+      "id": "ja-vocab-0344",
+      "front": "せんぱい"
+    },
+    {
+      "id": "ja-vocab-0345",
+      "front": "ぜったい"
+    },
+    {
+      "id": "ja-vocab-0346",
+      "front": "ぜんぶ"
+    },
+    {
+      "id": "ja-vocab-0347",
+      "front": "そうして / そして"
+    },
+    {
+      "id": "ja-vocab-0348",
+      "front": "そうじする"
+    },
+    {
+      "id": "ja-vocab-0349",
+      "front": "そこ"
+    },
+    {
+      "id": "ja-vocab-0350",
+      "front": "そちら"
+    },
+    {
+      "id": "ja-vocab-0351",
+      "front": "そっち"
+    },
+    {
+      "id": "ja-vocab-0352",
+      "front": "そと"
+    },
+    {
+      "id": "ja-vocab-0353",
+      "front": "その"
+    },
+    {
+      "id": "ja-vocab-0354",
+      "front": "そば"
+    },
+    {
+      "id": "ja-vocab-0355",
+      "front": "そら"
+    },
+    {
+      "id": "ja-vocab-0356",
+      "front": "それ"
+    },
+    {
+      "id": "ja-vocab-0357",
+      "front": "それから"
+    },
+    {
+      "id": "ja-vocab-0358",
+      "front": "それでは"
+    },
+    {
+      "id": "ja-vocab-0359",
+      "front": "ぞう"
+    },
+    {
+      "id": "ja-vocab-0360",
+      "front": "たいしかん"
+    },
+    {
+      "id": "ja-vocab-0361",
+      "front": "たいせつ"
+    },
+    {
+      "id": "ja-vocab-0362",
+      "front": "たいへん"
+    },
+    {
+      "id": "ja-vocab-0363",
+      "front": "たかい"
+    },
+    {
+      "id": "ja-vocab-0364",
+      "front": "たくさん"
+    },
+    {
+      "id": "ja-vocab-0365",
+      "front": "たつ"
+    },
+    {
+      "id": "ja-vocab-0366",
+      "front": "たて"
+    },
+    {
+      "id": "ja-vocab-0367",
+      "front": "たてもの"
+    },
+    {
+      "id": "ja-vocab-0368",
+      "front": "たのしい"
+    },
+    {
+      "id": "ja-vocab-0369",
+      "front": "たのむ"
+    },
+    {
+      "id": "ja-vocab-0370",
+      "front": "たばこ"
+    },
+    {
+      "id": "ja-vocab-0371",
+      "front": "たぶん"
+    },
+    {
+      "id": "ja-vocab-0372",
+      "front": "たべます"
+    },
+    {
+      "id": "ja-vocab-0373",
+      "front": "たべもの"
+    },
+    {
+      "id": "ja-vocab-0374",
+      "front": "たべる"
+    },
+    {
+      "id": "ja-vocab-0375",
+      "front": "たまご"
+    },
+    {
+      "id": "ja-vocab-0376",
+      "front": "ためぐち"
+    },
+    {
+      "id": "ja-vocab-0377",
+      "front": "たんじょうび"
+    },
+    {
+      "id": "ja-vocab-0378",
+      "front": "だいがく"
+    },
+    {
+      "id": "ja-vocab-0379",
+      "front": "だいじょうぶ"
+    },
+    {
+      "id": "ja-vocab-0380",
+      "front": "だいすき"
+    },
+    {
+      "id": "ja-vocab-0381",
+      "front": "だいどころ"
+    },
+    {
+      "id": "ja-vocab-0382",
+      "front": "だす"
+    },
+    {
+      "id": "ja-vocab-0383",
+      "front": "だれ"
+    },
+    {
+      "id": "ja-vocab-0384",
+      "front": "だんだん"
+    },
+    {
+      "id": "ja-vocab-0385",
+      "front": "ちいさい"
+    },
+    {
+      "id": "ja-vocab-0386",
+      "front": "ちいさな"
+    },
+    {
+      "id": "ja-vocab-0387",
+      "front": "ちかい"
+    },
+    {
+      "id": "ja-vocab-0388",
+      "front": "ちかく"
+    },
+    {
+      "id": "ja-vocab-0389",
+      "front": "ちかてつ"
+    },
+    {
+      "id": "ja-vocab-0390",
+      "front": "ちがう"
+    },
+    {
+      "id": "ja-vocab-0391",
+      "front": "ちず"
+    },
+    {
+      "id": "ja-vocab-0392",
+      "front": "ちち"
+    },
+    {
+      "id": "ja-vocab-0393",
+      "front": "ちゃいろ"
+    },
+    {
+      "id": "ja-vocab-0394",
+      "front": "ちゃわん"
+    },
+    {
+      "id": "ja-vocab-0395",
+      "front": "ちょうど"
+    },
+    {
+      "id": "ja-vocab-0396",
+      "front": "ちょっと"
+    },
+    {
+      "id": "ja-vocab-0397",
+      "front": "つかう"
+    },
+    {
+      "id": "ja-vocab-0398",
+      "front": "つかれる"
+    },
+    {
+      "id": "ja-vocab-0399",
+      "front": "つき"
+    },
+    {
+      "id": "ja-vocab-0400",
+      "front": "つぎ"
+    },
+    {
+      "id": "ja-vocab-0401",
+      "front": "つく"
+    },
+    {
+      "id": "ja-vocab-0402",
+      "front": "つくえ"
+    },
+    {
+      "id": "ja-vocab-0403",
+      "front": "つくる"
+    },
+    {
+      "id": "ja-vocab-0404",
+      "front": "つける"
+    },
+    {
+      "id": "ja-vocab-0405",
+      "front": "つとめる"
+    },
+    {
+      "id": "ja-vocab-0406",
+      "front": "つまらない"
+    },
+    {
+      "id": "ja-vocab-0407",
+      "front": "つめたい"
+    },
+    {
+      "id": "ja-vocab-0408",
+      "front": "つよい"
+    },
+    {
+      "id": "ja-vocab-0409",
+      "front": "て"
+    },
+    {
+      "id": "ja-vocab-0410",
+      "front": "ていねい"
+    },
+    {
+      "id": "ja-vocab-0411",
+      "front": "てがみ"
+    },
+    {
+      "id": "ja-vocab-0412",
+      "front": "てつだう"
+    },
+    {
+      "id": "ja-vocab-0413",
+      "front": "てんき"
+    },
+    {
+      "id": "ja-vocab-0414",
+      "front": "で"
+    },
+    {
+      "id": "ja-vocab-0415",
+      "front": "でかける"
+    },
+    {
+      "id": "ja-vocab-0416",
+      "front": "できる"
+    },
+    {
+      "id": "ja-vocab-0417",
+      "front": "でぐち"
+    },
+    {
+      "id": "ja-vocab-0418",
+      "front": "です"
+    },
+    {
+      "id": "ja-vocab-0419",
+      "front": "では"
+    },
+    {
+      "id": "ja-vocab-0420",
+      "front": "でも"
+    },
+    {
+      "id": "ja-vocab-0421",
+      "front": "でる"
+    },
+    {
+      "id": "ja-vocab-0422",
+      "front": "でんき"
+    },
+    {
+      "id": "ja-vocab-0423",
+      "front": "でんしゃ"
+    },
+    {
+      "id": "ja-vocab-0424",
+      "front": "でんわ"
+    },
+    {
+      "id": "ja-vocab-0425",
+      "front": "と"
+    },
+    {
+      "id": "ja-vocab-0426",
+      "front": "とお"
+    },
+    {
+      "id": "ja-vocab-0427",
+      "front": "とおい"
+    },
+    {
+      "id": "ja-vocab-0428",
+      "front": "とおか"
+    },
+    {
+      "id": "ja-vocab-0429",
+      "front": "ときどき"
+    },
+    {
+      "id": "ja-vocab-0430",
+      "front": "とけい"
+    },
+    {
+      "id": "ja-vocab-0431",
+      "front": "ところ"
+    },
+    {
+      "id": "ja-vocab-0432",
+      "front": "とし"
+    },
+    {
+      "id": "ja-vocab-0433",
+      "front": "としょかん"
+    },
+    {
+      "id": "ja-vocab-0434",
+      "front": "とても"
+    },
+    {
+      "id": "ja-vocab-0435",
+      "front": "となり"
+    },
+    {
+      "id": "ja-vocab-0436",
+      "front": "とぶ"
+    },
+    {
+      "id": "ja-vocab-0437",
+      "front": "とまる"
+    },
+    {
+      "id": "ja-vocab-0438",
+      "front": "ともだち"
+    },
+    {
+      "id": "ja-vocab-0439",
+      "front": "とり"
+    },
+    {
+      "id": "ja-vocab-0440",
+      "front": "とりにく"
+    },
+    {
+      "id": "ja-vocab-0441",
+      "front": "とる"
+    },
+    {
+      "id": "ja-vocab-0442",
+      "front": "どあ"
+    },
+    {
+      "id": "ja-vocab-0443",
+      "front": "どう"
+    },
+    {
+      "id": "ja-vocab-0444",
+      "front": "どうしたの"
+    },
+    {
+      "id": "ja-vocab-0445",
+      "front": "どうして"
+    },
+    {
+      "id": "ja-vocab-0446",
+      "front": "どうぞ"
+    },
+    {
+      "id": "ja-vocab-0447",
+      "front": "どうぶつ"
+    },
+    {
+      "id": "ja-vocab-0448",
+      "front": "どうも"
+    },
+    {
+      "id": "ja-vocab-0449",
+      "front": "どうりょう"
+    },
+    {
+      "id": "ja-vocab-0450",
+      "front": "どこ"
+    },
+    {
+      "id": "ja-vocab-0451",
+      "front": "どこですか"
+    },
+    {
+      "id": "ja-vocab-0452",
+      "front": "どちら"
+    },
+    {
+      "id": "ja-vocab-0453",
+      "front": "どっち"
+    },
+    {
+      "id": "ja-vocab-0454",
+      "front": "どなた"
+    },
+    {
+      "id": "ja-vocab-0455",
+      "front": "どの"
+    },
+    {
+      "id": "ja-vocab-0456",
+      "front": "どようび"
+    },
+    {
+      "id": "ja-vocab-0457",
+      "front": "どれ"
+    },
+    {
+      "id": "ja-vocab-0458",
+      "front": "なおす"
+    },
+    {
+      "id": "ja-vocab-0459",
+      "front": "なか"
+    },
+    {
+      "id": "ja-vocab-0460",
+      "front": "なかま"
+    },
+    {
+      "id": "ja-vocab-0461",
+      "front": "ながい"
+    },
+    {
+      "id": "ja-vocab-0462",
+      "front": "なく"
+    },
+    {
+      "id": "ja-vocab-0463",
+      "front": "なくす"
+    },
+    {
+      "id": "ja-vocab-0464",
+      "front": "なぜ"
+    },
+    {
+      "id": "ja-vocab-0465",
+      "front": "なつ"
+    },
+    {
+      "id": "ja-vocab-0466",
+      "front": "なつやすみ"
+    },
+    {
+      "id": "ja-vocab-0467",
+      "front": "など"
+    },
+    {
+      "id": "ja-vocab-0468",
+      "front": "なな"
+    },
+    {
+      "id": "ja-vocab-0469",
+      "front": "ななつ"
+    },
+    {
+      "id": "ja-vocab-0470",
+      "front": "なに"
+    },
+    {
+      "id": "ja-vocab-0471",
+      "front": "なのか"
+    },
+    {
+      "id": "ja-vocab-0472",
+      "front": "なまえ"
+    },
+    {
+      "id": "ja-vocab-0473",
+      "front": "ならう"
+    },
+    {
+      "id": "ja-vocab-0474",
+      "front": "ならぶ"
+    },
+    {
+      "id": "ja-vocab-0475",
+      "front": "ならべる"
+    },
+    {
+      "id": "ja-vocab-0476",
+      "front": "なる"
+    },
+    {
+      "id": "ja-vocab-0477",
+      "front": "なん"
+    },
+    {
+      "id": "ja-vocab-0478",
+      "front": "なんで"
+    },
+    {
+      "id": "ja-vocab-0479",
+      "front": "なんめいさまですか"
+    },
+    {
+      "id": "ja-vocab-0480",
+      "front": "に"
+    },
+    {
+      "id": "ja-vocab-0481",
+      "front": "にぎやか"
+    },
+    {
+      "id": "ja-vocab-0482",
+      "front": "にく"
+    },
+    {
+      "id": "ja-vocab-0483",
+      "front": "にし"
+    },
+    {
+      "id": "ja-vocab-0484",
+      "front": "にちようび"
+    },
+    {
+      "id": "ja-vocab-0485",
+      "front": "にほん"
+    },
+    {
+      "id": "ja-vocab-0486",
+      "front": "にほんじん"
+    },
+    {
+      "id": "ja-vocab-0487",
+      "front": "にもつ"
+    },
+    {
+      "id": "ja-vocab-0488",
+      "front": "にわ"
+    },
+    {
+      "id": "ja-vocab-0489",
+      "front": "ぬぐ"
+    },
+    {
+      "id": "ja-vocab-0490",
+      "front": "ぬるい"
+    },
+    {
+      "id": "ja-vocab-0491",
+      "front": "ねこ"
+    },
+    {
+      "id": "ja-vocab-0492",
+      "front": "ねる"
+    },
+    {
+      "id": "ja-vocab-0493",
+      "front": "の"
+    },
+    {
+      "id": "ja-vocab-0494",
+      "front": "のぼる"
+    },
+    {
+      "id": "ja-vocab-0495",
+      "front": "のみます"
+    },
+    {
+      "id": "ja-vocab-0496",
+      "front": "のみもの"
+    },
+    {
+      "id": "ja-vocab-0497",
+      "front": "のむ"
+    },
+    {
+      "id": "ja-vocab-0498",
+      "front": "のる"
+    },
+    {
+      "id": "ja-vocab-0499",
+      "front": "は"
+    },
+    {
+      "id": "ja-vocab-0500",
+      "front": "はい"
+    },
+    {
+      "id": "ja-vocab-0501",
+      "front": "はいざら"
+    },
+    {
+      "id": "ja-vocab-0502",
+      "front": "はいる"
+    },
+    {
+      "id": "ja-vocab-0503",
+      "front": "はがき"
+    },
+    {
+      "id": "ja-vocab-0504",
+      "front": "はく"
+    },
+    {
+      "id": "ja-vocab-0505",
+      "front": "はこ"
+    },
+    {
+      "id": "ja-vocab-0506",
+      "front": "はこぶ"
+    },
+    {
+      "id": "ja-vocab-0507",
+      "front": "はし"
+    },
+    {
+      "id": "ja-vocab-0508",
+      "front": "はしる"
+    },
+    {
+      "id": "ja-vocab-0509",
+      "front": "はじまる"
+    },
+    {
+      "id": "ja-vocab-0510",
+      "front": "はじめ"
+    },
+    {
+      "id": "ja-vocab-0511",
+      "front": "はじめて"
+    },
+    {
+      "id": "ja-vocab-0512",
+      "front": "はたち"
+    },
+    {
+      "id": "ja-vocab-0513",
+      "front": "はたらく"
+    },
+    {
+      "id": "ja-vocab-0514",
+      "front": "はち"
+    },
+    {
+      "id": "ja-vocab-0515",
+      "front": "はつか"
+    },
+    {
+      "id": "ja-vocab-0516",
+      "front": "はな"
+    },
+    {
+      "id": "ja-vocab-0517",
+      "front": "はなし"
+    },
+    {
+      "id": "ja-vocab-0518",
+      "front": "はなす"
+    },
+    {
+      "id": "ja-vocab-0519",
+      "front": "はは"
+    },
+    {
+      "id": "ja-vocab-0520",
+      "front": "はやい"
+    },
+    {
+      "id": "ja-vocab-0521",
+      "front": "はる"
+    },
+    {
+      "id": "ja-vocab-0522",
+      "front": "はれ"
+    },
+    {
+      "id": "ja-vocab-0523",
+      "front": "はれる"
+    },
+    {
+      "id": "ja-vocab-0524",
+      "front": "はん"
+    },
+    {
+      "id": "ja-vocab-0525",
+      "front": "はんぶん"
+    },
+    {
+      "id": "ja-vocab-0526",
+      "front": "ばん"
+    },
+    {
+      "id": "ja-vocab-0527",
+      "front": "ばんごう"
+    },
+    {
+      "id": "ja-vocab-0528",
+      "front": "ばんごはん"
+    },
+    {
+      "id": "ja-vocab-0529",
+      "front": "ぱん"
+    },
+    {
+      "id": "ja-vocab-0530",
+      "front": "ひがし"
+    },
+    {
+      "id": "ja-vocab-0531",
+      "front": "ひく"
+    },
+    {
+      "id": "ja-vocab-0532",
+      "front": "ひくい"
+    },
+    {
+      "id": "ja-vocab-0533",
+      "front": "ひこうき"
+    },
+    {
+      "id": "ja-vocab-0534",
+      "front": "ひだり"
+    },
+    {
+      "id": "ja-vocab-0535",
+      "front": "ひと"
+    },
+    {
+      "id": "ja-vocab-0536",
+      "front": "ひとつ"
+    },
+    {
+      "id": "ja-vocab-0537",
+      "front": "ひとつき"
+    },
+    {
+      "id": "ja-vocab-0538",
+      "front": "ひとり"
+    },
+    {
+      "id": "ja-vocab-0539",
+      "front": "ひま"
+    },
+    {
+      "id": "ja-vocab-0540",
+      "front": "ひゃく"
+    },
+    {
+      "id": "ja-vocab-0541",
+      "front": "ひる"
+    },
+    {
+      "id": "ja-vocab-0542",
+      "front": "ひるごはん"
+    },
+    {
+      "id": "ja-vocab-0543",
+      "front": "ひろい"
+    },
+    {
+      "id": "ja-vocab-0544",
+      "front": "びょういん"
+    },
+    {
+      "id": "ja-vocab-0545",
+      "front": "びょうき"
+    },
+    {
+      "id": "ja-vocab-0546",
+      "front": "ぴあの"
+    },
+    {
+      "id": "ja-vocab-0547",
+      "front": "ふうとう"
+    },
+    {
+      "id": "ja-vocab-0548",
+      "front": "ふく"
+    },
+    {
+      "id": "ja-vocab-0549",
+      "front": "ふたつ"
+    },
+    {
+      "id": "ja-vocab-0550",
+      "front": "ふたり"
+    },
+    {
+      "id": "ja-vocab-0551",
+      "front": "ふつか"
+    },
+    {
+      "id": "ja-vocab-0552",
+      "front": "ふとい"
+    },
+    {
+      "id": "ja-vocab-0553",
+      "front": "ふね"
+    },
+    {
+      "id": "ja-vocab-0554",
+      "front": "ふゆ"
+    },
+    {
+      "id": "ja-vocab-0555",
+      "front": "ふる"
+    },
+    {
+      "id": "ja-vocab-0556",
+      "front": "ふるい"
+    },
+    {
+      "id": "ja-vocab-0557",
+      "front": "ふろ"
+    },
+    {
+      "id": "ja-vocab-0558",
+      "front": "ぶた"
+    },
+    {
+      "id": "ja-vocab-0559",
+      "front": "ぶたにく"
+    },
+    {
+      "id": "ja-vocab-0560",
+      "front": "ぶんしょう"
+    },
+    {
+      "id": "ja-vocab-0561",
+      "front": "ぷりん"
+    },
+    {
+      "id": "ja-vocab-0562",
+      "front": "へた"
+    },
+    {
+      "id": "ja-vocab-0563",
+      "front": "へや"
+    },
+    {
+      "id": "ja-vocab-0564",
+      "front": "へん"
+    },
+    {
+      "id": "ja-vocab-0565",
+      "front": "べつに"
+    },
+    {
+      "id": "ja-vocab-0566",
+      "front": "べんきょうする"
+    },
+    {
+      "id": "ja-vocab-0567",
+      "front": "べんり"
+    },
+    {
+      "id": "ja-vocab-0568",
+      "front": "ぺん"
+    },
+    {
+      "id": "ja-vocab-0569",
+      "front": "ほか"
+    },
+    {
+      "id": "ja-vocab-0570",
+      "front": "ほし"
+    },
+    {
+      "id": "ja-vocab-0571",
+      "front": "ほしい"
+    },
+    {
+      "id": "ja-vocab-0572",
+      "front": "ほそい"
+    },
+    {
+      "id": "ja-vocab-0573",
+      "front": "ほん"
+    },
+    {
+      "id": "ja-vocab-0574",
+      "front": "ほんだな"
+    },
+    {
+      "id": "ja-vocab-0575",
+      "front": "ほんとう"
+    },
+    {
+      "id": "ja-vocab-0576",
+      "front": "ぼうし"
+    },
+    {
+      "id": "ja-vocab-0577",
+      "front": "まいあさ"
+    },
+    {
+      "id": "ja-vocab-0578",
+      "front": "まいげつ"
+    },
+    {
+      "id": "ja-vocab-0579",
+      "front": "まいしゅう"
+    },
+    {
+      "id": "ja-vocab-0580",
+      "front": "まいつき"
+    },
+    {
+      "id": "ja-vocab-0581",
+      "front": "まいとし"
+    },
+    {
+      "id": "ja-vocab-0582",
+      "front": "まいにち"
+    },
+    {
+      "id": "ja-vocab-0583",
+      "front": "まいねん"
+    },
+    {
+      "id": "ja-vocab-0584",
+      "front": "まいばん"
+    },
+    {
+      "id": "ja-vocab-0585",
+      "front": "まえ"
+    },
+    {
+      "id": "ja-vocab-0586",
+      "front": "まがる"
+    },
+    {
+      "id": "ja-vocab-0587",
+      "front": "まずい"
+    },
+    {
+      "id": "ja-vocab-0588",
+      "front": "また"
+    },
+    {
+      "id": "ja-vocab-0589",
+      "front": "まだ"
+    },
+    {
+      "id": "ja-vocab-0590",
+      "front": "まち"
+    },
+    {
+      "id": "ja-vocab-0591",
+      "front": "まっすぐ"
+    },
+    {
+      "id": "ja-vocab-0592",
+      "front": "まつ"
+    },
+    {
+      "id": "ja-vocab-0593",
+      "front": "まど"
+    },
+    {
+      "id": "ja-vocab-0594",
+      "front": "まるい"
+    },
+    {
+      "id": "ja-vocab-0595",
+      "front": "まん"
+    },
+    {
+      "id": "ja-vocab-0596",
+      "front": "まんねんひつ"
+    },
+    {
+      "id": "ja-vocab-0597",
+      "front": "みがく"
+    },
+    {
+      "id": "ja-vocab-0598",
+      "front": "みぎ"
+    },
+    {
+      "id": "ja-vocab-0599",
+      "front": "みじかい"
+    },
+    {
+      "id": "ja-vocab-0600",
+      "front": "みず"
+    },
+    {
+      "id": "ja-vocab-0601",
+      "front": "みせ"
+    },
+    {
+      "id": "ja-vocab-0602",
+      "front": "みせる"
+    },
+    {
+      "id": "ja-vocab-0603",
+      "front": "みち"
+    },
+    {
+      "id": "ja-vocab-0604",
+      "front": "みっか"
+    },
+    {
+      "id": "ja-vocab-0605",
+      "front": "みっつ"
+    },
+    {
+      "id": "ja-vocab-0606",
+      "front": "みどり"
+    },
+    {
+      "id": "ja-vocab-0607",
+      "front": "みなさん"
+    },
+    {
+      "id": "ja-vocab-0608",
+      "front": "みなみ"
+    },
+    {
+      "id": "ja-vocab-0609",
+      "front": "みます"
+    },
+    {
+      "id": "ja-vocab-0610",
+      "front": "みみ"
+    },
+    {
+      "id": "ja-vocab-0611",
+      "front": "みる"
+    },
+    {
+      "id": "ja-vocab-0612",
+      "front": "みんな"
+    },
+    {
+      "id": "ja-vocab-0613",
+      "front": "むいか"
+    },
+    {
+      "id": "ja-vocab-0614",
+      "front": "むこう"
+    },
+    {
+      "id": "ja-vocab-0615",
+      "front": "むずかしい"
+    },
+    {
+      "id": "ja-vocab-0616",
+      "front": "むっつ"
+    },
+    {
+      "id": "ja-vocab-0617",
+      "front": "むら"
+    },
+    {
+      "id": "ja-vocab-0618",
+      "front": "め"
+    },
+    {
+      "id": "ja-vocab-0619",
+      "front": "めがね"
+    },
+    {
+      "id": "ja-vocab-0620",
+      "front": "も"
+    },
+    {
+      "id": "ja-vocab-0621",
+      "front": "もう"
+    },
+    {
+      "id": "ja-vocab-0622",
+      "front": "もういちど"
+    },
+    {
+      "id": "ja-vocab-0623",
+      "front": "もくようび"
+    },
+    {
+      "id": "ja-vocab-0624",
+      "front": "もちろん"
+    },
+    {
+      "id": "ja-vocab-0625",
+      "front": "もっと"
+    },
+    {
+      "id": "ja-vocab-0626",
+      "front": "もつ"
+    },
+    {
+      "id": "ja-vocab-0627",
+      "front": "もの"
+    },
+    {
+      "id": "ja-vocab-0628",
+      "front": "もも"
+    },
+    {
+      "id": "ja-vocab-0629",
+      "front": "もん"
+    },
+    {
+      "id": "ja-vocab-0630",
+      "front": "もんだい"
+    },
+    {
+      "id": "ja-vocab-0631",
+      "front": "やおや"
+    },
+    {
+      "id": "ja-vocab-0632",
+      "front": "やさい"
+    },
+    {
+      "id": "ja-vocab-0633",
+      "front": "やさしい"
+    },
+    {
+      "id": "ja-vocab-0634",
+      "front": "やすい"
+    },
+    {
+      "id": "ja-vocab-0635",
+      "front": "やすみ"
+    },
+    {
+      "id": "ja-vocab-0636",
+      "front": "やすむ"
+    },
+    {
+      "id": "ja-vocab-0637",
+      "front": "やっつ"
+    },
+    {
+      "id": "ja-vocab-0638",
+      "front": "やっぱり"
+    },
+    {
+      "id": "ja-vocab-0639",
+      "front": "やま"
+    },
+    {
+      "id": "ja-vocab-0640",
+      "front": "やる"
+    },
+    {
+      "id": "ja-vocab-0641",
+      "front": "ゆうがた"
+    },
+    {
+      "id": "ja-vocab-0642",
+      "front": "ゆうはん"
+    },
+    {
+      "id": "ja-vocab-0643",
+      "front": "ゆうびんきょく"
+    },
+    {
+      "id": "ja-vocab-0644",
+      "front": "ゆうべ"
+    },
+    {
+      "id": "ja-vocab-0645",
+      "front": "ゆうめい"
+    },
+    {
+      "id": "ja-vocab-0646",
+      "front": "ゆき"
+    },
+    {
+      "id": "ja-vocab-0647",
+      "front": "ゆっくりと"
+    },
+    {
+      "id": "ja-vocab-0648",
+      "front": "ようか"
+    },
+    {
+      "id": "ja-vocab-0649",
+      "front": "ようふく"
+    },
+    {
+      "id": "ja-vocab-0650",
+      "front": "よく"
+    },
+    {
+      "id": "ja-vocab-0651",
+      "front": "よこ"
+    },
+    {
+      "id": "ja-vocab-0652",
+      "front": "よっか"
+    },
+    {
+      "id": "ja-vocab-0653",
+      "front": "よっつ"
+    },
+    {
+      "id": "ja-vocab-0654",
+      "front": "よにん"
+    },
+    {
+      "id": "ja-vocab-0655",
+      "front": "よぶ"
+    },
+    {
+      "id": "ja-vocab-0656",
+      "front": "よみます"
+    },
+    {
+      "id": "ja-vocab-0657",
+      "front": "よむ"
+    },
+    {
+      "id": "ja-vocab-0658",
+      "front": "より、ほう"
+    },
+    {
+      "id": "ja-vocab-0659",
+      "front": "よる"
+    },
+    {
+      "id": "ja-vocab-0660",
+      "front": "よわい"
+    },
+    {
+      "id": "ja-vocab-0661",
+      "front": "よん"
+    },
+    {
+      "id": "ja-vocab-0662",
+      "front": "らいげつ"
+    },
+    {
+      "id": "ja-vocab-0663",
+      "front": "らいしゅう"
+    },
+    {
+      "id": "ja-vocab-0664",
+      "front": "らいねん"
+    },
+    {
+      "id": "ja-vocab-0665",
+      "front": "りっぱ"
+    },
+    {
+      "id": "ja-vocab-0666",
+      "front": "りゅうがくせい"
+    },
+    {
+      "id": "ja-vocab-0667",
+      "front": "りょうしん"
+    },
+    {
+      "id": "ja-vocab-0668",
+      "front": "りょうり"
+    },
+    {
+      "id": "ja-vocab-0669",
+      "front": "りょこう"
+    },
+    {
+      "id": "ja-vocab-0670",
+      "front": "れい"
+    },
+    {
+      "id": "ja-vocab-0671",
+      "front": "れいぞうこ"
+    },
+    {
+      "id": "ja-vocab-0672",
+      "front": "れんしゅうする"
+    },
+    {
+      "id": "ja-vocab-0673",
+      "front": "ろうか"
+    },
+    {
+      "id": "ja-vocab-0674",
+      "front": "ろく"
+    },
+    {
+      "id": "ja-vocab-0675",
+      "front": "わかい"
+    },
+    {
+      "id": "ja-vocab-0676",
+      "front": "わかりました"
+    },
+    {
+      "id": "ja-vocab-0677",
+      "front": "わかる"
+    },
+    {
+      "id": "ja-vocab-0678",
+      "front": "わすれる"
+    },
+    {
+      "id": "ja-vocab-0679",
+      "front": "わたくし"
+    },
+    {
+      "id": "ja-vocab-0680",
+      "front": "わたし"
+    },
+    {
+      "id": "ja-vocab-0681",
+      "front": "わたしは すしを たべます"
+    },
+    {
+      "id": "ja-vocab-0682",
+      "front": "わたしは ほんを よみます"
+    },
+    {
+      "id": "ja-vocab-0683",
+      "front": "わたす"
+    },
+    {
+      "id": "ja-vocab-0684",
+      "front": "わたる"
+    },
+    {
+      "id": "ja-vocab-0685",
+      "front": "わるい"
+    },
+    {
+      "id": "ja-vocab-0686",
+      "front": "を"
+    },
+    {
+      "id": "ja-vocab-0687",
+      "front": "アパート"
+    },
+    {
+      "id": "ja-vocab-0688",
+      "front": "アメリカ"
+    },
+    {
+      "id": "ja-vocab-0689",
+      "front": "アメリカじん"
+    },
+    {
+      "id": "ja-vocab-0690",
+      "front": "エレベーター"
+    },
+    {
+      "id": "ja-vocab-0691",
+      "front": "カップ"
+    },
+    {
+      "id": "ja-vocab-0692",
+      "front": "カメラ"
+    },
+    {
+      "id": "ja-vocab-0693",
+      "front": "カレンダー"
+    },
+    {
+      "id": "ja-vocab-0694",
+      "front": "カレー"
+    },
+    {
+      "id": "ja-vocab-0695",
+      "front": "キロ / キログラム"
+    },
+    {
+      "id": "ja-vocab-0696",
+      "front": "キロ / キロメートル"
+    },
+    {
+      "id": "ja-vocab-0697",
+      "front": "ギター"
+    },
+    {
+      "id": "ja-vocab-0698",
+      "front": "クラス"
+    },
+    {
+      "id": "ja-vocab-0699",
+      "front": "グラム"
+    },
+    {
+      "id": "ja-vocab-0700",
+      "front": "コップ"
+    },
+    {
+      "id": "ja-vocab-0701",
+      "front": "コピーする"
+    },
+    {
+      "id": "ja-vocab-0702",
+      "front": "コンビニ"
+    },
+    {
+      "id": "ja-vocab-0703",
+      "front": "コート"
+    },
+    {
+      "id": "ja-vocab-0704",
+      "front": "コーヒー"
+    },
+    {
+      "id": "ja-vocab-0705",
+      "front": "コーヒー です"
+    },
+    {
+      "id": "ja-vocab-0706",
+      "front": "シャツ"
+    },
+    {
+      "id": "ja-vocab-0707",
+      "front": "シャワー"
+    },
+    {
+      "id": "ja-vocab-0708",
+      "front": "ジュース"
+    },
+    {
+      "id": "ja-vocab-0709",
+      "front": "スカート"
+    },
+    {
+      "id": "ja-vocab-0710",
+      "front": "ストーブ"
+    },
+    {
+      "id": "ja-vocab-0711",
+      "front": "スプーン"
+    },
+    {
+      "id": "ja-vocab-0712",
+      "front": "スポーツ"
+    },
+    {
+      "id": "ja-vocab-0713",
+      "front": "スリッパ"
+    },
+    {
+      "id": "ja-vocab-0714",
+      "front": "ズボン"
+    },
+    {
+      "id": "ja-vocab-0715",
+      "front": "セーター"
+    },
+    {
+      "id": "ja-vocab-0716",
+      "front": "ゼロ"
+    },
+    {
+      "id": "ja-vocab-0717",
+      "front": "タクシー"
+    },
+    {
+      "id": "ja-vocab-0718",
+      "front": "タクシー です"
+    },
+    {
+      "id": "ja-vocab-0719",
+      "front": "ティーシャツ"
+    },
+    {
+      "id": "ja-vocab-0720",
+      "front": "テスト"
+    },
+    {
+      "id": "ja-vocab-0721",
+      "front": "テレビ"
+    },
+    {
+      "id": "ja-vocab-0722",
+      "front": "テーブル"
+    },
+    {
+      "id": "ja-vocab-0723",
+      "front": "テープ"
+    },
+    {
+      "id": "ja-vocab-0724",
+      "front": "テープレコーダー"
+    },
+    {
+      "id": "ja-vocab-0725",
+      "front": "デパート"
+    },
+    {
+      "id": "ja-vocab-0726",
+      "front": "トイレ"
+    },
+    {
+      "id": "ja-vocab-0727",
+      "front": "ドア"
+    },
+    {
+      "id": "ja-vocab-0728",
+      "front": "ナイフ"
+    },
+    {
+      "id": "ja-vocab-0729",
+      "front": "ニュース"
+    },
+    {
+      "id": "ja-vocab-0730",
+      "front": "ネクタイ"
+    },
+    {
+      "id": "ja-vocab-0731",
+      "front": "ノート"
+    },
+    {
+      "id": "ja-vocab-0732",
+      "front": "ハンカチ"
+    },
+    {
+      "id": "ja-vocab-0733",
+      "front": "バス"
+    },
+    {
+      "id": "ja-vocab-0734",
+      "front": "バター"
+    },
+    {
+      "id": "ja-vocab-0735",
+      "front": "パン"
+    },
+    {
+      "id": "ja-vocab-0736",
+      "front": "パーティー"
+    },
+    {
+      "id": "ja-vocab-0737",
+      "front": "ビール"
+    },
+    {
+      "id": "ja-vocab-0738",
+      "front": "フィルム"
+    },
+    {
+      "id": "ja-vocab-0739",
+      "front": "フォーク"
+    },
+    {
+      "id": "ja-vocab-0740",
+      "front": "プール"
+    },
+    {
+      "id": "ja-vocab-0741",
+      "front": "ベッド"
+    },
+    {
+      "id": "ja-vocab-0742",
+      "front": "ペット"
+    },
+    {
+      "id": "ja-vocab-0743",
+      "front": "ペン"
+    },
+    {
+      "id": "ja-vocab-0744",
+      "front": "ページ"
+    },
+    {
+      "id": "ja-vocab-0745",
+      "front": "ホテル"
+    },
+    {
+      "id": "ja-vocab-0746",
+      "front": "ボタン"
+    },
+    {
+      "id": "ja-vocab-0747",
+      "front": "ボールペン"
+    },
+    {
+      "id": "ja-vocab-0748",
+      "front": "ポケット"
+    },
+    {
+      "id": "ja-vocab-0749",
+      "front": "ポスト"
+    },
+    {
+      "id": "ja-vocab-0750",
+      "front": "マッチ"
+    },
+    {
+      "id": "ja-vocab-0751",
+      "front": "メートル"
+    },
+    {
+      "id": "ja-vocab-0752",
+      "front": "ラジオ"
+    },
+    {
+      "id": "ja-vocab-0753",
+      "front": "ラジカセ / ラジオカセット"
+    },
+    {
+      "id": "ja-vocab-0754",
+      "front": "ラーメン"
+    },
+    {
+      "id": "ja-vocab-0755",
+      "front": "レコード"
+    },
+    {
+      "id": "ja-vocab-0756",
+      "front": "レストラン"
+    },
+    {
+      "id": "ja-vocab-0757",
+      "front": "ワイシャツ"
+    }
+  ]
+}
