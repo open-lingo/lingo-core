@@ -1,94 +1,94 @@
 {
   "name": "ja-keita-dialogue",
-  "languageId": "ja-keita",
-  "_note": "Male dialogue speakers' lines — synthesized with ja-JP-KeitaNeural by scripts/tts/gen_keita_dialogue.py. Auto-emitted; do not edit.",
+  "languageId": "ja-keita-dialogue",
+  "_note": "Male dialogue speakers' lines — synthesized with ja-JP-KeitaNeural by scripts/tts/gen_dialogue_voices.py under ja-keita: keys. Auto-emitted.",
   "cards": [
     {
-      "id": "keita-000-がくせいだ",
+      "id": "ja-keita-dialogue-000-がくせいだ",
       "front": "がくせいだ"
     },
     {
-      "id": "keita-001-しゅじんと むすめと むすこと わたしです",
+      "id": "ja-keita-dialogue-001-しゅじんと むすめと むすこと わたしです",
       "front": "しゅじんと むすめと むすこと わたしです"
     },
     {
-      "id": "keita-002-せんせいです",
+      "id": "ja-keita-dialogue-002-せんせいです",
       "front": "せんせいです"
     },
     {
-      "id": "keita-003-そう？",
+      "id": "ja-keita-dialogue-003-そう？",
       "front": "そう？"
     },
     {
-      "id": "keita-004-たなかです",
+      "id": "ja-keita-dialogue-004-たなかです",
       "front": "たなかです"
     },
     {
-      "id": "keita-005-だいじょうぶ",
+      "id": "ja-keita-dialogue-005-だいじょうぶ",
       "front": "だいじょうぶ"
     },
     {
-      "id": "keita-006-ちゅうがくせいです",
+      "id": "ja-keita-dialogue-006-ちゅうがくせいです",
       "front": "ちゅうがくせいです"
     },
     {
-      "id": "keita-007-はじめまして",
+      "id": "ja-keita-dialogue-007-はじめまして",
       "front": "はじめまして"
     },
     {
-      "id": "keita-008-はじめまして。たなかです",
+      "id": "ja-keita-dialogue-008-はじめまして。たなかです",
       "front": "はじめまして。たなかです"
     },
     {
-      "id": "keita-009-はじめまして。ケンだ",
+      "id": "ja-keita-dialogue-009-はじめまして。ケンだ",
       "front": "はじめまして。ケンだ"
     },
     {
-      "id": "keita-010-はじめまして。トムだ",
+      "id": "ja-keita-dialogue-010-はじめまして。トムだ",
       "front": "はじめまして。トムだ"
     },
     {
-      "id": "keita-011-むすめは じゅうにさいです",
+      "id": "ja-keita-dialogue-011-むすめは じゅうにさいです",
       "front": "むすめは じゅうにさいです"
     },
     {
-      "id": "keita-012-むすめは じゅうにさいです。ちゅうがくせいです",
+      "id": "ja-keita-dialogue-012-むすめは じゅうにさいです。ちゅうがくせいです",
       "front": "むすめは じゅうにさいです。ちゅうがくせいです"
     },
     {
-      "id": "keita-013-よにんかぞくです",
+      "id": "ja-keita-dialogue-013-よにんかぞくです",
       "front": "よにんかぞくです"
     },
     {
-      "id": "keita-014-よにんかぞくです。しゅじんと むすめと むすこと わたしです",
+      "id": "ja-keita-dialogue-014-よにんかぞくです。しゅじんと むすめと むすこと わたしです",
       "front": "よにんかぞくです。しゅじんと むすめと むすこと わたしです"
     },
     {
-      "id": "keita-015-わたしは がくせいだ",
+      "id": "ja-keita-dialogue-015-わたしは がくせいだ",
       "front": "わたしは がくせいだ"
     },
     {
-      "id": "keita-016-わたしは アメリカじんだ",
+      "id": "ja-keita-dialogue-016-わたしは アメリカじんだ",
       "front": "わたしは アメリカじんだ"
     },
     {
-      "id": "keita-017-わたしは トムだ",
+      "id": "ja-keita-dialogue-017-わたしは トムだ",
       "front": "わたしは トムだ"
     },
     {
-      "id": "keita-018-わたしは トムだ。がくせいだ",
+      "id": "ja-keita-dialogue-018-わたしは トムだ。がくせいだ",
       "front": "わたしは トムだ。がくせいだ"
     },
     {
-      "id": "keita-019-ケンだ",
+      "id": "ja-keita-dialogue-019-ケンだ",
       "front": "ケンだ"
     },
     {
-      "id": "keita-020-トムだ",
+      "id": "ja-keita-dialogue-020-トムだ",
       "front": "トムだ"
     },
     {
-      "id": "keita-021-トムは がくせい？",
+      "id": "ja-keita-dialogue-021-トムは がくせい？",
       "front": "トムは がくせい？"
     }
   ]

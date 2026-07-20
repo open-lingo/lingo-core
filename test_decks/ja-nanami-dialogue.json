@@ -1,0 +1,535 @@
+{
+  "name": "ja-nanami-dialogue",
+  "languageId": "ja-nanami-dialogue",
+  "_note": "Female/neutral dialogue speakers' lines — refreshed as ONE Nanami batch (consistent takes) by scripts/tts/gen_dialogue_voices.py over plain ja: keys. Auto-emitted.",
+  "cards": [
+    {
+      "id": "ja-nanami-dialogue-000-あたまが いたいです",
+      "front": "あたまが いたいです"
+    },
+    {
+      "id": "ja-nanami-dialogue-001-あたまが いたいです。ねつも あります",
+      "front": "あたまが いたいです。ねつも あります"
+    },
+    {
+      "id": "ja-nanami-dialogue-002-ありがとうございます",
+      "front": "ありがとうございます"
+    },
+    {
+      "id": "ja-nanami-dialogue-003-ありがとうございます。とおいですか",
+      "front": "ありがとうございます。とおいですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-004-ありがとう！",
+      "front": "ありがとう！"
+    },
+    {
+      "id": "ja-nanami-dialogue-005-あれは あにの カメラです",
+      "front": "あれは あにの カメラです"
+    },
+    {
+      "id": "ja-nanami-dialogue-006-あれは せんせいの かばんです",
+      "front": "あれは せんせいの かばんです"
+    },
+    {
+      "id": "ja-nanami-dialogue-007-あれは だれの かばんですか",
+      "front": "あれは だれの かばんですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-008-あれは にほんの カメラですか",
+      "front": "あれは にほんの カメラですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-009-いいえ、うちに かえります",
+      "front": "いいえ、うちに かえります"
+    },
+    {
+      "id": "ja-nanami-dialogue-010-いいえ、がっこうで べんきょうします",
+      "front": "いいえ、がっこうで べんきょうします"
+    },
+    {
+      "id": "ja-nanami-dialogue-011-いいえ、ごふんです",
+      "front": "いいえ、ごふんです"
+    },
+    {
+      "id": "ja-nanami-dialogue-012-いいよ！",
+      "front": "いいよ！"
+    },
+    {
+      "id": "ja-nanami-dialogue-013-いいよ！ もちろん いく！",
+      "front": "いいよ！ もちろん いく！"
+    },
+    {
+      "id": "ja-nanami-dialogue-014-いちにち さんかい のんでください",
+      "front": "いちにち さんかい のんでください"
+    },
+    {
+      "id": "ja-nanami-dialogue-015-いらっしゃいませ",
+      "front": "いらっしゃいませ"
+    },
+    {
+      "id": "ja-nanami-dialogue-016-いらっしゃいませ。なんめいさまですか",
+      "front": "いらっしゃいませ。なんめいさまですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-017-うん、がくせいだ",
+      "front": "うん、がくせいだ"
+    },
+    {
+      "id": "ja-nanami-dialogue-018-うん、がくせいだ。わたしも がくせいだ",
+      "front": "うん、がくせいだ。わたしも がくせいだ"
+    },
+    {
+      "id": "ja-nanami-dialogue-019-えきは あちらです",
+      "front": "えきは あちらです"
+    },
+    {
+      "id": "ja-nanami-dialogue-020-えきは あちらです。みぎへ いって ください",
+      "front": "えきは あちらです。みぎへ いって ください"
+    },
+    {
+      "id": "ja-nanami-dialogue-021-えきは どこですか",
+      "front": "えきは どこですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-022-おおさかのほうが にぎやかです",
+      "front": "おおさかのほうが にぎやかです"
+    },
+    {
+      "id": "ja-nanami-dialogue-023-おおさかのほうが にぎやかです。でも、とうきょうのほうが おおきいです",
+      "front": "おおさかのほうが にぎやかです。でも、とうきょうのほうが おおきいです"
+    },
+    {
+      "id": "ja-nanami-dialogue-024-おむすめさんは なんさいですか",
+      "front": "おむすめさんは なんさいですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-025-かぜの くすりは ありますか",
+      "front": "かぜの くすりは ありますか"
+    },
+    {
+      "id": "ja-nanami-dialogue-026-がくせいだ",
+      "front": "がくせいだ"
+    },
+    {
+      "id": "ja-nanami-dialogue-027-がくせいですか",
+      "front": "がくせいですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-028-きょうとが いちばん しずかです",
+      "front": "きょうとが いちばん しずかです"
+    },
+    {
+      "id": "ja-nanami-dialogue-029-きょうとが いちばん しずかです。きれいですよ",
+      "front": "きょうとが いちばん しずかです。きれいですよ"
+    },
+    {
+      "id": "ja-nanami-dialogue-030-きれいですよ",
+      "front": "きれいですよ"
+    },
+    {
+      "id": "ja-nanami-dialogue-031-こうえんに ねこが いますか",
+      "front": "こうえんに ねこが いますか"
+    },
+    {
+      "id": "ja-nanami-dialogue-032-この くすりが いいです",
+      "front": "この くすりが いいです"
+    },
+    {
+      "id": "ja-nanami-dialogue-033-この くすりが いいです。いちにち さんかい のんでください",
+      "front": "この くすりが いいです。いちにち さんかい のんでください"
+    },
+    {
+      "id": "ja-nanami-dialogue-034-これは だれの ペンですか",
+      "front": "これは だれの ペンですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-035-これは ゆきの かさですか",
+      "front": "これは ゆきの かさですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-036-ごちゅうもんは",
+      "front": "ごちゅうもんは"
+    },
+    {
+      "id": "ja-nanami-dialogue-037-さんにんですか",
+      "front": "さんにんですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-038-さんにんですか。コーヒー みっつ ください",
+      "front": "さんにんですか。コーヒー みっつ ください"
+    },
+    {
+      "id": "ja-nanami-dialogue-039-しゅうまつに よく つりを したり キャンプを したりします",
+      "front": "しゅうまつに よく つりを したり キャンプを したりします"
+    },
+    {
+      "id": "ja-nanami-dialogue-040-じゃあ、にちようびに いきましょう",
+      "front": "じゃあ、にちようびに いきましょう"
+    },
+    {
+      "id": "ja-nanami-dialogue-041-すみません",
+      "front": "すみません"
+    },
+    {
+      "id": "ja-nanami-dialogue-042-すみません、どようびは やくそくが あります",
+      "front": "すみません、どようびは やくそくが あります"
+    },
+    {
+      "id": "ja-nanami-dialogue-043-すみません、どようびは やくそくが あります。にちようびは だいじょうぶです",
+      "front": "すみません、どようびは やくそくが あります。にちようびは だいじょうぶです"
+    },
+    {
+      "id": "ja-nanami-dialogue-044-すみません、なまえは なんですか",
+      "front": "すみません、なまえは なんですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-045-すみません。えきは どこですか",
+      "front": "すみません。えきは どこですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-046-すみません。かぜの くすりは ありますか",
+      "front": "すみません。かぜの くすりは ありますか"
+    },
+    {
+      "id": "ja-nanami-dialogue-047-すみません。がくせいですか",
+      "front": "すみません。がくせいですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-048-すみません。これは だれの ペンですか",
+      "front": "すみません。これは だれの ペンですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-049-せんせいだ",
+      "front": "せんせいだ"
+    },
+    {
+      "id": "ja-nanami-dialogue-050-それは あなたの かばんですか",
+      "front": "それは あなたの かばんですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-051-それは ともだちの かばんです",
+      "front": "それは ともだちの かばんです"
+    },
+    {
+      "id": "ja-nanami-dialogue-052-それは わたしの ペンです",
+      "front": "それは わたしの ペンです"
+    },
+    {
+      "id": "ja-nanami-dialogue-053-たけしさんの しゅみは なんですか",
+      "front": "たけしさんの しゅみは なんですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-054-たけしさんは すいえいが じょうずですね",
+      "front": "たけしさんは すいえいが じょうずですね"
+    },
+    {
+      "id": "ja-nanami-dialogue-055-たけしさんは すいえいが じょうずですね。どようびに いっしょに いきませんか",
+      "front": "たけしさんは すいえいが じょうずですね。どようびに いっしょに いきませんか"
+    },
+    {
+      "id": "ja-nanami-dialogue-056-たけしは がっこうに いきますか",
+      "front": "たけしは がっこうに いきますか"
+    },
+    {
+      "id": "ja-nanami-dialogue-057-たけしは なにを たべますか",
+      "front": "たけしは なにを たべますか"
+    },
+    {
+      "id": "ja-nanami-dialogue-058-たけしは なにを のみますか",
+      "front": "たけしは なにを のみますか"
+    },
+    {
+      "id": "ja-nanami-dialogue-059-たけしも にほんじんですか",
+      "front": "たけしも にほんじんですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-060-つりと キャンプが すきです",
+      "front": "つりと キャンプが すきです"
+    },
+    {
+      "id": "ja-nanami-dialogue-061-つりと キャンプが すきです。しゅうまつに よく つりを したり キャンプを したりします",
+      "front": "つりと キャンプが すきです。しゅうまつに よく つりを したり キャンプを したりします"
+    },
+    {
+      "id": "ja-nanami-dialogue-062-でも、とうきょうのほうが おおきいです",
+      "front": "でも、とうきょうのほうが おおきいです"
+    },
+    {
+      "id": "ja-nanami-dialogue-063-でんしゃで かえりますか",
+      "front": "でんしゃで かえりますか"
+    },
+    {
+      "id": "ja-nanami-dialogue-064-とうきょうと おおさかと どちらが にぎやかですか",
+      "front": "とうきょうと おおさかと どちらが にぎやかですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-065-とおいですか",
+      "front": "とおいですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-066-としょかんの まえで まつよ",
+      "front": "としょかんの まえで まつよ"
+    },
+    {
+      "id": "ja-nanami-dialogue-067-ともだちだ",
+      "front": "ともだちだ"
+    },
+    {
+      "id": "ja-nanami-dialogue-068-ともだちは さんにんです",
+      "front": "ともだちは さんにんです"
+    },
+    {
+      "id": "ja-nanami-dialogue-069-ともだちも がくせいですか",
+      "front": "ともだちも がくせいですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-070-どようびに いっしょに いきませんか",
+      "front": "どようびに いっしょに いきませんか"
+    },
+    {
+      "id": "ja-nanami-dialogue-071-どんな しょうじょうですか",
+      "front": "どんな しょうじょうですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-072-なにを よみますか",
+      "front": "なにを よみますか"
+    },
+    {
+      "id": "ja-nanami-dialogue-073-なんにんかぞくですか",
+      "front": "なんにんかぞくですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-074-なんめいさまですか",
+      "front": "なんめいさまですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-075-にかいぐらい いきます",
+      "front": "にかいぐらい いきます"
+    },
+    {
+      "id": "ja-nanami-dialogue-076-にちようびは だいじょうぶです",
+      "front": "にちようびは だいじょうぶです"
+    },
+    {
+      "id": "ja-nanami-dialogue-077-にほんのまちのなかで どこが いちばん しずかですか",
+      "front": "にほんのまちのなかで どこが いちばん しずかですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-078-ねつも あります",
+      "front": "ねつも あります"
+    },
+    {
+      "id": "ja-nanami-dialogue-079-はい",
+      "front": "はい"
+    },
+    {
+      "id": "ja-nanami-dialogue-080-はい ありがとうございます",
+      "front": "はい ありがとうございます"
+    },
+    {
+      "id": "ja-nanami-dialogue-081-はい コーヒー ふたつ ですね",
+      "front": "はい コーヒー ふたつ ですね"
+    },
+    {
+      "id": "ja-nanami-dialogue-082-はい、あります",
+      "front": "はい、あります"
+    },
+    {
+      "id": "ja-nanami-dialogue-083-はい、あります。どんな しょうじょうですか",
+      "front": "はい、あります。どんな しょうじょうですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-084-はい、えきに いきます",
+      "front": "はい、えきに いきます"
+    },
+    {
+      "id": "ja-nanami-dialogue-085-はい、がくせいです",
+      "front": "はい、がくせいです"
+    },
+    {
+      "id": "ja-nanami-dialogue-086-はい、がくせいです。わたしは たけしです",
+      "front": "はい、がくせいです。わたしは たけしです"
+    },
+    {
+      "id": "ja-nanami-dialogue-087-はい、こうえんに ねこが います",
+      "front": "はい、こうえんに ねこが います"
+    },
+    {
+      "id": "ja-nanami-dialogue-088-はい、それは わたしの かさです",
+      "front": "はい、それは わたしの かさです"
+    },
+    {
+      "id": "ja-nanami-dialogue-089-はい、にほんじんです",
+      "front": "はい、にほんじんです"
+    },
+    {
+      "id": "ja-nanami-dialogue-090-はい、コーヒーです",
+      "front": "はい、コーヒーです"
+    },
+    {
+      "id": "ja-nanami-dialogue-091-はい、コーヒーを のみます",
+      "front": "はい、コーヒーを のみます"
+    },
+    {
+      "id": "ja-nanami-dialogue-092-はい、コーヒーを のみます。たけしは なにを のみますか",
+      "front": "はい、コーヒーを のみます。たけしは なにを のみますか"
+    },
+    {
+      "id": "ja-nanami-dialogue-093-はい。わたしは アメリカじんです",
+      "front": "はい。わたしは アメリカじんです"
+    },
+    {
+      "id": "ja-nanami-dialogue-094-はじめまして",
+      "front": "はじめまして"
+    },
+    {
+      "id": "ja-nanami-dialogue-095-はじめまして。やまだです。なんにんかぞくですか",
+      "front": "はじめまして。やまだです。なんにんかぞくですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-096-ひるごはん たべない？",
+      "front": "ひるごはん たべない？"
+    },
+    {
+      "id": "ja-nanami-dialogue-097-ひるごはんを たべませんか",
+      "front": "ひるごはんを たべませんか"
+    },
+    {
+      "id": "ja-nanami-dialogue-098-ふたりです",
+      "front": "ふたりです"
+    },
+    {
+      "id": "ja-nanami-dialogue-099-ほんを よみます",
+      "front": "ほんを よみます"
+    },
+    {
+      "id": "ja-nanami-dialogue-100-みぎへ いって ください",
+      "front": "みぎへ いって ください"
+    },
+    {
+      "id": "ja-nanami-dialogue-101-みず ふたつ ください",
+      "front": "みず ふたつ ください"
+    },
+    {
+      "id": "ja-nanami-dialogue-102-もちろん いく！",
+      "front": "もちろん いく！"
+    },
+    {
+      "id": "ja-nanami-dialogue-103-もちろん、いきます",
+      "front": "もちろん、いきます"
+    },
+    {
+      "id": "ja-nanami-dialogue-104-やまだです",
+      "front": "やまだです"
+    },
+    {
+      "id": "ja-nanami-dialogue-105-ゆきの けいたいは どれですか",
+      "front": "ゆきの けいたいは どれですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-106-ゆきは うちで べんきょうしますか",
+      "front": "ゆきは うちで べんきょうしますか"
+    },
+    {
+      "id": "ja-nanami-dialogue-107-ゆきは にほんじんですか",
+      "front": "ゆきは にほんじんですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-108-わたしの けいたいは それです",
+      "front": "わたしの けいたいは それです"
+    },
+    {
+      "id": "ja-nanami-dialogue-109-わたしは ごはんを たべます",
+      "front": "わたしは ごはんを たべます"
+    },
+    {
+      "id": "ja-nanami-dialogue-110-わたしは たけしです",
+      "front": "わたしは たけしです"
+    },
+    {
+      "id": "ja-nanami-dialogue-111-わたしは にほんじんだ",
+      "front": "わたしは にほんじんだ"
+    },
+    {
+      "id": "ja-nanami-dialogue-112-わたしは ゆきです",
+      "front": "わたしは ゆきです"
+    },
+    {
+      "id": "ja-nanami-dialogue-113-わたしは アメリカじんです",
+      "front": "わたしは アメリカじんです"
+    },
+    {
+      "id": "ja-nanami-dialogue-114-わたしは ケン です",
+      "front": "わたしは ケン です"
+    },
+    {
+      "id": "ja-nanami-dialogue-115-わたしは コーヒー ひとつ ください",
+      "front": "わたしは コーヒー ひとつ ください"
+    },
+    {
+      "id": "ja-nanami-dialogue-116-わたしは ジュースを のみます",
+      "front": "わたしは ジュースを のみます"
+    },
+    {
+      "id": "ja-nanami-dialogue-117-わたしは パンを たべます",
+      "front": "わたしは パンを たべます"
+    },
+    {
+      "id": "ja-nanami-dialogue-118-わたしは ミカだ",
+      "front": "わたしは ミカだ"
+    },
+    {
+      "id": "ja-nanami-dialogue-119-わたしは ミカだ。がくせいだ",
+      "front": "わたしは ミカだ。がくせいだ"
+    },
+    {
+      "id": "ja-nanami-dialogue-120-わたしも がくせいだ",
+      "front": "わたしも がくせいだ"
+    },
+    {
+      "id": "ja-nanami-dialogue-121-わたしも ケンです",
+      "front": "わたしも ケンです"
+    },
+    {
+      "id": "ja-nanami-dialogue-122-わたしも ケンです。アメリカじんですか",
+      "front": "わたしも ケンです。アメリカじんですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-123-アメリカじんです",
+      "front": "アメリカじんです"
+    },
+    {
+      "id": "ja-nanami-dialogue-124-アメリカじんですか",
+      "front": "アメリカじんですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-125-ケン、トムだ",
+      "front": "ケン、トムだ"
+    },
+    {
+      "id": "ja-nanami-dialogue-126-ケン、トムだ。ともだちだ",
+      "front": "ケン、トムだ。ともだちだ"
+    },
+    {
+      "id": "ja-nanami-dialogue-127-コーヒー ふたつ ください",
+      "front": "コーヒー ふたつ ください"
+    },
+    {
+      "id": "ja-nanami-dialogue-128-コーヒー みっつ ください",
+      "front": "コーヒー みっつ ください"
+    },
+    {
+      "id": "ja-nanami-dialogue-129-コーヒーですか",
+      "front": "コーヒーですか"
+    },
+    {
+      "id": "ja-nanami-dialogue-130-コーヒーを のみますか",
+      "front": "コーヒーを のみますか"
+    },
+    {
+      "id": "ja-nanami-dialogue-131-ラーメンを ふたつ と ジュースを ひとつ ください",
+      "front": "ラーメンを ふたつ と ジュースを ひとつ ください"
+    }
+  ]
+}
