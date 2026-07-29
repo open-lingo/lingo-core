@@ -57,7 +57,7 @@ uvicorn app.main:app --reload
 python -m scripts.seed            # skip existing rows
 python -m scripts.seed --reset    # wipe and re-seed
 
-# For DynamoDB: use test_decks/ JSON files with the app's Upload deck feature
+# For DynamoDB: use lingo-data's data/test_decks/ JSON files with the app's Upload deck feature
 # (Community → Contribute → Create → Upload deck) instead of seeding.
 
 # Lint
