@@ -4,6 +4,7 @@ FastAPI service for user management, SRS progress, course/deck manifests, storie
 
 ## Critical orientation
 
+- **Research map — read FIRST:** `docs/INDEX.md` (this repo) and `../lingo/docs/INDEX.md` (frontend + full project map).
 - **Architecture audit + conformance gaps:** `docs/ARCHITECTURE_REVIEW.md` — read before structural changes.
 - **Frontend client:** `../lingo/` — shares Auth0 tenant, talks to this API at `/api/core/v1/...`.
 - **API base path:** `/api/core/v1` — versioned aggregator in `app/v1/router.py`.
@@ -16,7 +17,7 @@ FastAPI service for user management, SRS progress, course/deck manifests, storie
 - DB: pluggable repos with two backends
   - SQLite (`aiosqlite`) for local dev
   - DynamoDB (`aioboto3`) single-table + GSIs for prod
-- Linting: Ruff (E/F/I/UP), line-length 100. ⚠️ target = py312 but requires-python = py313 — inconsistent.
+- Linting: Ruff (E/F/I/UP), line-length 200, target-version py313 (matches `requires-python = ">=3.13"`).
 - Testing: pytest + pytest-asyncio (`asyncio_mode = "auto"`). ~40 test files cover the core paths (progress incl. streak-freeze, XP economy, SRS, quests, decks, auth, admin). Community/stories/some Dynamo paths are still thin; a few Dynamo tests need a live moto server.
 
 ## Source layout
