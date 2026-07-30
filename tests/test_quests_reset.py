@@ -18,7 +18,6 @@ from typing import Any
 
 import aiosqlite
 import pytest
-import pytest_asyncio
 from fastapi.testclient import TestClient
 
 TMP_DB = os.path.join(tempfile.mkdtemp(prefix="lingo-quests-reset-"), "quests.db")
