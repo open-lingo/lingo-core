@@ -672,3 +672,82 @@ def test_friend_suggestions_excludes_blocked_target(
     )
     assert resp.status_code == 200, resp.text
     assert all(item["username"] != "new_buddy" for item in resp.json()["items"])
+
+
+def test_friend_suggestions_excludes_reverse_block(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    """A candidate who blocked ME must not be suggested.
+
+    The set-based rewrite builds exclusion sets from the CALLER's own edges,
+    and neither store indexes blocks in reverse — so this direction is the one
+    that still needs a per-candidate read and the one most easily dropped.
+    """
+    _register_user(client, "auth0|rev_blocker", "rev_blocker", "Rev Blocker")
+    _set_lang(client, "auth0|rev_blocker", "ja")
+    _set_lang(client, "auth0|alice", "ja")
+
+    resp = client.get(
+        "/api/core/v1/social/suggestions?limit=50", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    assert any(i["username"] == "rev_blocker" for i in resp.json()["items"])
+
+    # They block Alice (not the other way round).
+    alice_id = users["alice"]["id"]
+    resp = client.post(
+        f"/api/core/v1/social/blocks/{alice_id}", headers=_as("auth0|rev_blocker")
+    )
+    assert resp.status_code in (200, 409), resp.text
+
+    resp = client.get(
+        "/api/core/v1/social/suggestions?limit=50", headers=_as("auth0|alice")
+    )
+    assert resp.status_code == 200, resp.text
+    assert all(i["username"] != "rev_blocker" for i in resp.json()["items"])
+
+
+def test_friend_suggestions_excludes_pending_requests_both_directions(
+    client: TestClient, users: dict[str, dict[str, Any]]
+) -> None:
+    """Someone with a pending request either way is not a suggestion.
+
+    Previously two per-candidate get_friend_request calls; now one membership
+    test against a set built from list_friend_requests' (incoming, outgoing).
+    Both directions have to survive that swap.
+    """
+    _set_lang(client, "auth0|alice", "ja")
+    for sub, name in (("auth0|req_out", "req_out"), ("auth0|req_in", "req_in")):
+        _register_user(client, sub, name, name)
+        _set_lang(client, sub, "ja")
+
+    def suggested() -> set[str]:
+        r = client.get(
+            "/api/core/v1/social/suggestions?limit=50", headers=_as("auth0|alice")
+        )
+        assert r.status_code == 200, r.text
+        return {i["username"] for i in r.json()["items"]}
+
+    assert {"req_out", "req_in"} <= suggested()
+
+    out_id = client.get("/api/core/v1/users/me", headers=_as("auth0|req_out")).json()["id"]
+    alice_id = users["alice"]["id"]
+
+    # Alice -> req_out (outgoing).
+    r = client.post(
+        "/api/core/v1/social/friends/requests",
+        json={"to_user_id": out_id},
+        headers=_as("auth0|alice"),
+    )
+    assert r.status_code in (200, 201, 409), r.text
+    # req_in -> Alice (incoming).
+    r = client.post(
+        "/api/core/v1/social/friends/requests",
+        json={"to_user_id": alice_id},
+        headers=_as("auth0|req_in"),
+    )
+    assert r.status_code in (200, 201, 409), r.text
+
+    names = suggested()
+    assert "req_out" not in names, "outgoing request should suppress the suggestion"
+    assert "req_in" not in names, "incoming request should suppress the suggestion"

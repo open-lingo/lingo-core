@@ -68,6 +68,14 @@ logger = logging.getLogger("lingo.social")
 
 router = APIRouter(tags=["social"])
 
+#: Concurrent per-candidate reads while building friend suggestions.
+#:
+#: Held below ``db.dynamo._session.MAX_POOL_CONNECTIONS`` (50): exceeding the
+#: botocore pool does not raise, it queues, so a wider semaphore would claim
+#: concurrency it cannot deliver — and this endpoint shares that pool with
+#: everything else on the invocation.
+_SUGGESTION_FANOUT = 25
+
 # Honors admin impersonation for non-community-gated reads/writes
 # (friend list, requests, leaderboard view).
 CurrentUser = Annotated[TokenPayload, Depends(get_acting_user)]
@@ -1407,28 +1415,57 @@ async def list_friend_suggestions(
         # (<100 users), and the leaderboards helpers already use the same cap.
         records, _ = await users.list_users(limit=500)
 
-        out: list[FriendSuggestionItem] = []
-        for record in records:
-            if record["id"] == user.id:
-                continue
-            if record.get("status") == "banned":
-                continue
-            # Exclude existing friends.
-            if await social.is_friend(user.id, record["id"]):
-                continue
-            # Exclude blocked in either direction.
-            if await social.is_blocked(user.id, record["id"]):
-                continue
-            if await social.is_blocked(record["id"], user.id):
-                continue
-            # Exclude pending requests (both directions) so we don't suggest
-            # someone you've already sent a request to.
-            if await social.get_friend_request(user.id, record["id"]):
-                continue
-            if await social.get_friend_request(record["id"], user.id):
-                continue
+        # Pull the caller's OWN edges once and filter in memory.
+        #
+        # This used to await six per-candidate lookups (is_friend, is_blocked
+        # x2, get_friend_request x2, get_settings) inside the loop, and the
+        # `break` only fired once `limit` MATCHING suggestions accumulated — so
+        # a learner whose language is a minority in the cohort walked every
+        # record. At <100 users that is ~600 sequential round trips; at 500 it
+        # is ~3000 and the endpoint stops responding in reasonable time. It
+        # breaks on growth rather than on load.
+        #
+        # All three of these are single indexed reads keyed on the caller.
+        my_friends, (incoming_reqs, outgoing_reqs), my_blocks = await asyncio.gather(
+            social.list_friends(user.id),
+            social.list_friend_requests(user.id),
+            social.list_blocks(user.id),
+        )
+        friend_ids = {f["friend_id"] for f in my_friends}
+        # Either direction of a pending request disqualifies a suggestion.
+        pending_ids = {r["from_id"] for r in incoming_reqs} | {r["to_id"] for r in outgoing_reqs}
+        blocked_by_me = {b["blocked_id"] for b in my_blocks}
 
-            settings_blob = await users.get_settings(record["id"])
+        candidates = [
+            r
+            for r in records
+            if r["id"] != user.id
+            and r.get("status") != "banned"
+            and r["id"] not in friend_ids
+            and r["id"] not in pending_ids
+            and r["id"] not in blocked_by_me
+        ]
+
+        # Two things still need a per-candidate read: whether THEY blocked the
+        # caller (neither store indexes blocks in reverse) and their language
+        # (which lives in settings). Both are independent per candidate, so
+        # they run concurrently under a bounded fan-out instead of serially.
+        sem = asyncio.Semaphore(_SUGGESTION_FANOUT)
+
+        async def hydrate(record: dict[str, Any]) -> tuple[dict[str, Any], bool, Any]:
+            async with sem:
+                blocked_me, settings_blob = await asyncio.gather(
+                    social.is_blocked(record["id"], user.id),
+                    users.get_settings(record["id"]),
+                )
+            return record, blocked_me, settings_blob
+
+        hydrated = await asyncio.gather(*(hydrate(r) for r in candidates))
+
+        out: list[FriendSuggestionItem] = []
+        for record, blocked_me, settings_blob in hydrated:
+            if blocked_me:
+                continue
             their_lang = (_learning_language_from_settings(settings_blob) or "").lower()
             # Filter by shared language when the caller has one set. When the
             # caller has no language pref yet, return language-agnostic
