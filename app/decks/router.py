@@ -291,11 +291,18 @@ async def get_decks_batch(
 async def list_admin_decks(
     repo: DeckRepo,
     tag_repo: TagRepo,
-    user: CurrentUser,
+    _admin: AdminUser,
     status: str | None = Query(None, description="Filter by status: draft, published"),
     language_id: str | None = Query(None, description="Filter by language"),
 ) -> Any:
-    """List all decks for admin approval. Excludes companion decks (tied to stories) and personal vocab decks."""
+    """List all decks for admin approval. Excludes companion decks (tied to stories) and personal vocab decks.
+
+    Admin-gated. This took ``CurrentUser`` until 2026-08-01, so ANY signed-in
+    learner could enumerate every deck on the platform — including other
+    users' drafts and their ``authorId`` — while ``AdminUser`` sat defined but
+    unused directly above. Every other admin handler already used it. The
+    client-side route guard is UX; this dependency is the boundary.
+    """
     r = require_repo(repo, "decks")
     with api_error("listing decks for admin"):
         manifests = await r.list_manifests(

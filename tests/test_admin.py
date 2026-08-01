@@ -36,3 +36,36 @@ def test_deck_admin_status_route_gated(api_client) -> None:
     )
     # Non-admin user must be blocked BEFORE the deck-existence check.
     assert resp.status_code == 403, resp.text
+
+
+def test_deck_admin_list_route_gated(api_client) -> None:
+    """``GET /decks/admin`` must be admin-only.
+
+    It took ``CurrentUser`` until 2026-08-01, so any signed-in learner could
+    list every deck on the platform — other users' drafts included, with
+    ``authorId`` attached. The only thing hiding it was that the console nav
+    link is conditionally rendered; the route itself answered 200 to anyone.
+    """
+    client, _user_id, _admin_user_id = api_client
+
+    resp = client.get("/api/core/v1/decks/admin")
+    assert resp.status_code == 403, resp.text
+
+    resp = client.get("/api/core/v1/decks/admin?status=draft")
+    assert resp.status_code == 403, resp.text
+
+
+def test_deck_admin_list_allowed_for_admin(api_client, monkeypatch) -> None:
+    """Control: a real admin must still get the list, or approval breaks."""
+    client, _user_id, admin_user_id = api_client
+
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ADMIN_USER_IDS", [admin_user_id])
+
+    resp = client.get(
+        "/api/core/v1/decks/admin",
+        headers={"X-Dev-User": "dev|admin-user"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert isinstance(resp.json(), list)
