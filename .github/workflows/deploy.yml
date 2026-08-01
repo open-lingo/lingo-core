@@ -30,6 +30,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      # Gate the deploy on the same checks CI runs.
+      #
+      # `ci` and `deploy` both trigger on push to main, INDEPENDENTLY — so a
+      # red build shipped to production anyway. That is not hypothetical: on
+      # 2026-08-01 a ruff failure went red on `ci` while `deploy` succeeded and
+      # pushed the same commit live.
+      #
+      # Done as steps in this job rather than a `workflow_run` trigger: that
+      # trigger would need `ref: head_sha` handling and, misconfigured, stops
+      # deploys silently. This cannot break the trigger. Cost is deploy latency
+      # — it now waits for the suite. CI still runs in parallel for PR feedback.
+      - name: install (test deps)
+        run: pip install -e ".[dev]"
+      - name: ruff
+        run: ruff check .
+      - name: pytest
+        run: pytest -q
       - name: build zip
         run: ./scripts/build-zip.sh
       - uses: aws-actions/configure-aws-credentials@v5
