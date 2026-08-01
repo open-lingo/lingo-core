@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.config import settings
 from app.db.provider import init_repositories, shutdown_repositories
@@ -61,6 +62,32 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+# Response compression. Registered HERE, before the access-log middleware,
+# which makes it the INNERMOST layer — deliberate. ``access_log`` is a
+# ``BaseHTTPMiddleware``, which re-emits every response as a stream with no
+# content-length; gzip layered outside it therefore never sees a length, takes
+# its streaming path, and compresses everything including 16-byte bodies,
+# making ``minimum_size`` silently inert. Sitting beneath it, gzip sees the real
+# Content-Length and honors the floor.
+#
+# This matters most for the SRS endpoints: ``GET /srs/state`` returns a
+# learner's entire card store on every app load — measured ~437 bytes/card, so
+# a 6k-card learner is ~2.5 MiB raw against the Lambda Function URL's hard 6 MB
+# buffered-response cap. Measured end-to-end through this middleware at 1000
+# cards: 0.417 MiB raw -> 0.023 MiB on the wire. Take that ratio as a floor,
+# not a promise — the fixture is structurally regular; a fully randomized one
+# compresses to ~0.17. Real FSRS data sits between. Either way it turns the
+# response from "a sizeable fraction of the cap" into a rounding error.
+#
+# Mangum interaction, since it is non-obvious: GZipMiddleware leaves
+# ``content-type: application/json``, which IS in Mangum's text-mime list, so
+# ``handle_base64_response_body`` tries ``body.decode()`` first and only
+# base64-encodes on UnicodeDecodeError. That fallback is reliable rather than
+# lucky — gzip's magic number puts 0x8b at byte 2, a UTF-8 continuation byte in
+# a lead position, so the decode always raises. Pinned by tests/test_compression.py.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @app.middleware("http")
