@@ -1,6 +1,8 @@
 """SRS API tests — verifies FSRS-6 modal blob round-trips through the
 schema, router, and SQLite repo intact."""
 
+from datetime import UTC, datetime
+
 import pytest
 
 
@@ -142,3 +144,79 @@ def test_delete_rejects_oversized_payload(api_client) -> None:
         json={"cardIds": [f"card-{i}" for i in range(MAX_SYNC_CARDS + 1)]},
     )
     assert resp.status_code == 422, resp.text
+
+
+def test_seeded_cards_do_not_count_as_reviews(api_client, monkeypatch) -> None:
+    """Seeded cards must not inflate ``review_completed``.
+
+    Placement seeding and per-lesson unlock seeding both stamp today's date
+    with ``reps: 0``. Counting on the date alone made a placement pass emit
+    two phantom reviews PER seeded atom, which auto-completed the daily
+    flashcards quest (lingots + XP) before the learner reviewed anything, and
+    inflated every retention figure derived from the event.
+    """
+    published: list[dict] = []
+    monkeypatch.setattr(
+        "app.srs.router.publish_event", lambda payload: published.append(payload)
+    )
+
+    client, _user_id, _admin = api_client
+    today = datetime.now(UTC).date().isoformat()
+
+    seeded = _modal_state(today)
+    seeded["recognition"]["reps"] = 0
+    seeded["production"]["reps"] = 0
+
+    resp = client.post("/api/core/v1/srs/sync", json={"cards": {"seed-1": seeded}})
+    assert resp.status_code == 200, resp.text
+    assert published == [], "seeded cards must not publish review_completed"
+
+
+def test_real_reviews_still_count(api_client, monkeypatch) -> None:
+    """Control: the fix must not silence genuine reviews. A real review always
+    increments reps, so reps > 0 with today's date is exactly the live case."""
+    published: list[dict] = []
+    monkeypatch.setattr(
+        "app.srs.router.publish_event", lambda payload: published.append(payload)
+    )
+
+    client, _user_id, _admin = api_client
+    today = datetime.now(UTC).date().isoformat()
+
+    reviewed = _modal_state(today)
+    reviewed["recognition"]["reps"] = 3
+    reviewed["production"]["reps"] = 2
+
+    resp = client.post("/api/core/v1/srs/sync", json={"cards": {"real-1": reviewed}})
+    assert resp.status_code == 200, resp.text
+    assert len(published) == 1
+    assert published[0]["type"] == "review_completed"
+    assert published[0]["count"] == 2  # both modalities reviewed today
+
+
+def test_mixed_batch_counts_only_the_reviewed_modality(api_client, monkeypatch) -> None:
+    """A seed and a review in the same sync: only the reviewed side counts."""
+    published: list[dict] = []
+    monkeypatch.setattr(
+        "app.srs.router.publish_event", lambda payload: published.append(payload)
+    )
+
+    client, _user_id, _admin = api_client
+    today = datetime.now(UTC).date().isoformat()
+
+    # One card reviewed on recognition only; production is a fresh seed.
+    partial = _modal_state(today)
+    partial["recognition"]["reps"] = 5
+    partial["production"]["reps"] = 0
+
+    seed = _modal_state(today)
+    seed["recognition"]["reps"] = 0
+    seed["production"]["reps"] = 0
+
+    resp = client.post(
+        "/api/core/v1/srs/sync", json={"cards": {"a": partial, "b": seed}}
+    )
+    assert resp.status_code == 200, resp.text
+    assert len(published) == 1
+    assert published[0]["count"] == 1
+    assert published[0]["modality"] == "recognition"

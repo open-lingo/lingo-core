@@ -51,11 +51,11 @@ async def sync_cards(body: SRSSyncRequest, user: CurrentUser, repo: SRSRepo) -> 
     Uses last-write-wins by ``lastReviewedAt``: if the server has a newer
     review for a card, the server version is kept.
 
-    Fires one ``review_completed`` event per card whose ``lastReviewDate``
-    is today — this is the signal lingo-async needs to advance the
-    daily-flashcards quest (unit="cards"). Cards with older dates are
-    cross-device sync residue (state moved over without a fresh review)
-    and don't fire events.
+    Fires one ``review_completed`` event per modality that was actually
+    REVIEWED today (``reps > 0`` and ``lastReviewDate`` is today) — this is the
+    signal lingo-async needs to advance the daily-flashcards quest
+    (unit="cards"). Cards with older dates are cross-device sync residue (state
+    moved over without a fresh review) and don't fire events.
     """
     if not body.cards:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No cards to sync")
@@ -69,16 +69,28 @@ async def sync_cards(body: SRSSyncRequest, user: CurrentUser, repo: SRSRepo) -> 
     # The quest evaluator uses ``count`` as the delta for unit="cards"
     # quests, so 6 reviews in one sync = +6 progress in one event instead
     # of six separate events spamming the inspector + dispatch loop.
+    #
+    # ``reps > 0`` is load-bearing, not defensive. SEEDED cards are stamped
+    # with today's date and reps 0 — placement seeding
+    # (``applyPlacement.createPlacementSeedState``) and per-lesson unlock
+    # seeding (``seedSchedule.createSeededState``) both do this. On the date
+    # check alone, finishing a placement test into a mid-course module counted
+    # every seeded atom TWICE (both modalities), so hundreds of phantom
+    # reviews landed in one sync: the daily flashcards quest completed itself
+    # for lingots + XP before the learner had reviewed a single card, and every
+    # retention figure derived from ``review_completed`` was inflated. A real
+    # review always increments reps (``reviewCard`` runs FSRS), so reps 0 with
+    # today's date is exactly and only the seeded case.
     # Best-effort: a publish failure must not break the sync response.
     today_iso = datetime.now(UTC).date().isoformat()
     review_count = 0
     last_card_id = ""
     last_modality: str = "recognition"
     for card_id, state in body.cards.items():
-        if state.recognition.lastReviewDate == today_iso:
+        if state.recognition.reps > 0 and state.recognition.lastReviewDate == today_iso:
             review_count += 1
             last_card_id, last_modality = card_id, "recognition"
-        if state.production.lastReviewDate == today_iso:
+        if state.production.reps > 0 and state.production.lastReviewDate == today_iso:
             review_count += 1
             last_card_id, last_modality = card_id, "production"
     if review_count > 0:
