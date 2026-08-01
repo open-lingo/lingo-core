@@ -20,6 +20,12 @@ import asyncio
 import json
 from typing import Any
 
+from botocore.exceptions import ClientError
+
+from app.db.dynamo._session import get_shared_resource
+
+_CARD_SK_PREFIX = "CARD#"
+
 #: Concurrent per-card round trips inside one sync/delete request.
 #:
 #: These writes are keyed independently (PK=USER#id, SK=CARD#id), so nothing
@@ -32,12 +38,6 @@ from typing import Any
 #: pool would report concurrency it cannot actually deliver. The remaining slots
 #: stay free for whatever else the invocation is doing on the shared resource.
 _WRITE_CONCURRENCY = 25
-
-from botocore.exceptions import ClientError
-
-from app.db.dynamo._session import get_shared_resource
-
-_CARD_SK_PREFIX = "CARD#"
 
 
 def _min_due(state: dict[str, Any]) -> str:
