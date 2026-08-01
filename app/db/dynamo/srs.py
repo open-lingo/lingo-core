@@ -16,8 +16,22 @@ as a JSON string (state_json attribute) to avoid Decimal conversion hassles
 on nested structures. The dueDate attribute remains a plain string for the GSI.
 """
 
+import asyncio
 import json
 from typing import Any
+
+#: Concurrent per-card round trips inside one sync/delete request.
+#:
+#: These writes are keyed independently (PK=USER#id, SK=CARD#id), so nothing
+#: about the LWW semantics depends on ordering — the serial loop this replaced
+#: was pure latency. A 1000-card batch went ~1000 x ~8ms = ~8s of the function's
+#: 30s budget; at this width it is well under a second.
+#:
+#: Held below ``_session.MAX_POOL_CONNECTIONS`` on purpose: exceeding the
+#: botocore pool does not raise, it just queues, so a semaphore wider than the
+#: pool would report concurrency it cannot actually deliver. The remaining slots
+#: stay free for whatever else the invocation is doing on the shared resource.
+_WRITE_CONCURRENCY = 25
 
 from botocore.exceptions import ClientError
 
@@ -162,10 +176,22 @@ class DynamoSRSRepository:
         # cross-device residue, rare) fall back to a single GetItem to merge +
         # return the authoritative server state. The common "client pushed its
         # own newer reviews" sync pays zero reads.
-        result: dict[str, dict[str, Any]] = {}
-        for card_id, incoming in cards.items():
-            result[card_id] = await self._upsert_one(user_id, card_id, incoming)
-        return result
+        #
+        # Fanned out under a semaphore rather than looped: the per-card writes
+        # target distinct keys and the write-if-newer condition is evaluated
+        # server-side per item, so concurrency changes throughput, not
+        # semantics. The serial version put a whole sync's latency in series
+        # against a 30s function timeout — and a timeout there wedges the
+        # client, which marks nothing synced and retries the same payload
+        # forever. ``MAX_SYNC_CARDS`` bounds the batch; this bounds its width.
+        sem = asyncio.Semaphore(_WRITE_CONCURRENCY)
+
+        async def one(card_id: str, incoming: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+            async with sem:
+                return card_id, await self._upsert_one(user_id, card_id, incoming)
+
+        pairs = await asyncio.gather(*(one(cid, inc) for cid, inc in cards.items()))
+        return dict(pairs)
 
     async def _upsert_one(self, user_id: str, card_id: str, incoming: dict[str, Any]) -> dict[str, Any]:
         incoming_review = _max_last_review(incoming)
@@ -226,8 +252,16 @@ class DynamoSRSRepository:
         await self._table.update_item(**kwargs)
 
     async def delete_cards(self, user_id: str, card_ids: list[str]) -> int:
-        for card_id in card_ids:
-            await self._table.delete_item(Key={"PK": f"USER#{user_id}", "SK": f"{_CARD_SK_PREFIX}{card_id}"})
+        # Same independent-key fan-out as upsert_cards (see the note there).
+        sem = asyncio.Semaphore(_WRITE_CONCURRENCY)
+
+        async def one(card_id: str) -> None:
+            async with sem:
+                await self._table.delete_item(
+                    Key={"PK": f"USER#{user_id}", "SK": f"{_CARD_SK_PREFIX}{card_id}"}
+                )
+
+        await asyncio.gather(*(one(cid) for cid in card_ids))
         return len(card_ids)
 
     async def clear_all(self, user_id: str) -> int:

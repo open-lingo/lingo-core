@@ -13,6 +13,16 @@ connect() sequentially, so the lazy-init is race-free in practice.
 """
 
 import aioboto3
+from botocore.config import Config
+
+#: Connection-pool size for the shared DynamoDB resource.
+#:
+#: botocore's default is 10, which silently caps ANY concurrent fan-out: an
+#: ``asyncio.gather`` over 25 writes just serialises into 3 waves of 10. The
+#: SRS sync path fans out per card (``dynamo/srs.py.upsert_cards``), and this
+#: resource is shared by all 6 repos, so the pool has to cover that fan-out
+#: plus whatever else is in flight on the same invocation.
+MAX_POOL_CONNECTIONS = 50
 
 _session: aioboto3.Session | None = None
 _resource_ctx = None  # async context manager returned by session.resource()
@@ -30,7 +40,11 @@ async def get_shared_resource(region: str):
     global _session, _resource_ctx, _resource
     if _resource is None:
         _session = aioboto3.Session()
-        _resource_ctx = _session.resource("dynamodb", region_name=region)
+        _resource_ctx = _session.resource(
+            "dynamodb",
+            region_name=region,
+            config=Config(max_pool_connections=MAX_POOL_CONNECTIONS),
+        )
         _resource = await _resource_ctx.__aenter__()
     return _resource
 

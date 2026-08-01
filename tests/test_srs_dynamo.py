@@ -190,3 +190,58 @@ async def test_due_index_reflects_min_modality(repo: DynamoSRSRepository) -> Non
     assert "c1" in due  # min(due) == 2026-06-02 <= 2026-06-05
     not_due = await repo.get_due_cards(_USER, "2026-06-01")
     assert "c1" not in not_due
+
+
+async def test_batch_upsert_writes_every_card(repo: DynamoSRSRepository) -> None:
+    """Multi-card sync fans out concurrently; every submitted card must land
+    and every submitted id must come back in the result map.
+
+    The client marks cards synced strictly by the ids the server echoes
+    (``performSyncNow``), so a card dropped from this dict stays dirty forever.
+    """
+    cards = {
+        f"c{i}": _state(rec_review="2026-05-28", prod_review="2026-05-28", due=f"2026-06-{(i % 28) + 1:02d}")
+        for i in range(120)
+    }
+    merged = await repo.upsert_cards(_USER, cards)
+
+    assert set(merged) == set(cards)
+    stored = await repo.get_all(_USER)
+    assert set(stored) == set(cards)
+    assert stored["c77"]["recognition"]["lastReviewDate"] == "2026-05-28"
+
+
+async def test_batch_upsert_preserves_per_card_lww(repo: DynamoSRSRepository) -> None:
+    """Concurrency must not blur the write-if-newer guard across cards: in one
+    batch a newer card wins and a staler card loses, independently."""
+    await repo.upsert_cards(
+        _USER,
+        {
+            "keep": _state(rec_review="2026-05-28", prod_review="2026-05-28"),
+            "beat": _state(rec_review="2026-05-20", prod_review="2026-05-20"),
+        },
+    )
+
+    stale = _state(rec_review="2026-05-01", prod_review="2026-05-01")
+    stale["recognition"]["stability"] = 99.0  # marker that must NOT survive
+    newer = _state(rec_review="2026-06-02", prod_review="2026-06-02")
+    newer["recognition"]["stability"] = 7.5  # marker that MUST survive
+
+    merged = await repo.upsert_cards(_USER, {"keep": stale, "beat": newer})
+
+    assert merged["keep"]["recognition"]["lastReviewDate"] == "2026-05-28"
+    assert merged["keep"]["recognition"]["stability"] != 99.0
+    assert merged["beat"]["recognition"]["stability"] == 7.5
+
+
+async def test_batch_delete_removes_every_card(repo: DynamoSRSRepository) -> None:
+    cards = {f"c{i}": _state(rec_review="2026-05-28", prod_review="2026-05-28") for i in range(60)}
+    await repo.upsert_cards(_USER, cards)
+
+    deleted = await repo.delete_cards(_USER, [f"c{i}" for i in range(0, 60, 2)])
+    assert deleted == 30
+
+    stored = await repo.get_all(_USER)
+    assert "c0" not in stored
+    assert "c1" in stored
+    assert len(stored) == 30

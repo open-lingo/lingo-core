@@ -105,3 +105,40 @@ async def test_sqlite_repo_payload_storage_round_trip(sqlite_srs_repo) -> None:
     assert state2["card-1"]["recognition"]["stability"] == 1.5
     assert state2["card-1"]["production"]["state"] == "new"
     assert state2["card-1"]["recognition"]["lastReviewDate"] == "2026-05-25"
+
+
+def test_sync_rejects_oversized_payload(api_client) -> None:
+    """A push past MAX_SYNC_CARDS is rejected outright.
+
+    Without the cap this request does not fail — it *hangs*: ``upsert_cards``
+    issues one conditional UpdateItem per card, so a few thousand cards runs
+    past the 30s Lambda timeout. A timeout returns no card ids, the client
+    marks nothing synced, and the identical oversized payload is retried on
+    every sync forever. Failing fast keeps that loop from forming.
+    """
+    from app.srs.schemas import MAX_SYNC_CARDS
+
+    client, _user_id, _admin = api_client
+    oversized = {f"card-{i}": _modal_state() for i in range(MAX_SYNC_CARDS + 1)}
+    resp = client.post("/api/core/v1/srs/sync", json={"cards": oversized})
+    assert resp.status_code == 422, resp.text
+
+    # The boundary itself must still be accepted, or clients chunking exactly
+    # to the documented limit would fail every batch.
+    at_limit = {f"card-{i}": _modal_state() for i in range(MAX_SYNC_CARDS)}
+    resp = client.post("/api/core/v1/srs/sync", json={"cards": at_limit})
+    assert resp.status_code == 200, resp.text
+    assert len(resp.json()["cards"]) == MAX_SYNC_CARDS
+
+
+def test_delete_rejects_oversized_payload(api_client) -> None:
+    """``delete_cards`` has the same per-card round-trip shape as sync."""
+    from app.srs.schemas import MAX_SYNC_CARDS
+
+    client, _user_id, _admin = api_client
+    resp = client.request(
+        "DELETE",
+        "/api/core/v1/srs/cards",
+        json={"cardIds": [f"card-{i}" for i in range(MAX_SYNC_CARDS + 1)]},
+    )
+    assert resp.status_code == 422, resp.text

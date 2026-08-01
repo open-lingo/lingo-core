@@ -41,10 +41,28 @@ class SRSCardState(BaseModel):
     )
 
 
+#: Maximum cards accepted in a single sync (or delete) request.
+#:
+#: The binding constraint is NOT the Lambda Function URL's 6 MB payload cap —
+#: at a measured ~437 bytes/card that would allow ~14k. It is the function's
+#: 30s timeout against ``upsert_cards``, which issues one conditional
+#: UpdateItem per card. Sized so a batch completes well inside the timeout even
+#: if the writes were fully serialized at ~8ms each (~8s for 1000, ~2x margin),
+#: so this stays safe if the concurrency in ``db/dynamo/srs.py`` ever regresses.
+#:
+#: An oversized push now fails fast with a 422 instead of burning the full 30s
+#: and timing out — which used to wedge the client: a timeout returns no card
+#: ids, nothing gets marked synced, and the identical oversized payload is
+#: retried forever. Clients chunk to this limit (see ``SRS_SYNC_CHUNK_SIZE`` in
+#: the frontend's ``engine/srsSync.ts``); the cap is the backstop, not the
+#: mechanism.
+MAX_SYNC_CARDS = 1000
+
+
 class SRSSyncRequest(BaseModel):
     """Client pushes dirty cards. Keys are card IDs."""
 
-    cards: dict[str, SRSCardState]
+    cards: dict[str, SRSCardState] = Field(max_length=MAX_SYNC_CARDS)
     syncedAt: str | None = None
 
 
@@ -64,7 +82,9 @@ class SRSStateResponse(BaseModel):
 class SRSDeleteRequest(BaseModel):
     """Delete SRS state for specific cards."""
 
-    cardIds: list[str]
+    # Same per-card-round-trip shape as the sync path (``delete_cards`` loops
+    # one DeleteItem per id), so it carries the same bound.
+    cardIds: list[str] = Field(max_length=MAX_SYNC_CARDS)
 
 
 class SRSDeleteResponse(BaseModel):
