@@ -21,6 +21,7 @@ from app.admin.router import router as admin_router
 from app.admin.social_router import router as admin_social_router
 from app.admin.xp_router import router as admin_xp_router
 from app.ads.router import router as ads_router
+from app.boot.router import router as boot_router
 from app.community.router import router as community_router
 from app.decks.router import router as decks_router
 from app.finance.router import router as finance_router
@@ -36,6 +37,7 @@ from app.users.router import router as users_router
 
 v1_router = APIRouter()
 
+v1_router.include_router(boot_router, prefix="/boot")
 v1_router.include_router(srs_router, prefix="/srs")
 v1_router.include_router(users_router, prefix="/users")
 v1_router.include_router(decks_router, prefix="/decks")
