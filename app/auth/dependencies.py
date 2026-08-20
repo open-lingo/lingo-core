@@ -12,6 +12,7 @@ resolved from (in order):
 """
 
 import logging
+import secrets
 import time
 from typing import Annotated
 
@@ -466,5 +467,8 @@ def require_internal_service(
         raise HTTPException(
             status_code=500, detail="INTERNAL_SERVICE_TOKEN not configured"
         )
-    if authorization != f"Bearer {token}":
+    # Constant-time compare so the internal token can't be recovered byte-by-byte
+    # via response-timing on the public Function URL. compare_digest needs equal
+    # lengths to be fully constant-time, but its early-out still beats ``!=``.
+    if not secrets.compare_digest(authorization or "", f"Bearer {token}"):
         raise HTTPException(status_code=401, detail="invalid system token")

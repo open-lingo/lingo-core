@@ -10,7 +10,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from app.config import settings
 from app.db.provider import init_repositories, shutdown_repositories
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.v1.router import v1_router
+from app.v1.router import build_v1_router
 
 logger = logging.getLogger("lingo.access")
 
@@ -119,7 +119,10 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-app.include_router(v1_router, prefix="/api/core/v1")
+# Built fresh (reads settings.SURFACE_MODE) so the conftest app-reload picks up
+# a test-set mode. "beta" mounts only the core loop; "full" (default) is
+# unchanged.
+app.include_router(build_v1_router(), prefix="/api/core/v1")
 
 
 @app.get("/health")

@@ -28,6 +28,13 @@ class Settings(BaseSettings):
 
     DEBUG: bool = False
 
+    # Surface mode — which v1 routers are HTTP-exposed. "full" (default) mounts
+    # everything; "beta" mounts only the landing/sign-in/learn/practice core
+    # loop (boot, users, srs, progress), un-mounting the scan-backed public
+    # community/tags reads and the not-yet-role-enforced admin routes. See
+    # app/v1/router.py. Unknown values fall back to "full".
+    SURFACE_MODE: str = "full"
+
     # Dev-mode default identity (used by seed script and auth bypass).
     # When DEBUG=true and no X-Dev-User header / Bearer token is sent,
     # requests authenticate as this user automatically.
