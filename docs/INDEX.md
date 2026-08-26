@@ -12,6 +12,7 @@
 | Progress rollup, deck storage decisions | `adr/0001-progress-api-hybrid-rollup.md`, `adr/0002-deck-content-storage-and-versioning.md` |
 | Unbuilt forward specs | `cosmetics-design-2026-05-25.md`, `leagues-design-2026-05-25.md` (mock-only) |
 | Test fixtures | `../test_decks/README.md` |
+| **Pre-beta security audit** | `security-pentest-2026-08-20.md` — pen-test results + surface reduction (2026-08-20) |
 
 ## Landmines
 
