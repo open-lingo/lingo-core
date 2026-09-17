@@ -67,10 +67,21 @@ class SRSSyncRequest(BaseModel):
 
 
 class SRSSyncResponse(BaseModel):
-    """Server returns the merged state for synced cards."""
+    """Server returns the merged state for synced cards.
+
+    ``cards`` holds only the ids that actually landed — a card that failed
+    its individual write is OMITTED, not included with stale/default data,
+    so a client checking "is this id in the response" (the existing
+    contract — see `lingo/src/features/flashcards/engine/srsSync.ts`
+    `performSyncNow`) already treats it as unsynced with no client change
+    required. ``failedCardIds`` is additive: it names the same omitted ids
+    explicitly, for callers that want to surface a failure instead of
+    inferring it from an absence.
+    """
 
     cards: dict[str, SRSCardState]
     syncedAt: str
+    failedCardIds: list[str] = Field(default_factory=list)
 
 
 class SRSStateResponse(BaseModel):

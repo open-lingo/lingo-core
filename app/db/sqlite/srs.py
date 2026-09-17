@@ -6,9 +6,12 @@ min(recognition.dueDate, production.dueDate) for efficient index queries.
 """
 
 import json
+import logging
 from typing import Any
 
 import aiosqlite
+
+logger = logging.getLogger("lingo.srs")
 
 _INIT_SQL = """
 CREATE TABLE IF NOT EXISTS srs_cards_v2 (
@@ -106,38 +109,51 @@ class SqliteSRSRepository:
         row = await cur.fetchone()
         return _row_to_state(row) if row else None
 
-    async def upsert_cards(self, user_id: str, cards: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    async def upsert_cards(
+        self, user_id: str, cards: dict[str, dict[str, Any]]
+    ) -> tuple[dict[str, dict[str, Any]], list[str]]:
+        # Sequential, single-connection — no fan-out, so no orphaned-task risk
+        # the way the Dynamo impl has. Still isolates one card's failure from
+        # the rest: a bad `incoming` shape (bad data from a very old client
+        # build, say) raising mid-loop used to abort every card after it in
+        # the same request with no trace of which one, matching the protocol
+        # contract the Dynamo impl now honors too.
         result: dict[str, dict[str, Any]] = {}
+        failed: list[str] = []
 
         for card_id, incoming in cards.items():
-            existing = await self.get_card(user_id, card_id)
+            try:
+                existing = await self.get_card(user_id, card_id)
 
-            incoming_review = _max_last_review(incoming)
-            existing_review = _max_last_review(existing) if existing else ""
-            core_win = existing and existing_review >= incoming_review
+                incoming_review = _max_last_review(incoming)
+                existing_review = _max_last_review(existing) if existing else ""
+                core_win = existing and existing_review >= incoming_review
 
-            bury_changed = existing and "buriedUntil" in incoming and incoming.get("buriedUntil") != existing.get("buriedUntil")
-            if core_win and not bury_changed:
-                result[card_id] = existing
-                continue
+                bury_changed = existing and "buriedUntil" in incoming and incoming.get("buriedUntil") != existing.get("buriedUntil")
+                if core_win and not bury_changed:
+                    result[card_id] = existing
+                    continue
 
-            if core_win and bury_changed and existing:
-                incoming = {**existing, "buriedUntil": incoming.get("buriedUntil")}
+                if core_win and bury_changed and existing:
+                    incoming = {**existing, "buriedUntil": incoming.get("buriedUntil")}
 
-            due = _min_due(incoming)
-            await self._conn().execute(
-                """INSERT INTO srs_cards_v2
-                       (user_id, card_id, due_date, state_json)
-                   VALUES (?, ?, ?, ?)
-                   ON CONFLICT(user_id, card_id) DO UPDATE SET
-                       due_date   = excluded.due_date,
-                       state_json = excluded.state_json""",
-                (user_id, card_id, due, json.dumps(incoming, ensure_ascii=False)),
-            )
-            result[card_id] = incoming
+                due = _min_due(incoming)
+                await self._conn().execute(
+                    """INSERT INTO srs_cards_v2
+                           (user_id, card_id, due_date, state_json)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(user_id, card_id) DO UPDATE SET
+                           due_date   = excluded.due_date,
+                           state_json = excluded.state_json""",
+                    (user_id, card_id, due, json.dumps(incoming, ensure_ascii=False)),
+                )
+                result[card_id] = incoming
+            except Exception:
+                logger.exception("upsert_cards: card %s failed", card_id)
+                failed.append(card_id)
 
         await self._conn().commit()
-        return result
+        return result, failed
 
     async def delete_cards(self, user_id: str, card_ids: list[str]) -> int:
         if not card_ids:

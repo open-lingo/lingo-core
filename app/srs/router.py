@@ -61,7 +61,15 @@ async def sync_cards(body: SRSSyncRequest, user: CurrentUser, repo: SRSRepo) -> 
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No cards to sync")
 
     cards_dict = {cid: state.model_dump(mode="json") for cid, state in body.cards.items()}
-    merged = await repo.upsert_cards(user.id, cards_dict)
+    merged, failed_card_ids = await repo.upsert_cards(user.id, cards_dict)
+    if failed_card_ids:
+        logger.warning(
+            "srs sync: %d/%d cards failed to write, staying dirty: %s",
+            len(failed_card_ids),
+            len(cards_dict),
+            failed_card_ids,
+        )
+    failed_set = set(failed_card_ids)
 
     # Tally today's reviews and fire ONE batched ``review_completed`` event
     # carrying the count. We count each modality whose ``lastReviewDate``
@@ -87,6 +95,13 @@ async def sync_cards(body: SRSSyncRequest, user: CurrentUser, repo: SRSRepo) -> 
     last_card_id = ""
     last_modality: str = "recognition"
     for card_id, state in body.cards.items():
+        # A card whose write failed (in failed_card_ids, not `merged`) never
+        # landed — crediting the daily-flashcards quest / retention figures
+        # for it here would report a review that doesn't durably exist. The
+        # client sees it missing from `cards` (or in `failedCardIds`) and
+        # keeps it dirty for the next sync; it earns its quest credit then.
+        if card_id in failed_set:
+            continue
         if state.recognition.reps > 0 and state.recognition.lastReviewDate == today_iso:
             review_count += 1
             last_card_id, last_modality = card_id, "recognition"
@@ -114,6 +129,7 @@ async def sync_cards(body: SRSSyncRequest, user: CurrentUser, repo: SRSRepo) -> 
     return {
         "cards": merged,
         "syncedAt": datetime.now(UTC).isoformat(),
+        "failedCardIds": failed_card_ids,
     }
 
 

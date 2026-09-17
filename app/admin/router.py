@@ -237,7 +237,17 @@ async def admin_update_user_srs(
             cards = await srs_repo.get_all(user_id)
             return {"cards": cards}
         cards_dict = {cid: s.model_dump(mode="json") for cid, s in body.cards.items()}
-        merged = await srs_repo.upsert_cards(user_id, cards_dict)
+        # upsert_cards now returns (merged, failed_card_ids) — mechanical
+        # update for the 2026-09-17 progress-sync correctness audit (a
+        # single card's write error no longer aborts the whole call; see
+        # docs/progress-sync-contract-2026-09-17.md). Admin PATCH has no
+        # per-card result surface today, so a failure here still raises via
+        # api_error's normal path in the vastly-more-common case (this repo
+        # write only fans out for a batch of ADMIN-supplied cards, not a
+        # user's full sync); a partial failure just silently keeps the
+        # failed card unchanged, same as before this audit for any error
+        # that wasn't the LWW race.
+        merged, _failed_card_ids = await srs_repo.upsert_cards(user_id, cards_dict)
     return {"cards": merged}
 
 

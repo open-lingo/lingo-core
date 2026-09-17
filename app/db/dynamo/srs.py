@@ -18,11 +18,14 @@ on nested structures. The dueDate attribute remains a plain string for the GSI.
 
 import asyncio
 import json
+import logging
 from typing import Any
 
 from botocore.exceptions import ClientError
 
 from app.db.dynamo._session import get_shared_resource
+
+logger = logging.getLogger("lingo.srs")
 
 _CARD_SK_PREFIX = "CARD#"
 
@@ -167,7 +170,9 @@ class DynamoSRSRepository:
         state = _item_to_state(item)
         return state if state else None
 
-    async def upsert_cards(self, user_id: str, cards: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    async def upsert_cards(
+        self, user_id: str, cards: dict[str, dict[str, Any]]
+    ) -> tuple[dict[str, dict[str, Any]], list[str]]:
         # Cost item 8 — write-if-newer. The old path did N GetItems (LWW
         # pre-read) + N PutItems. We now attempt one conditional UpdateItem per
         # card guarded on the stored ``lastReview`` marker: a stale client
@@ -190,8 +195,35 @@ class DynamoSRSRepository:
             async with sem:
                 return card_id, await self._upsert_one(user_id, card_id, incoming)
 
-        pairs = await asyncio.gather(*(one(cid, inc) for cid, inc in cards.items()))
-        return dict(pairs)
+        # return_exceptions=True is load-bearing, not defensive. Without it,
+        # asyncio.gather raises as soon as ONE task's exception is observed
+        # and — critically — does NOT cancel the sibling tasks it already
+        # scheduled; they keep running as orphaned background work. In a
+        # normal long-lived process that's merely untidy. On Lambda it's a
+        # data-loss vector: the exception propagates out of this function,
+        # out of the router, FastAPI turns it into a 500 and Mangum returns
+        # that response — and the execution environment can freeze right
+        # after, before the orphaned tasks' await points ever resume. Any
+        # card whose UpdateItem call hadn't completed yet silently never
+        # happens; the client gets no result for it and a plain 500 for the
+        # whole sync besides. With return_exceptions=True every task is
+        # awaited to completion (success or exception) before this function
+        # returns, so there is no unawaited background work left when the
+        # response goes out — and one card's failure no longer costs the
+        # other 999 their result.
+        pairs = await asyncio.gather(
+            *(one(cid, inc) for cid, inc in cards.items()), return_exceptions=True
+        )
+        merged: dict[str, dict[str, Any]] = {}
+        failed: list[str] = []
+        for cid, outcome in zip(cards.keys(), pairs, strict=True):
+            if isinstance(outcome, BaseException):
+                logger.warning("upsert_cards: card %s failed: %r", cid, outcome)
+                failed.append(cid)
+            else:
+                _, state = outcome
+                merged[cid] = state
+        return merged, failed
 
     async def _upsert_one(self, user_id: str, card_id: str, incoming: dict[str, Any]) -> dict[str, Any]:
         incoming_review = _max_last_review(incoming)
@@ -252,7 +284,13 @@ class DynamoSRSRepository:
         await self._table.update_item(**kwargs)
 
     async def delete_cards(self, user_id: str, card_ids: list[str]) -> int:
-        # Same independent-key fan-out as upsert_cards (see the note there).
+        # Same independent-key fan-out as upsert_cards (see the note there) —
+        # including the same return_exceptions=True requirement. A delete
+        # that never lands isn't a data-loss risk the way a lost write is
+        # (the card just stays), but the pre-fix code both orphaned the
+        # remaining tasks on a Lambda freeze AND unconditionally reported
+        # `len(card_ids)` regardless of what actually happened, so a caller
+        # had no way to know a "successful" delete left rows behind.
         sem = asyncio.Semaphore(_WRITE_CONCURRENCY)
 
         async def one(card_id: str) -> None:
@@ -261,8 +299,13 @@ class DynamoSRSRepository:
                     Key={"PK": f"USER#{user_id}", "SK": f"{_CARD_SK_PREFIX}{card_id}"}
                 )
 
-        await asyncio.gather(*(one(cid) for cid in card_ids))
-        return len(card_ids)
+        results = await asyncio.gather(
+            *(one(cid) for cid in card_ids), return_exceptions=True
+        )
+        failed = [cid for cid, r in zip(card_ids, results, strict=True) if isinstance(r, BaseException)]
+        if failed:
+            logger.warning("delete_cards: %d of %d failed: %s", len(failed), len(card_ids), failed)
+        return len(card_ids) - len(failed)
 
     async def clear_all(self, user_id: str) -> int:
         items = await _paginate_query(
