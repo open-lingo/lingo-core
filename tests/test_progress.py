@@ -98,3 +98,57 @@ def test_idempotent_retry(api_client) -> None:
 
     me2 = client.get("/api/core/v1/users/me").json()
     assert me2["xp"] == xp_after_first, f"retry double-credited XP: {xp_after_first} → {me2['xp']}"
+
+
+def test_test_out_attempt_does_not_inc_day_rollup(api_client, monkeypatch) -> None:
+    """A passed ``isTestOut`` attempt (placement / per-module test-out) must
+    persist and unlock the lesson but NOT count toward the day rollup's
+    lessons/minutes — it already earns 0 XP. Before the fix, a placement run
+    synthesizing many test-out attempts inflated "lessons today" and could
+    auto-complete a daily quest the user never actually did.
+    """
+    client, _user_id, _ = api_client
+
+    from app.db import provider
+
+    repo = provider.get_progress_repo()
+    calls: list[dict] = []
+    real_update_day_rollup = repo.update_day_rollup
+
+    async def capturing_update_day_rollup(user_id, date, lessons_inc, minutes_inc, xp_inc):
+        calls.append(
+            {"lessons_inc": lessons_inc, "minutes_inc": minutes_inc, "xp_inc": xp_inc}
+        )
+        return await real_update_day_rollup(
+            user_id, date, lessons_inc=lessons_inc, minutes_inc=minutes_inc, xp_inc=xp_inc
+        )
+
+    monkeypatch.setattr(repo, "update_day_rollup", capturing_update_day_rollup)
+
+    test_out_attempt = _attempt(str(uuid.uuid4()), lesson_id="lesson-test-out-1")
+    test_out_attempt["isTestOut"] = True
+    body = {"attempts": [test_out_attempt], "checkStreak": False}
+    resp = client.post("/api/core/v1/progress/lessons/batch", json=body)
+    assert resp.status_code == 200, resp.text
+    result = resp.json()["results"][0]
+    assert result["accepted"] is True
+    assert result["xpEarned"] == 0
+
+    assert len(calls) == 1
+    assert calls[0]["lessons_inc"] == 0
+    assert calls[0]["minutes_inc"] == 0
+    assert calls[0]["xp_inc"] == 0
+
+    # A normal (non-test-out) passed attempt still counts as before.
+    normal_attempt = _attempt(str(uuid.uuid4()), lesson_id="lesson-normal-1")
+    body2 = {"attempts": [normal_attempt], "checkStreak": False}
+    resp2 = client.post("/api/core/v1/progress/lessons/batch", json=body2)
+    assert resp2.status_code == 200, resp2.text
+    result2 = resp2.json()["results"][0]
+    assert result2["accepted"] is True
+    assert result2["xpEarned"] > 0
+
+    assert len(calls) == 2
+    assert calls[1]["lessons_inc"] == 1
+    assert calls[1]["minutes_inc"] == max(1, normal_attempt["durationSec"] // 60)
+    assert calls[1]["xp_inc"] > 0

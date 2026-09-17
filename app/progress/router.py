@@ -222,6 +222,14 @@ async def submit_attempt_batch(
                     "score": float(item.score),
                     "perfect": item.passed and item.score >= 0.999,
                     "attempted_at": str(item.attemptedAt),
+                    # Additive field (mirrors ReviewCompletedMessage.count):
+                    # lets lingo-async's quest evaluator recognize a
+                    # placement/test-out completion and skip lesson-count
+                    # quest advancement for it, same as it already skips
+                    # XP/lingots here. Defaulted on the consumer side so
+                    # in-flight messages from a not-yet-upgraded producer
+                    # still parse.
+                    "is_test_out": item.isTestOut,
                 }
             )
 
@@ -415,13 +423,18 @@ async def _process_one_attempt(
             xp_earned += xp_config.lesson_test_bonus_xp
         lingots_earned = xp_config.lingots_per_lesson
 
-    # Eager rollup updates
+    # Eager rollup updates. Test-out attempts (placement / per-module
+    # test-out) persist and unlock the course map but must NOT count
+    # toward the day's lesson/minute totals — they already skip XP above
+    # for the same reason. Without this, a placement run synthesizes one
+    # attempt per module and inflates "lessons today" by dozens, which in
+    # turn can auto-complete daily quests the user never actually did.
     await progress.update_lesson_rollup(user_id, item.lessonId, attempt_row)
     day_rollup = await progress.update_day_rollup(
         user_id,
         date.today().isoformat(),
-        lessons_inc=1 if item.passed else 0,
-        minutes_inc=max(1, item.durationSec // 60),
+        lessons_inc=0 if item.isTestOut else (1 if item.passed else 0),
+        minutes_inc=0 if item.isTestOut else max(1, item.durationSec // 60),
         xp_inc=xp_earned,
     )
 
