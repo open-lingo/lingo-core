@@ -152,3 +152,122 @@ def test_test_out_attempt_does_not_inc_day_rollup(api_client, monkeypatch) -> No
     assert calls[1]["lessons_inc"] == 1
     assert calls[1]["minutes_inc"] == max(1, normal_attempt["durationSec"] // 60)
     assert calls[1]["xp_inc"] > 0
+
+
+def test_repair_path_recovers_after_rollup_write_failure(api_client, monkeypatch) -> None:
+    """2026-09-17 correctness audit (docs/progress-sync-contract-2026-09-17.md).
+
+    put_attempt and the rollup writes (update_lesson_rollup / update_day_rollup)
+    are separate, non-transactional calls. Before the fix, ANY exception
+    between them (simulated here as update_day_rollup raising once) meant:
+    the attempt row was durably logged, but the whole request 500'd — and a
+    retry of the same clientAttemptId hit the old idempotency check
+    (`existing is not None` alone), which returned accepted=True with 0 XP
+    FOREVER, because it assumed "the row exists" meant "already fully
+    processed". The lesson's rollup/XP contribution was gone with no repair
+    path at all.
+
+    This test simulates exactly that crash window and asserts the retry
+    recovers: it must award XP and update the day rollup, not silently
+    return an empty win a second time.
+    """
+    client, user_id, _ = api_client
+
+    from app.db import provider
+
+    repo = provider.get_progress_repo()
+    real_update_day_rollup = repo.update_day_rollup
+    call_count = {"n": 0}
+
+    async def fail_first_call(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("simulated transient repo failure")
+        return await real_update_day_rollup(*args, **kwargs)
+
+    monkeypatch.setattr(repo, "update_day_rollup", fail_first_call)
+
+    cid = str(uuid.uuid4())
+    attempt = _attempt(cid, lesson_id="lesson-repair-1")
+    body = {"attempts": [attempt], "checkStreak": False}
+
+    # First sync: update_day_rollup throws AFTER put_attempt + update_lesson_rollup
+    # already committed. The per-item isolation fix means this comes back as a
+    # 200 with a rejected result for this item, not a bare 500 that would also
+    # have discarded results for any OTHER item in the same batch.
+    resp1 = client.post("/api/core/v1/progress/lessons/batch", json=body)
+    assert resp1.status_code == 200, resp1.text
+    result1 = resp1.json()["results"][0]
+    assert result1["accepted"] is False
+    assert result1["reason"] == "server_error"
+    assert result1["xpEarned"] == 0
+
+    me_after_failure = client.get("/api/core/v1/users/me").json()
+    assert me_after_failure["xp"] == 0, "no XP should land while the rollup write is failing"
+
+    # Retry with the SAME clientAttemptId — exactly what the client's
+    # buffer does, since accepted=False left it dirty.
+    resp2 = client.post("/api/core/v1/progress/lessons/batch", json=body)
+    assert resp2.status_code == 200, resp2.text
+    result2 = resp2.json()["results"][0]
+    assert result2["accepted"] is True
+    assert result2["xpEarned"] > 0, (
+        "repair path must award XP on retry — pre-fix this stayed 0 forever "
+        "once the attempt row existed"
+    )
+
+    me_after_repair = client.get("/api/core/v1/users/me").json()
+    assert me_after_repair["xp"] == result2["xpEarned"]
+
+    lessons = client.get("/api/core/v1/progress/me").json()["lessons"]
+    repaired = next(row for row in lessons if row["lessonId"] == "lesson-repair-1")
+    assert repaired["attemptCount"] >= 1
+
+    # A third resync (now fully processed, rollupApplied=True) must go back
+    # to the plain idempotent no-op path — no further XP, no further calls
+    # to update_day_rollup.
+    resp3 = client.post("/api/core/v1/progress/lessons/batch", json=body)
+    assert resp3.status_code == 200, resp3.text
+    result3 = resp3.json()["results"][0]
+    assert result3["accepted"] is True
+    assert result3["xpEarned"] == 0
+    assert call_count["n"] == 2, "fully-processed attempt must not re-run the rollup write"
+
+
+def test_one_bad_item_does_not_lose_other_items_results(api_client, monkeypatch) -> None:
+    """A single item's unexpected repo exception must not blow up the whole
+    batch response. Before the fix, an uncaught exception anywhere in
+    ``_process_one_attempt`` propagated out of the whole request handler:
+    FastAPI returns a bare 500 with no body, so items before AND after the
+    failing one in the same batch lose their result even though their writes
+    had already landed.
+    """
+    client, _user_id, _ = api_client
+
+    from app.db import provider
+
+    repo = provider.get_progress_repo()
+    real_update_lesson_rollup = repo.update_lesson_rollup
+
+    async def fail_for_bad_lesson(user_id, lesson_id, attempt):
+        if lesson_id == "lesson-boom":
+            raise RuntimeError("simulated repo failure for this lesson only")
+        return await real_update_lesson_rollup(user_id, lesson_id, attempt)
+
+    monkeypatch.setattr(repo, "update_lesson_rollup", fail_for_bad_lesson)
+
+    good1 = _attempt(str(uuid.uuid4()), lesson_id="lesson-ok-1")
+    bad = _attempt(str(uuid.uuid4()), lesson_id="lesson-boom")
+    good2 = _attempt(str(uuid.uuid4()), lesson_id="lesson-ok-2")
+    body = {"attempts": [good1, bad, good2], "checkStreak": False}
+
+    resp = client.post("/api/core/v1/progress/lessons/batch", json=body)
+    assert resp.status_code == 200, resp.text
+    results = {r["clientAttemptId"]: r for r in resp.json()["results"]}
+
+    assert results[good1["clientAttemptId"]]["accepted"] is True
+    assert results[good1["clientAttemptId"]]["xpEarned"] > 0
+    assert results[good2["clientAttemptId"]]["accepted"] is True
+    assert results[good2["clientAttemptId"]]["xpEarned"] > 0
+    assert results[bad["clientAttemptId"]]["accepted"] is False
+    assert results[bad["clientAttemptId"]]["reason"] == "server_error"

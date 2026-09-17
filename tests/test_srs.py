@@ -100,7 +100,8 @@ def test_sync_rejects_payload_missing_modalities(api_client) -> None:
 async def test_sqlite_repo_payload_storage_round_trip(sqlite_srs_repo) -> None:
     """Direct repo test — payload survives upsert + get_all."""
     state = _modal_state()
-    merged = await sqlite_srs_repo.upsert_cards("user-x", {"card-1": state})
+    merged, failed = await sqlite_srs_repo.upsert_cards("user-x", {"card-1": state})
+    assert failed == []
     assert merged["card-1"]["recognition"]["stability"] == 1.5
 
     state2 = await sqlite_srs_repo.get_all("user-x")

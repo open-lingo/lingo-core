@@ -123,7 +123,7 @@ async def repo(moto_server: str, monkeypatch: pytest.MonkeyPatch) -> AsyncIterat
 
 async def test_first_write_lands_and_reads_back(repo: DynamoSRSRepository) -> None:
     state = _state(rec_review="2026-05-28", prod_review="2026-05-29")
-    merged = await repo.upsert_cards(_USER, {"c1": state})
+    merged, _failed = await repo.upsert_cards(_USER, {"c1": state})
     assert merged["c1"]["recognition"]["lastReviewDate"] == "2026-05-28"
     got = await repo.get_card(_USER, "c1")
     assert got is not None
@@ -133,7 +133,7 @@ async def test_first_write_lands_and_reads_back(repo: DynamoSRSRepository) -> No
 async def test_newer_review_wins(repo: DynamoSRSRepository) -> None:
     await repo.upsert_cards(_USER, {"c1": _state(rec_review="2026-05-28", prod_review="2026-05-28")})
     newer = _state(rec_review="2026-06-05", prod_review="2026-06-05", due="2026-06-10")
-    merged = await repo.upsert_cards(_USER, {"c1": newer})
+    merged, _failed = await repo.upsert_cards(_USER, {"c1": newer})
     assert merged["c1"]["recognition"]["lastReviewDate"] == "2026-06-05"
     got = await repo.get_card(_USER, "c1")
     assert got["recognition"]["lastReviewDate"] == "2026-06-05"
@@ -143,7 +143,7 @@ async def test_newer_review_wins(repo: DynamoSRSRepository) -> None:
 async def test_stale_review_is_rejected(repo: DynamoSRSRepository) -> None:
     await repo.upsert_cards(_USER, {"c1": _state(rec_review="2026-05-28", prod_review="2026-05-28")})
     stale = _state(rec_review="2026-05-20", prod_review="2026-05-20", due="2026-05-21")
-    merged = await repo.upsert_cards(_USER, {"c1": stale})
+    merged, _failed = await repo.upsert_cards(_USER, {"c1": stale})
     # Server-existing (newer) state wins and is returned.
     assert merged["c1"]["recognition"]["lastReviewDate"] == "2026-05-28"
     got = await repo.get_card(_USER, "c1")
@@ -154,7 +154,7 @@ async def test_tie_keeps_server_state(repo: DynamoSRSRepository) -> None:
     await repo.upsert_cards(_USER, {"c1": _state(rec_review="2026-05-28", prod_review="2026-05-28")})
     # Same review marker, different (would-be-clobbering) core fields.
     tie = _state(rec_review="2026-05-28", prod_review="2026-05-28", due="2099-01-01")
-    merged = await repo.upsert_cards(_USER, {"c1": tie})
+    merged, _failed = await repo.upsert_cards(_USER, {"c1": tie})
     # Tie → server wins, the bogus far-future dueDate must not land.
     assert merged["c1"]["recognition"]["dueDate"] == "2026-06-01"
 
@@ -165,7 +165,7 @@ async def test_lastReviewedAt_timestamp_beats_same_day_date(repo: DynamoSRSRepos
     # Incoming carries a sub-day timestamp on the same day — must win.
     incoming = _state(rec_review="2026-05-28", prod_review="2026-05-28", due="2026-07-07")
     incoming["lastReviewedAt"] = "2026-05-28T10:00:00+00:00"
-    merged = await repo.upsert_cards(_USER, {"c1": incoming})
+    merged, _failed = await repo.upsert_cards(_USER, {"c1": incoming})
     assert merged["c1"]["recognition"]["dueDate"] == "2026-07-07"
 
 
@@ -173,7 +173,7 @@ async def test_bury_change_lands_even_when_server_newer(repo: DynamoSRSRepositor
     await repo.upsert_cards(_USER, {"c1": _state(rec_review="2026-05-28", prod_review="2026-05-28")})
     # Older review, but a new bury — bury must land, core must stay server's.
     older_with_bury = _state(rec_review="2026-05-20", prod_review="2026-05-20", buried="2026-07-01")
-    merged = await repo.upsert_cards(_USER, {"c1": older_with_bury})
+    merged, _failed = await repo.upsert_cards(_USER, {"c1": older_with_bury})
     assert merged["c1"]["buriedUntil"] == "2026-07-01"
     assert merged["c1"]["recognition"]["lastReviewDate"] == "2026-05-28"
     got = await repo.get_card(_USER, "c1")
@@ -203,7 +203,7 @@ async def test_batch_upsert_writes_every_card(repo: DynamoSRSRepository) -> None
         f"c{i}": _state(rec_review="2026-05-28", prod_review="2026-05-28", due=f"2026-06-{(i % 28) + 1:02d}")
         for i in range(120)
     }
-    merged = await repo.upsert_cards(_USER, cards)
+    merged, _failed = await repo.upsert_cards(_USER, cards)
 
     assert set(merged) == set(cards)
     stored = await repo.get_all(_USER)
@@ -227,7 +227,7 @@ async def test_batch_upsert_preserves_per_card_lww(repo: DynamoSRSRepository) ->
     newer = _state(rec_review="2026-06-02", prod_review="2026-06-02")
     newer["recognition"]["stability"] = 7.5  # marker that MUST survive
 
-    merged = await repo.upsert_cards(_USER, {"keep": stale, "beat": newer})
+    merged, _failed = await repo.upsert_cards(_USER, {"keep": stale, "beat": newer})
 
     assert merged["keep"]["recognition"]["lastReviewDate"] == "2026-05-28"
     assert merged["keep"]["recognition"]["stability"] != 99.0
@@ -245,3 +245,52 @@ async def test_batch_delete_removes_every_card(repo: DynamoSRSRepository) -> Non
     assert "c0" not in stored
     assert "c1" in stored
     assert len(stored) == 30
+
+
+async def test_one_card_failure_does_not_abort_the_others(
+    repo: DynamoSRSRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-09-17 correctness audit (docs/progress-sync-contract-2026-09-17.md).
+
+    Before the fix, ``upsert_cards`` fanned out with a bare
+    ``asyncio.gather`` (no ``return_exceptions=True``). One card's exception
+    made ``gather`` raise immediately WITHOUT cancelling the other in-flight
+    tasks — they kept running as orphaned background work. That is a
+    data-loss vector on Lambda specifically: the exception propagates out of
+    the whole ``/srs/sync`` request (a bare 500, no partial `cards` in the
+    response), and if the execution environment freezes right after sending
+    that response, any sibling card write that hadn't completed yet never
+    runs at all.
+
+    This test forces one specific card's write to fail and asserts: (1) the
+    call does not raise — the other 29 cards still land and are returned,
+    (2) the failed card is reported back, not silently merged with stale/
+    absent data, and (3) the failed card's write genuinely never landed
+    (proving the fix isn't just swallowing the exception and claiming success).
+    """
+    real_write_if_newer = repo._write_if_newer
+
+    async def flaky_write_if_newer(user_id, card_id, state, review_marker):
+        if card_id == "c-boom":
+            raise RuntimeError("simulated DynamoDB error for this card only")
+        return await real_write_if_newer(user_id, card_id, state, review_marker)
+
+    monkeypatch.setattr(repo, "_write_if_newer", flaky_write_if_newer)
+
+    cards = {
+        f"c{i}": _state(rec_review="2026-05-28", prod_review="2026-05-28")
+        for i in range(29)
+    }
+    cards["c-boom"] = _state(rec_review="2026-05-28", prod_review="2026-05-28")
+
+    merged, failed = await repo.upsert_cards(_USER, cards)
+
+    assert failed == ["c-boom"]
+    assert "c-boom" not in merged
+    assert set(merged) == set(cards) - {"c-boom"}
+    assert len(merged) == 29
+
+    stored = await repo.get_all(_USER)
+    assert "c-boom" not in stored, "the failed card's write must not have landed either"
+    assert "c0" in stored
+    assert len(stored) == 29
