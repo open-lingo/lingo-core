@@ -4,12 +4,18 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import settings
 from app.db.provider import init_repositories, shutdown_repositories
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.shared.request_id import get_request_id
+from app.telemetry.guard import TelemetryGuardMiddleware
 from app.v1.router import build_v1_router
 
 logger = logging.getLogger("lingo.access")
@@ -118,6 +124,11 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+# Body-size cap + per-IP token bucket, scoped to POST
+# /api/core/v1/telemetry/errors only — see app/telemetry/guard.py. Must be
+# a BaseHTTPMiddleware (not a route Depends) to reject an oversized body on
+# Content-Length alone, before FastAPI reads it into memory.
+app.add_middleware(TelemetryGuardMiddleware)
 
 # Built fresh (reads settings.SURFACE_MODE) so the conftest app-reload picks up
 # a test-set mode. "beta" mounts only the core loop; "full" (default) is
@@ -128,3 +139,58 @@ app.include_router(build_v1_router(), prefix="/api/core/v1")
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# ── Exception handlers: echo X-Request-Id on every error response ──────────
+#
+# A client error report can carry `lastRequestId` (the X-Request-Id from
+# whatever API call most recently failed) so a human can grep this
+# request's CloudWatch log stream directly instead of correlating by
+# timestamp. Before this, no response — success or error — carried the id
+# at all. Three handlers cover the app's actual error surface today:
+# deliberate `HTTPException` raises (including `api_error`'s wrapped
+# 500s), FastAPI's own request-validation 422s, and truly unhandled
+# exceptions that would otherwise reach Starlette's default 500 page.
+#
+# Registering a catch-all `Exception` handler changes existing behavior in
+# one place worth flagging: `TestClient(app)` normally RE-RAISES unhandled
+# exceptions in tests (`raise_server_exceptions=True` by default) so a bug
+# fails the test loudly. An app-level `Exception` handler intercepts
+# before that re-raise, so a test that previously asserted a raised
+# exception via `pytest.raises(...)` around a route call would instead see
+# a 500 JSON response. `tests/test_api_error.py` builds its OWN minimal
+# `FastAPI()` app per test (not this module's `app`), so it is unaffected;
+# no other test in this repo drives an unhandled exception through the
+# real `app.main.app` today (`test_smoke.py` verified clean).
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    request_id = get_request_id(request)
+    headers = dict(exc.headers or {})
+    headers["X-Request-Id"] = request_id
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=headers)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    request_id = get_request_id(request)
+    # Mirrors FastAPI's own default handler body shape exactly
+    # (`fastapi.exception_handlers.request_validation_exception_handler`) —
+    # only the header is new.
+    return JSONResponse(
+        {"detail": jsonable_encoder(exc.errors())},
+        status_code=422,
+        headers={"X-Request-Id": request_id},
+    )
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    request_id = get_request_id(request)
+    logger.exception("unhandled_exception request_id=%s path=%s", request_id, request.url.path)
+    return JSONResponse(
+        {"detail": "Internal server error"},
+        status_code=500,
+        headers={"X-Request-Id": request_id},
+    )

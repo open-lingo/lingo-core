@@ -47,6 +47,7 @@ from app.srs.router import router as srs_router
 from app.stories.router import router as stories_router
 from app.tags.router import admin_router as tags_admin_router
 from app.tags.router import public_router as tags_public_router
+from app.telemetry.router import router as telemetry_router
 from app.users.router import router as users_router
 
 # (router, prefix, group). ``group`` is the surface-mode key; a router is
@@ -74,12 +75,23 @@ _MOUNTS: list[tuple[APIRouter, str, str]] = [
     (tags_public_router, "/tags", "tags"),
     (tags_admin_router, "/admin/tags", "admin"),
     (ads_router, "/ads", "ads"),
+    (telemetry_router, "/telemetry", "telemetry"),
 ]
 
 # The landing/sign-in/learn/practice core loop. Landing + sign-in hit no v1
 # router (Auth0 is external); learn is bundled content; practice = srs +
 # progress; boot + users are the always-needed spine.
-_BETA_GROUPS = frozenset({"boot", "users", "srs", "progress"})
+#
+# "telemetry" is included here too: client errors happen before login and
+# during the reduced beta surface itself, which is exactly when there is
+# the LEAST other signal about what broke. Unlike the routers this mode
+# un-mounts to shrink attack surface, /telemetry/errors accepts no user
+# input that reaches a repo/DB write — it only ever produces a CloudWatch
+# log line — and it carries its own body-size cap + per-IP token bucket
+# (`TelemetryGuardMiddleware`), so mounting it in beta trades a bounded,
+# already-guarded surface for observability during the one mode that has
+# the least of it otherwise.
+_BETA_GROUPS = frozenset({"boot", "users", "srs", "progress", "telemetry"})
 
 
 def _enabled_groups(mode: str | None) -> frozenset[str] | None:
