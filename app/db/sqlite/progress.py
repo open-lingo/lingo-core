@@ -15,6 +15,15 @@ from typing import Any
 
 import aiosqlite
 
+# Migration for DBs created before `rollup_applied` existed. DEFAULT 1
+# backfills every existing row to "already applied" — see the column comment
+# in _INIT_SQL and the protocol docstring on attempt_exists for why that's
+# the safe default (not 0, which would re-run rollups for old attempts on
+# their next incidental retry and double-count XP/streak/rollup state).
+_MIGRATION_COLS: list[tuple[str, str]] = [
+    ("rollup_applied", "INTEGER NOT NULL DEFAULT 1"),
+]
+
 _INIT_SQL = """
 CREATE TABLE IF NOT EXISTS progress_attempts (
     user_id            TEXT NOT NULL,
@@ -26,6 +35,16 @@ CREATE TABLE IF NOT EXISTS progress_attempts (
     passed             INTEGER NOT NULL,
     score              REAL NOT NULL,
     steps_json         TEXT NOT NULL DEFAULT '[]',
+    -- New rows are written 0 (not yet rolled up) by put_attempt and flipped to
+    -- 1 by mark_rollup_applied once update_lesson_rollup + update_day_rollup
+    -- both land. Read back as True when absent-equivalent... except SQLite
+    -- has no per-column default-on-legacy-row concept the way a missing
+    -- DynamoDB attribute does: the ALTER TABLE below backfills existing rows
+    -- to 1 explicitly (see _migrate_rollup_applied) so old rows keep their
+    -- pre-migration "already processed" no-op-on-retry behavior instead of
+    -- being silently re-rolled-up. See the protocol docstring on
+    -- attempt_exists for the full rationale.
+    rollup_applied     INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (user_id, attempt_id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_progress_client_id
@@ -81,6 +100,7 @@ def _attempt_row_to_dict(row: aiosqlite.Row) -> dict[str, Any]:
         "passed": bool(row["passed"]),
         "score": row["score"],
         "steps": json.loads(row["steps_json"]),
+        "rollupApplied": bool(row["rollup_applied"]),
     }
 
 
@@ -127,6 +147,13 @@ class SqliteProgressRepository:
         self._db = await aiosqlite.connect(self._db_path)
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(_INIT_SQL)
+        for col, col_def in _MIGRATION_COLS:
+            try:
+                await self._conn().execute(f"ALTER TABLE progress_attempts ADD COLUMN {col} {col_def}")
+                await self._conn().commit()
+            except aiosqlite.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
 
     async def close(self) -> None:
         if self._db:
@@ -146,9 +173,9 @@ class SqliteProgressRepository:
             """
             INSERT OR IGNORE INTO progress_attempts (
                 user_id, attempt_id, lesson_id, attempted_at, client_attempt_id,
-                duration_sec, passed, score, steps_json
+                duration_sec, passed, score, steps_json, rollup_applied
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             (
                 user_id,
@@ -172,6 +199,14 @@ class SqliteProgressRepository:
         )
         row = await cur.fetchone()
         return _attempt_row_to_dict(row) if row else None
+
+    async def mark_rollup_applied(self, user_id: str, client_attempt_id: str) -> None:
+        await self._conn().execute(
+            "UPDATE progress_attempts SET rollup_applied = 1 "
+            "WHERE user_id = ? AND client_attempt_id = ?",
+            (user_id, client_attempt_id),
+        )
+        await self._conn().commit()
 
     async def update_attempt_steps(
         self,

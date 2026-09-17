@@ -91,6 +91,10 @@ def _attempt_item_to_dict(item: dict[str, Any]) -> dict[str, Any]:
         "passed": bool(item.get("passed")),
         "score": _decimal_to_float(item["score"]),
         "steps": steps or [],
+        # Default True for rows written before this field existed — see the
+        # protocol docstring (attempt_exists) for why that default, not False,
+        # is the backward-compatible one.
+        "rollupApplied": bool(item.get("rollupApplied", True)),
     }
 
 
@@ -189,6 +193,25 @@ class DynamoProgressRepository:
                 return
             raise
 
+    async def mark_rollup_applied(self, user_id: str, client_attempt_id: str) -> None:
+        # attribute_exists(PK) guard: the CLIENT# row must exist (put_attempt
+        # already ran, or the router wouldn't be calling this). If it somehow
+        # doesn't (row deleted mid-request), swallow — nothing to mark, and
+        # the next full sync recreates the row via put_attempt with
+        # rollupApplied=False, so the repair path runs again rather than
+        # silently believing a nonexistent write succeeded.
+        try:
+            await self._table.update_item(
+                Key={"PK": _pk(user_id), "SK": f"{_CLIENT_PREFIX}{client_attempt_id}"},
+                UpdateExpression="SET rollupApplied = :t",
+                ConditionExpression="attribute_exists(PK)",
+                ExpressionAttributeValues={":t": True},
+            )
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return
+            raise
+
     async def put_attempt(self, user_id: str, attempt: dict[str, Any]) -> None:
         # Cost item 6 — dropped the leading attempt_exists GetItem. The caller
         # (progress router) already runs its own idempotency check, and the
@@ -217,6 +240,11 @@ class DynamoProgressRepository:
         client_item = {
             **base,
             "SK": f"{_CLIENT_PREFIX}{attempt['clientAttemptId']}",
+            # Explicit False (not absent) so this row is distinguishable from
+            # a pre-migration row when attempt_exists() reads it back — see
+            # the protocol docstring. Flipped by mark_rollup_applied() once
+            # update_lesson_rollup + update_day_rollup both land.
+            "rollupApplied": False,
         }
 
         # Fix 3 — atomic two-item write. Previously the second PutItem could

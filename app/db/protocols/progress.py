@@ -42,7 +42,31 @@ class ProgressRepository(Protocol):
         ...
 
     async def attempt_exists(self, user_id: str, client_attempt_id: str) -> dict[str, Any] | None:
-        """Return the existing attempt if ``client_attempt_id`` was already stored."""
+        """Return the existing attempt if ``client_attempt_id`` was already stored.
+
+        The returned dict also carries ``rollupApplied`` (bool): whether
+        ``update_lesson_rollup`` / ``update_day_rollup`` / ``mark_rollup_applied``
+        already ran for this attempt. ``put_attempt`` and the rollup writes are
+        NOT one transaction — a request can die in between (repo error, Lambda
+        freeze) after the attempt row lands but before its rollups do. The
+        router uses ``rollupApplied`` to tell that half-written state apart
+        from a fully-processed attempt on retry, instead of treating "the
+        CLIENT# row exists" as proof the rollups ran (see
+        ``docs/progress-sync-contract-2026-09-17.md``). Rows written before
+        this field existed have no ``rollupApplied`` attribute; both repo
+        implementations default that case to ``True`` (assume already
+        applied) rather than ``False``, so a legacy row is never silently
+        re-rolled-up and double-counted on an old client's retry.
+        """
+        ...
+
+    async def mark_rollup_applied(self, user_id: str, client_attempt_id: str) -> None:
+        """Flip ``rollupApplied`` to True on the attempt's idempotency row.
+
+        Called once, after ``update_lesson_rollup`` + ``update_day_rollup``
+        both succeed for a given ``client_attempt_id``. No-op if the row is
+        missing (nothing to mark).
+        """
         ...
 
     async def update_attempt_steps(

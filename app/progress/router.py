@@ -8,6 +8,7 @@ for local dev or ``dynamodb`` in prod (requires ``lingo_progress`` table from
 """
 
 import asyncio
+import logging
 import uuid
 from datetime import date, timedelta
 from typing import Annotated, Any
@@ -43,6 +44,8 @@ from app.progress.schemas import (
 )
 from app.progress.shop_catalog import get_shop_item
 from app.progress.xp import level_for_xp
+
+logger = logging.getLogger("lingo.progress")
 
 router = APIRouter(tags=["progress"])
 
@@ -113,12 +116,46 @@ async def submit_attempt_batch(
     total_lingots_inc = 0
 
     for item in body.attempts:
-        result, xp_inc, lingots_inc = await _process_one_attempt(
-            user_id=user.id,
-            item=item,
-            progress=progress,
-            xp_config=xp_config,
-        )
+        # Isolate one item's unexpected repo failure (e.g. a DynamoDB error
+        # `_process_one_attempt` doesn't already turn into a BatchAttemptResult,
+        # such as ConditionalCheckFailed past put_attempt's own retry budget)
+        # from the rest of the batch. Before this, an uncaught exception here
+        # propagated straight out of the handler: FastAPI returns a bare 500
+        # with NO body, so every item already processed in THIS request —
+        # including ones whose writes had already landed in DynamoDB — lost
+        # its result. The client never sees `results`, can't tell which of
+        # the 1..N-1 prior items to stop retrying, and resends the whole
+        # chunk. That resend is safe (idempotent) but costly (N-1 wasted
+        # idempotency-check round trips) and, if the SAME item keeps
+        # throwing, it wedges every future sync on this chunk forever — a
+        # later item that would have succeeded never gets a chance to run
+        # because the loop dies before reaching it.
+        try:
+            result, xp_inc, lingots_inc = await _process_one_attempt(
+                user_id=user.id,
+                item=item,
+                progress=progress,
+                xp_config=xp_config,
+            )
+        except Exception:
+            logger.exception(
+                "attempt processing failed clientAttemptId=%s lessonId=%s",
+                item.clientAttemptId,
+                item.lessonId,
+            )
+            result, xp_inc, lingots_inc = (
+                BatchAttemptResult(
+                    clientAttemptId=item.clientAttemptId,
+                    accepted=False,
+                    reason="server_error",
+                    xpEarned=0,
+                    streakAfter=0,
+                    lingotsEarned=0,
+                    dailyTotalLessons=0,
+                ),
+                0,
+                0,
+            )
         results.append(result)
         # Drafts contribute incremental step-XP (server-computed inside
         # _process_one_attempt). They do NOT add lingots and do NOT fire
@@ -319,14 +356,25 @@ async def _process_one_attempt(
     Returns ``(result, xp_inc, lingots_inc)``. User-row updates are batched
     by the caller (see Fix 2 in ``submit_attempt_batch``).
     """
-    # Idempotency — if we've already accepted this client attempt, return the
-    # cached outcome shape. EXCEPT for drafts: drafts re-sync the same
+    # Idempotency — if we've already FULLY accepted this client attempt
+    # (attempt row written AND its rollups applied), return the cached
+    # outcome shape. EXCEPT for drafts: drafts re-sync the same
     # clientAttemptId multiple times as the user progresses through a
     # lesson; we want to award XP for the *new* correctly-completed steps
     # in each sync (so the XP bar climbs during long lessons) without
     # double-counting steps from previous syncs.
+    #
+    # `existing is not None` alone used to be the whole idempotency check.
+    # That's wrong: put_attempt and the rollup writes below are separate,
+    # non-transactional calls, so a request can die in between (repo error,
+    # Lambda freeze) after the attempt row lands but before
+    # update_lesson_rollup / update_day_rollup run. The old check treated
+    # that half-written state as "fully processed" and returned 0 XP forever
+    # on every retry — the attempt was in the log but its XP/streak/rollup
+    # contribution was gone for good. `rollupApplied` distinguishes the two
+    # cases; see docs/progress-sync-contract-2026-09-17.md.
     existing = await progress.attempt_exists(user_id, item.clientAttemptId)
-    if existing is not None and not item.isDraft:
+    if existing is not None and not item.isDraft and existing.get("rollupApplied"):
         return (
             BatchAttemptResult(
                 clientAttemptId=item.clientAttemptId,
@@ -366,37 +414,53 @@ async def _process_one_attempt(
             0,
         )
 
-    # Sanity — duration floor (1s per step or 5s, whichever is larger)
-    step_count = len(item.stepResults)
-    min_duration = max(5, step_count)
-    if item.durationSec < min_duration:
-        return (
-            BatchAttemptResult(
-                clientAttemptId=item.clientAttemptId,
-                accepted=False,
-                reason="duration_below_floor",
-                xpEarned=0,
-                streakAfter=0,
-                lingotsEarned=0,
-                dailyTotalLessons=0,
-            ),
-            0,
-            0,
-        )
+    if existing is None:
+        # Sanity — duration floor (1s per step or 5s, whichever is larger).
+        # Only gates a BRAND NEW attempt; a repair (existing is not None,
+        # rollupApplied False below) means put_attempt already committed the
+        # row on a prior request, so the floor already passed then — rejecting
+        # it now would leave a permanently-orphaned attempt row (logged, never
+        # rolled up, and un-retryable since attempt_exists would keep finding
+        # it) instead of finishing the job.
+        step_count = len(item.stepResults)
+        min_duration = max(5, step_count)
+        if item.durationSec < min_duration:
+            return (
+                BatchAttemptResult(
+                    clientAttemptId=item.clientAttemptId,
+                    accepted=False,
+                    reason="duration_below_floor",
+                    xpEarned=0,
+                    streakAfter=0,
+                    lingotsEarned=0,
+                    dailyTotalLessons=0,
+                ),
+                0,
+                0,
+            )
 
-    # Persist attempt (immutable source of truth)
-    attempt_id = str(uuid.uuid4())
-    attempt_row = {
-        "attemptId": attempt_id,
-        "clientAttemptId": item.clientAttemptId,
-        "lessonId": item.lessonId,
-        "attemptedAt": item.attemptedAt,
-        "durationSec": item.durationSec,
-        "passed": item.passed,
-        "score": item.score,
-        "steps": [s.model_dump() for s in item.stepResults],
-    }
-    await progress.put_attempt(user_id, attempt_row)  # type: ignore[arg-type]
+        # Persist attempt (immutable source of truth)
+        attempt_id = str(uuid.uuid4())
+        attempt_row = {
+            "attemptId": attempt_id,
+            "clientAttemptId": item.clientAttemptId,
+            "lessonId": item.lessonId,
+            "attemptedAt": item.attemptedAt,
+            "durationSec": item.durationSec,
+            "passed": item.passed,
+            "score": item.score,
+            "steps": [s.model_dump() for s in item.stepResults],
+        }
+        await progress.put_attempt(user_id, attempt_row)  # type: ignore[arg-type]
+    else:
+        # Repair path — the attempt row is already durably stored (a prior
+        # request died before rollupApplied was set). put_attempt is
+        # idempotent (attribute_not_exists(SK) guard / INSERT OR IGNORE) so
+        # calling it again would be a correctness no-op, but it's also
+        # useless work every time: the row exists, so re-derive attempt_id /
+        # attempt_row from it instead of paying for another write.
+        attempt_id = existing["attemptId"]
+        attempt_row = existing
 
     # XP / lingot computation (server-authoritative, admin-tunable via
     # PlatformSettings → xp_economy). Pre-config defaults match the legacy
@@ -437,6 +501,14 @@ async def _process_one_attempt(
         minutes_inc=0 if item.isTestOut else max(1, item.durationSec // 60),
         xp_inc=xp_earned,
     )
+    # Both rollups landed — flip the marker so a retry of this
+    # clientAttemptId takes the fast (already-processed) idempotency path
+    # above instead of re-running (and double-counting) these ADDs. If this
+    # call itself fails, the next retry repeats the rollup writes once more
+    # (bounded — see docs/progress-sync-contract-2026-09-17.md "residual
+    # risk"); that is a strictly better failure mode than the pre-fix
+    # behavior, which was permanent, silent zero XP with no repair at all.
+    await progress.mark_rollup_applied(user_id, item.clientAttemptId)
 
     # Fix 11 — invalidate_concepts removed from the hot path. The lazy
     # recompute path described in ADR-0001 § "Concept rollups (lazy)" never
