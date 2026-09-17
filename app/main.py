@@ -102,15 +102,33 @@ async def access_log(request: Request, call_next) -> Response:  # type: ignore[t
     response: Response = await call_next(request)
     ms = (time.perf_counter() - start) * 1000
 
-    user = request.headers.get("X-Dev-User", "-")
+    # Fixed 2026-09-17 (lane A3b): this used to read the raw `X-Dev-User`
+    # header directly, which is only ever set in DEBUG-bypass dev traffic —
+    # every authenticated PROD request logged `user=-`, indistinguishable
+    # from an anonymous one. `auth_sub_hash` is stashed on `request.state`
+    # by `get_current_user`/`get_current_user_optional`
+    # (`app/auth/dependencies.py`) the moment either resolves a token —
+    # dev-bypass OR a real Auth0 JWT, both funnel through the same return
+    # point — so by the time `call_next` above returns, it reflects
+    # whichever happened on THIS request. Stays "-" when no auth dependency
+    # ran at all (a public route) or the token was missing/invalid. See
+    # `log_safe_user_hash`'s docstring for why this is a hash, not the raw
+    # `sub`.
+    user = getattr(request.state, "auth_sub_hash", None) or "-"
+    # `X-Lingo-Platform` (2026-09-17, lane A3b): `src/shared/api/client.ts`
+    # now stamps ios/android/web on every request (cheap, no PII) — lets
+    # this line distinguish devices for the same account, e.g. Spencer's
+    # phone vs. his iPad, without any new identity being logged.
+    platform = request.headers.get("X-Lingo-Platform", "-")
     logger.info(
-        "%s %s %s  → %d  (%.0fms)  user=%s",
+        "%s %s %s  → %d  (%.0fms)  user=%s  platform=%s",
         request.client.host if request.client else "-",
         request.method,
         request.url.path,
         response.status_code,
         ms,
         user,
+        platform,
     )
     return response
 

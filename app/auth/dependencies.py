@@ -11,6 +11,7 @@ resolved from (in order):
 2. ``DEV_USER`` env var   (default dev identity)
 """
 
+import hashlib
 import logging
 import secrets
 import time
@@ -36,6 +37,44 @@ _jwks_cache_at: float = 0.0
 _jwks_last_refresh: float = 0.0
 _JWKS_TTL_SEC = 3600  # 1 hour
 _JWKS_REFRESH_MIN_INTERVAL_SEC = 60  # at most 1 force-refresh per minute
+
+
+def log_safe_user_hash(sub: str) -> str:
+    """Stable, non-PII stand-in for an Auth0 `sub` in ACCESS logs.
+
+    `app.main`'s `lingo.access` line (`user=%s`) used to print `-` for
+    every request, authenticated ones included — it was only ever reading
+    the raw `X-Dev-User` header, which real (non-DEBUG) traffic never
+    sets. Fixed 2026-09-17 (lane A3b) by stashing this hash on
+    `request.state.auth_sub_hash` at the bottom of `get_current_user` /
+    `get_current_user_optional` (below), which the access-log middleware
+    reads after `call_next` returns.
+
+    Hash, not the raw `sub`, by design: a `sub` (`auth0|...`,
+    `google-oauth2|...`) is a stable external account identifier, and this
+    codebase already treats a raw account/user id as too identifying to
+    put in a log line for telemetry purposes (see the client-error/
+    diagnostics endpoints' explicit no-PII schema, `app/telemetry/
+    schemas.py`) — even though `lingo.access` is a separate, older,
+    internal-only logger. sha256 truncated to 8 hex chars is STABLE (same
+    sub -> same hash, every request, forever — unlike a random per-session
+    id, that's the whole point: it lets Spencer tell "same account,
+    different request" apart, e.g. his phone session from his iPad
+    session, by matching hashes across `lingo.access` lines) and NOT
+    reversible from the hash alone (only by testing candidate subs against
+    it, not a concern for an internal access log's threat model).
+    """
+    return hashlib.sha256(sub.encode("utf-8")).hexdigest()[:8]
+
+
+def _stash_auth_sub_hash(request: Request, sub: str) -> None:
+    """Best-effort: a request object that can't take new state attributes
+    (shouldn't happen with Starlette's Request, but this must never be the
+    reason an otherwise-valid auth resolution fails) is swallowed."""
+    try:
+        request.state.auth_sub_hash = log_safe_user_hash(sub)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _dev_user_from_request(request: Request) -> TokenPayload | None:
@@ -240,7 +279,9 @@ async def get_current_user(
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
         token = await _validate_jwt(credentials.credentials)
 
-    return await _resolve_user_id(token)
+    resolved = await _resolve_user_id(token)
+    _stash_auth_sub_hash(request, resolved.sub)
+    return resolved
 
 
 async def get_current_user_optional(
@@ -259,7 +300,9 @@ async def get_current_user_optional(
         except HTTPException:
             return None
 
-    return await _resolve_user_id(token)
+    resolved = await _resolve_user_id(token)
+    _stash_auth_sub_hash(request, resolved.sub)
+    return resolved
 
 
 async def get_registered_user(
