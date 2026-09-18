@@ -5,10 +5,18 @@ this router persists the same shape server-side. Rewards (lingots + XP) are
 applied to the user row on claim. Ad-free minutes + streak shields are tracked
 on the quest row's ``reward_granted`` flag until those subsystems land —
 documented gap, see /docs/.
+
+Catalog generation (2026-09-18): daily/weekly quests are drawn from a fixed
+pool (``_DAILY_POOL`` / ``_WEEKLY_POOL``) using a seed of ``user_id + the
+calendar day (or ISO week)``, so the same user always gets the same picks
+for that day/week no matter which device asks or how many times the bucket
+gets lazily regenerated — see ``_seeded_pick``.
 """
 
+import hashlib
 import logging
-from datetime import UTC, datetime, timedelta
+import random
+from datetime import UTC, datetime, time, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -103,59 +111,213 @@ def _row_to_quest(row: dict[str, Any]) -> Quest:
     )
 
 
-def _default_catalog(user_id: str) -> list[dict[str, Any]]:
-    """Default daily/weekly seed-on-refresh catalogue.
+# ─── Recurring catalog: pools + deterministic per-user picks ────────────────
+#
+# Reward sizing: lesson_pass_xp defaults to 10 (15 perfect), review_xp to 2
+# (XpEconomyConfig, app/platform_settings/schemas.py — admin-tunable, these
+# are the un-tuned defaults). Quest rewards are a SMALL top-up on top of
+# what the activity already pays, not a replacement for it: a daily quest
+# nets roughly half again the XP the underlying reps already earned, so
+# claiming feels like a bonus, not the point. Lingots mirror the xp/2
+# ratio the original fixed catalog used (5 lingots / 10 xp, 3 / 5, 25 / 50)
+# — kept exactly for continuity with any already-live rows. Only the
+# heaviest weekly quest carries a streak shield (a real, spendable-in-shop
+# reward — see shop/), so it stays rare.
+_DAILY_POOL: list[dict[str, Any]] = [
+    {
+        "slug": "daily-xp-30",
+        "title_key": "quests.daily.xp30.title",
+        "description_key": "quests.daily.xp30.desc",
+        "emoji": "⚡",
+        "progress_target": 30,
+        "progress_unit": "XP",
+        "reward_lingots": 3,
+        "reward_xp": 5,
+    },
+    {
+        "slug": "daily-xp-50",
+        "title_key": "quests.daily.fiftyXp.title",
+        "description_key": "quests.daily.fiftyXp.desc",
+        "emoji": "⚡",
+        "progress_target": 50,
+        "progress_unit": "XP",
+        "reward_lingots": 5,
+        "reward_xp": 10,
+    },
+    {
+        "slug": "daily-xp-80",
+        "title_key": "quests.daily.xp80.title",
+        "description_key": "quests.daily.xp80.desc",
+        "emoji": "🔥",
+        "progress_target": 80,
+        "progress_unit": "XP",
+        "reward_lingots": 8,
+        "reward_xp": 15,
+    },
+    {
+        "slug": "daily-lessons-1",
+        "title_key": "quests.daily.oneLesson.title",
+        "description_key": "quests.daily.oneLesson.desc",
+        "emoji": "📖",
+        "progress_target": 1,
+        "progress_unit": "lessons",
+        "reward_lingots": 2,
+        "reward_xp": 5,
+    },
+    {
+        "slug": "daily-lessons-2",
+        "title_key": "quests.daily.twoLessons.title",
+        "description_key": "quests.daily.twoLessons.desc",
+        "emoji": "📚",
+        "progress_target": 2,
+        "progress_unit": "lessons",
+        "reward_lingots": 5,
+        "reward_xp": 10,
+    },
+    {
+        "slug": "daily-cards-10",
+        "title_key": "quests.daily.tenCards.title",
+        "description_key": "quests.daily.tenCards.desc",
+        "emoji": "🃏",
+        "progress_target": 10,
+        "progress_unit": "cards",
+        "reward_lingots": 3,
+        "reward_xp": 5,
+    },
+    {
+        "slug": "daily-cards-15",
+        "title_key": "quests.daily.flashcards.title",
+        "description_key": "quests.daily.flashcards.desc",
+        "emoji": "🃏",
+        "progress_target": 15,
+        "progress_unit": "cards",
+        "reward_lingots": 4,
+        "reward_xp": 8,
+    },
+    {
+        "slug": "daily-cards-20",
+        "title_key": "quests.daily.twentyCards.title",
+        "description_key": "quests.daily.twentyCards.desc",
+        "emoji": "🎴",
+        "progress_target": 20,
+        "progress_unit": "cards",
+        "reward_lingots": 6,
+        "reward_xp": 10,
+    },
+]
+# How many daily quests a user sees at once — 3 of the 8 above.
+_DAILY_PICK_COUNT = 3
 
-    Mirrors ``buildMockQuestCatalog`` on the frontend but anchored server-side.
+_WEEKLY_POOL: list[dict[str, Any]] = [
+    {
+        "slug": "weekly-lessons-5",
+        "title_key": "quests.weekly.fiveLessons.title",
+        "description_key": "quests.weekly.fiveLessons.desc",
+        "emoji": "📗",
+        "progress_target": 5,
+        "progress_unit": "lessons",
+        "reward_lingots": 15,
+        "reward_xp": 30,
+    },
+    {
+        "slug": "weekly-lessons-10",
+        "title_key": "quests.weekly.threeLessons.title",
+        "description_key": "quests.weekly.threeLessons.desc",
+        "emoji": "📚",
+        "progress_target": 10,
+        "progress_unit": "lessons",
+        "reward_lingots": 25,
+        "reward_xp": 50,
+        "reward_streak_shield": True,
+    },
+    {
+        "slug": "weekly-cards-50",
+        "title_key": "quests.weekly.fiftyCards.title",
+        "description_key": "quests.weekly.fiftyCards.desc",
+        "emoji": "🎴",
+        "progress_target": 50,
+        "progress_unit": "cards",
+        "reward_lingots": 20,
+        "reward_xp": 40,
+    },
+    {
+        "slug": "weekly-xp-200",
+        "title_key": "quests.weekly.twoHundredXp.title",
+        "description_key": "quests.weekly.twoHundredXp.desc",
+        "emoji": "⚡",
+        "progress_target": 200,
+        "progress_unit": "XP",
+        "reward_lingots": 20,
+        "reward_xp": 40,
+    },
+]
+# How many weekly quests a user sees at once — 2 of the 4 above.
+_WEEKLY_PICK_COUNT = 2
+
+
+def _seeded_pick(pool: list[dict[str, Any]], seed: str, k: int) -> list[dict[str, Any]]:
+    """Deterministically choose ``k`` distinct items from ``pool``.
+
+    Seeded by a string (``user_id`` + a period key), not wall-clock —
+    calling this twice with the same seed always returns the same items
+    in the same order, so two devices (or a regenerate-on-expiry race)
+    agree without coordination. ``hashlib`` (not Python's salted
+    ``hash()``) so the seed→pick mapping is stable across processes.
     """
-    now = datetime.now(UTC)
-    iso_in = lambda hours: (now + timedelta(hours=hours)).isoformat()  # noqa: E731
-    base_id = lambda slug: f"{user_id}:{slug}"  # noqa: E731
-    return [
-        {
-            "id": base_id("daily-fifty-xp"),
-            "user_id": user_id,
-            "type": "daily",
-            "title_key": "quests.daily.fiftyXp.title",
-            "description_key": "quests.daily.fiftyXp.desc",
-            "emoji": "⚡",
-            "progress_target": 50,
-            "progress_unit": "XP",
-            "reward_lingots": 5,
-            "reward_xp": 10,
-            "status": "active",
-            "expires_at": iso_in(24),
-        },
-        {
-            "id": base_id("daily-flashcards"),
-            "user_id": user_id,
-            "type": "daily",
-            "title_key": "quests.daily.flashcards.title",
-            "description_key": "quests.daily.flashcards.desc",
-            "emoji": "🃏",
-            "progress_target": 15,
-            "progress_unit": "cards",
-            "reward_lingots": 3,
-            "reward_xp": 5,
-            "status": "active",
-            "expires_at": iso_in(24),
-        },
-        {
-            "id": base_id("weekly-three-lessons"),
-            "user_id": user_id,
-            "type": "weekly",
-            "title_key": "quests.weekly.threeLessons.title",
-            "description_key": "quests.weekly.threeLessons.desc",
-            "emoji": "📚",
-            "progress_target": 5,
-            "progress_unit": "lessons",
-            "reward_lingots": 25,
-            "reward_xp": 50,
-            "reward_streak_shield": True,
-            "status": "active",
-            "expires_at": iso_in(24 * 7),
-        },
-    ]
+    seed_int = int(hashlib.sha256(seed.encode("utf-8")).hexdigest(), 16)
+    rng = random.Random(seed_int)
+    return rng.sample(pool, k)
+
+
+def _daily_catalog(user_id: str, now: datetime) -> list[dict[str, Any]]:
+    """Today's 3 daily quests, picked deterministically by user + calendar day.
+
+    Resets at UTC midnight (the pipeline carries no per-user timezone —
+    lesson/review/xp events don't include one — so this is a UTC day, not
+    the learner's local day; documented gap, not silently assumed away).
+    """
+    day_key = now.date().isoformat()
+    picks = _seeded_pick(_DAILY_POOL, f"{user_id}:daily:{day_key}", _DAILY_PICK_COUNT)
+    expires_at = datetime.combine(now.date() + timedelta(days=1), time.min, tzinfo=UTC)
+    rows = []
+    for p in picks:
+        row = {k: v for k, v in p.items() if k != "slug"}
+        row["id"] = f"{user_id}:{p['slug']}:{day_key}"
+        row["user_id"] = user_id
+        row["type"] = "daily"
+        row["status"] = "active"
+        row["expires_at"] = expires_at.isoformat()
+        rows.append(row)
+    return rows
+
+
+def _weekly_catalog(user_id: str, now: datetime) -> list[dict[str, Any]]:
+    """This week's 2 weekly quests, picked deterministically by user + ISO week.
+
+    Resets at UTC Monday 00:00 (same UTC-day-boundary caveat as
+    ``_daily_catalog`` — no per-user timezone is available here).
+    """
+    iso_year, iso_week, iso_weekday = now.isocalendar()
+    week_key = f"{iso_year}-W{iso_week:02d}"
+    picks = _seeded_pick(_WEEKLY_POOL, f"{user_id}:weekly:{week_key}", _WEEKLY_PICK_COUNT)
+    week_start = now.date() - timedelta(days=iso_weekday - 1)
+    expires_at = datetime.combine(week_start + timedelta(days=7), time.min, tzinfo=UTC)
+    rows = []
+    for p in picks:
+        row = {k: v for k, v in p.items() if k != "slug"}
+        row["id"] = f"{user_id}:{p['slug']}:{week_key}"
+        row["user_id"] = user_id
+        row["type"] = "weekly"
+        row["status"] = "active"
+        row["expires_at"] = expires_at.isoformat()
+        rows.append(row)
+    return rows
+
+
+def _default_catalog(user_id: str, now: datetime | None = None) -> list[dict[str, Any]]:
+    """The full recurring catalogue: today's dailies + this week's weeklies."""
+    resolved_now = now or datetime.now(UTC)
+    return _daily_catalog(user_id, resolved_now) + _weekly_catalog(user_id, resolved_now)
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────

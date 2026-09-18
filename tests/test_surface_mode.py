@@ -31,6 +31,16 @@ def test_beta_mode_keeps_core_loop() -> None:
     assert any(p.startswith("/progress") for p in beta)
 
 
+def test_beta_mode_mounts_quests() -> None:
+    # 2026-09-18: quests shipped to beta — lingo-async's evaluator was
+    # already calling these endpoints on every event and silently
+    # 404-latching (app/quests/evaluator.py in lingo-async) because this
+    # router wasn't mounted; un-mounting also meant a beta-surface client
+    # got a 404 on GET /quests despite /boot best-effort-embedding it.
+    beta = _paths("beta")
+    assert any(p.startswith("/quests") for p in beta)
+
+
 def test_beta_mode_unmounts_high_risk_routers() -> None:
     beta = _paths("beta")
     # The scan-backed public reads live under /community and /tags — gone.

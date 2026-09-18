@@ -13,7 +13,10 @@ per version as needed.
 Surface mode (``SURFACE_MODE`` setting) selects WHICH routers get HTTP-mounted:
 - ``full`` (default): every router — unchanged behavior.
 - ``beta``: only the landing/sign-in/learn/practice core loop
-  (boot, users, srs, progress). Un-mounting shrinks both the unauthenticated
+  (boot, users, srs, progress) plus quests (2026-09-18: Spencer shipped
+  the quests UI — see app/quests/router.py's recurring catalog — so it
+  now rides along in beta too; /boot already fetched it best-effort
+  either way). Un-mounting shrinks both the unauthenticated
   attack surface (the scan-backed public /community + /tags reads) AND the
   authenticated one (admin routes, which have no role enforcement yet — see
   CLAUDE.md), and it trims cold-start import cost rather than adding any. The
@@ -91,7 +94,14 @@ _MOUNTS: list[tuple[APIRouter, str, str]] = [
 # (`TelemetryGuardMiddleware`), so mounting it in beta trades a bounded,
 # already-guarded surface for observability during the one mode that has
 # the least of it otherwise.
-_BETA_GROUPS = frozenset({"boot", "users", "srs", "progress", "telemetry"})
+#
+# "quests" (2026-09-18): every operation is scoped to the caller's own
+# quest rows (GET/list, POST progress+claim), same shape as srs/progress
+# — no cross-user reads, no admin surface. lingo-async's evaluator was
+# already calling list_quests()/bump_progress() on every event and
+# 404-latching per beta (see lingo-async app/quests/evaluator.py); leaving
+# it unmounted meant quest progress silently never advanced in beta.
+_BETA_GROUPS = frozenset({"boot", "users", "srs", "progress", "telemetry", "quests"})
 
 
 def _enabled_groups(mode: str | None) -> frozenset[str] | None:
