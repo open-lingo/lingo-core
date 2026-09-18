@@ -1,11 +1,33 @@
 from typing import Any, Protocol
 
 
+class UserAlreadyExistsError(Exception):
+    """Raised by ``create_user`` when a row with the given ``id`` (or a
+    uniqueness constraint it owns, e.g. ``auth0_id``) already exists.
+
+    Used by the auto-provisioning path (``app/auth/dependencies.py``,
+    ``get_registered_user``) to detect a concurrent first-touch race — two
+    authenticated requests for the same not-yet-registered identity landing
+    close enough together that both attempt to provision. The caller
+    re-fetches by id and treats the loser's create as a no-op rather than
+    surfacing an error.
+    """
+
+
 class UserRepository(Protocol):
     # -- User record --
 
     async def create_user(self, user: dict[str, Any]) -> dict[str, Any]:
-        """Insert a new user record. Raises if auth0_id already exists."""
+        """Insert a new user record.
+
+        ``user`` may include an explicit ``id`` (the auto-provisioning path
+        passes a deterministic one so concurrent callers converge on the
+        same row); when absent, a fresh UUID is generated.
+
+        Raises ``UserAlreadyExistsError`` if a row with this ``id`` already
+        exists, or (SQLite backend only) if ``auth0_id``/``username``
+        collide with an existing row.
+        """
         ...
 
     async def get_user_by_auth0_id(self, auth0_id: str) -> dict[str, Any] | None:

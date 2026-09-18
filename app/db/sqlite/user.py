@@ -11,6 +11,8 @@ from typing import Any
 
 import aiosqlite
 
+from app.db.protocols.user import UserAlreadyExistsError
+
 _MIGRATION_COLS = [
     ("status_expiration", "TEXT"),
     ("community_status", "TEXT"),
@@ -91,7 +93,7 @@ class SqliteUserRepository:
     async def create_user(self, user: dict[str, Any]) -> dict[str, Any]:
         now = datetime.now(UTC).isoformat()
         row = {
-            "id": str(uuid.uuid4()),
+            "id": user.get("id") or str(uuid.uuid4()),
             "auth0_id": user["auth0_id"],
             "username": user["username"],
             "display_name": user["display_name"],
@@ -101,14 +103,19 @@ class SqliteUserRepository:
             "created_at": now,
             "updated_at": now,
         }
-        await self._conn().execute(
-            """INSERT INTO users (id, auth0_id, username, display_name,
-                                  profile_picture_key, status, role, created_at, updated_at)
-               VALUES (:id, :auth0_id, :username, :display_name,
-                       :profile_picture_key, :status, :role, :created_at, :updated_at)""",
-            row,
-        )
-        await self._conn().commit()
+        try:
+            await self._conn().execute(
+                """INSERT INTO users (id, auth0_id, username, display_name,
+                                      profile_picture_key, status, role, created_at, updated_at)
+                   VALUES (:id, :auth0_id, :username, :display_name,
+                           :profile_picture_key, :status, :role, :created_at, :updated_at)""",
+                row,
+            )
+            await self._conn().commit()
+        except aiosqlite.IntegrityError as e:
+            # UNIQUE constraint on id, auth0_id, or username — a concurrent
+            # create (or a real duplicate) beat this one.
+            raise UserAlreadyExistsError(str(e)) from e
         return row
 
     @staticmethod

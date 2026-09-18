@@ -16,9 +16,17 @@ handlers are plain async functions (FastAPI's decorator registers and
 returns them unchanged), so passing the resolved deps through works.
 
 Contract notes:
-- 404 when the user record doesn't exist (same as GET /users/me): a
-  brand-new signup must keep the client's create-user flow; the client
-  treats a /boot failure as "fall back to individual calls".
+- A brand-new, authenticated-but-not-yet-registered caller no longer 404s
+  here (FIRSTRUN lane, 2026-09-18): `get_acting_user` → `get_registered_user`
+  auto-provisions a placeholder user row on first touch (see
+  `app/auth/dependencies.py::_provision_user`), so `/boot` returns 200 with
+  that placeholder on the very first request instead of 404ing until the
+  client's separate `POST /users/me` registration form was submitted. The
+  placeholder is recognized by `user.display_name == ""`; the client's
+  register flow claims it in place rather than treating it as already
+  registered. The client still falls back to individual calls on any OTHER
+  `/boot` failure (real 4xx/5xx, network error) — that behavior is
+  unchanged.
 - ``quests``/``subscriptions`` are best-effort (see BootResponse).
 """
 
