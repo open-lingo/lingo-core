@@ -30,6 +30,11 @@ _MIGRATION_COLS = [
     # cost discipline (no separate ban-events table).
     ("account_ban_history", "TEXT NOT NULL DEFAULT '[]'"),
     ("community_ban_history", "TEXT NOT NULL DEFAULT '[]'"),
+    # Last-seen device IANA zone (quest-timezone lane, 2026-09-18). LWW,
+    # set by `app/auth/dependencies.py`'s `sync_request_timezone`; read by
+    # `app/quests/router.py` to bucket daily/weekly resets by local
+    # calendar day. NULL until the user's first authenticated request.
+    ("timezone", "TEXT"),
 ]
 
 _INIT_SQL = """
@@ -157,8 +162,9 @@ class SqliteUserRepository:
             "streak",
             "best_streak",
             "last_active_date",
+            "timezone",
         ):
-            current.setdefault(k, 0 if k != "last_active_date" else None)
+            current.setdefault(k, 0 if k not in ("last_active_date", "timezone") else None)
 
         for k in ("account_ban_history", "community_ban_history"):
             current.setdefault(k, [])
@@ -186,6 +192,7 @@ class SqliteUserRepository:
                    streak = :streak,
                    best_streak = :best_streak,
                    last_active_date = :last_active_date,
+                   timezone = :timezone,
                    account_ban_history = :account_ban_history,
                    community_ban_history = :community_ban_history,
                    updated_at = :updated_at

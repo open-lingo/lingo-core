@@ -16,7 +16,7 @@ gets lazily regenerated — see ``_seeded_pick``.
 import hashlib
 import logging
 import random
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta, tzinfo
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -269,16 +269,33 @@ def _seeded_pick(pool: list[dict[str, Any]], seed: str, k: int) -> list[dict[str
     return rng.sample(pool, k)
 
 
-def _daily_catalog(user_id: str, now: datetime) -> list[dict[str, Any]]:
-    """Today's 3 daily quests, picked deterministically by user + calendar day.
+def _local_midnight_utc(local_date: Any, tz: tzinfo) -> datetime:
+    """UTC instant of local midnight (00:00) on ``local_date`` in ``tz``.
 
-    Resets at UTC midnight (the pipeline carries no per-user timezone —
-    lesson/review/xp events don't include one — so this is a UTC day, not
-    the learner's local day; documented gap, not silently assumed away).
+    Assigning ``tzinfo=tz`` directly to a naive wall-clock datetime and
+    converting to UTC resolves the correct offset for that specific local
+    time — including across a DST transition (verified for the
+    America/Denver 2026-11-01 fall-back: that calendar day is 25 real
+    hours long, and the following midnight lands 25h later in UTC, not a
+    flat +24h). No manual DST arithmetic needed; zoneinfo does it.
     """
-    day_key = now.date().isoformat()
+    return datetime.combine(local_date, time.min, tzinfo=tz).astimezone(UTC)
+
+
+def _daily_catalog(user_id: str, now: datetime, tz: tzinfo = UTC) -> list[dict[str, Any]]:
+    """Today's 3 daily quests, picked deterministically by user + LOCAL
+    calendar day (``tz`` — the caller's stored device zone, see
+    ``app/shared/timezone.py`` / ``app/auth/dependencies.py``).
+
+    Resets at the next LOCAL midnight in ``tz``. Defaults to UTC when no
+    zone is known (unregistered/never-synced caller, or a legacy call
+    site) — same behavior as before per-user timezones existed.
+    """
+    local_now = now.astimezone(tz)
+    local_date = local_now.date()
+    day_key = local_date.isoformat()
     picks = _seeded_pick(_DAILY_POOL, f"{user_id}:daily:{day_key}", _DAILY_PICK_COUNT)
-    expires_at = datetime.combine(now.date() + timedelta(days=1), time.min, tzinfo=UTC)
+    expires_at = _local_midnight_utc(local_date + timedelta(days=1), tz)
     rows = []
     for p in picks:
         row = {k: v for k, v in p.items() if k != "slug"}
@@ -291,17 +308,18 @@ def _daily_catalog(user_id: str, now: datetime) -> list[dict[str, Any]]:
     return rows
 
 
-def _weekly_catalog(user_id: str, now: datetime) -> list[dict[str, Any]]:
-    """This week's 2 weekly quests, picked deterministically by user + ISO week.
+def _weekly_catalog(user_id: str, now: datetime, tz: tzinfo = UTC) -> list[dict[str, Any]]:
+    """This week's 2 weekly quests, picked deterministically by user + LOCAL
+    ISO week (``tz`` — see ``_daily_catalog``).
 
-    Resets at UTC Monday 00:00 (same UTC-day-boundary caveat as
-    ``_daily_catalog`` — no per-user timezone is available here).
+    Resets at the next LOCAL Monday 00:00 in ``tz``.
     """
-    iso_year, iso_week, iso_weekday = now.isocalendar()
+    local_now = now.astimezone(tz)
+    iso_year, iso_week, iso_weekday = local_now.isocalendar()
     week_key = f"{iso_year}-W{iso_week:02d}"
     picks = _seeded_pick(_WEEKLY_POOL, f"{user_id}:weekly:{week_key}", _WEEKLY_PICK_COUNT)
-    week_start = now.date() - timedelta(days=iso_weekday - 1)
-    expires_at = datetime.combine(week_start + timedelta(days=7), time.min, tzinfo=UTC)
+    week_start = local_now.date() - timedelta(days=iso_weekday - 1)
+    expires_at = _local_midnight_utc(week_start + timedelta(days=7), tz)
     rows = []
     for p in picks:
         row = {k: v for k, v in p.items() if k != "slug"}
@@ -314,16 +332,21 @@ def _weekly_catalog(user_id: str, now: datetime) -> list[dict[str, Any]]:
     return rows
 
 
-def _default_catalog(user_id: str, now: datetime | None = None) -> list[dict[str, Any]]:
+def _default_catalog(user_id: str, now: datetime | None = None, tz: tzinfo = UTC) -> list[dict[str, Any]]:
     """The full recurring catalogue: today's dailies + this week's weeklies."""
     resolved_now = now or datetime.now(UTC)
-    return _daily_catalog(user_id, resolved_now) + _weekly_catalog(user_id, resolved_now)
+    return _daily_catalog(user_id, resolved_now, tz) + _weekly_catalog(user_id, resolved_now, tz)
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
 
-async def _ensure_active_catalog(quests_repo: Any, user_id: str) -> list[dict[str, Any]]:
+async def _ensure_active_catalog(
+    quests_repo: Any,
+    user_id: str,
+    tz: tzinfo = UTC,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
     """Return the user's quest list, seeding the default catalogue on demand.
 
     Two triggers fire a seed:
@@ -334,17 +357,51 @@ async def _ensure_active_catalog(quests_repo: Any, user_id: str) -> list[dict[st
 
     Lazy seeding is the cheap path: no scheduled job to maintain, and a
     user who never hits ``/quests`` never costs us a write.
+
+    ``tz`` is the caller's stored device zone (see ``app/shared/
+    timezone.py``) — daily/weekly bucketing and the reseed decision both
+    key off the LOCAL calendar day/week it resolves to.
+
+    Timezone-change idempotency (see quest-timezone memory's edge rule):
+    a user's local calendar day can, in rare cases, land on the SAME date
+    string it had on a PREVIOUS device timezone (e.g. Denver -> Honolulu
+    mid-day) even though real time has moved on past that old bucket's
+    ``expires_at``. Since ``_daily_catalog``/``_weekly_catalog`` are pure
+    functions of (user_id, local day/week), that recurrence regenerates
+    the EXACT SAME row id as before. If that id's row was already
+    ``completed``, sweeping it (as an ordinary expired row) and reseeding
+    a fresh ``active``/zero-progress copy under the same id would let the
+    user claim it a second time — reward included. ``protected_rows``
+    below is a targeted exception to the normal sweep: a completed row
+    that today's/this-week's freshly-computed catalog would regenerate
+    under the same id is never deleted (and never gets a fresh sibling
+    minted for its slot — it just keeps existing, already claimed).
+    Every other row in the same swept type bucket is handled exactly as
+    before (deleted if expired, otherwise left alone).
     """
-    now_iso = _now_iso()
+    resolved_now = now or datetime.now(UTC)
+    now_iso = resolved_now.isoformat()
     rows = await quests_repo.list_quests(user_id)
 
-    # Drop quests whose expires_at is in the past (regardless of status).
+    catalog = _default_catalog(user_id, resolved_now, tz)
+    catalog_ids = {c["id"] for c in catalog}
+
+    # Drop quests whose expires_at is in the past (regardless of status) —
+    # EXCEPT a completed row whose id collides with what we'd mint for
+    # "right now" (see docstring). Those are protected: kept as-is, and
+    # restored after the type-bulk delete below if it collaterally swept
+    # them (the delete primitive filters by type only, not by id).
     fresh_rows: list[dict[str, Any]] = []
     expired_ids: list[str] = []
+    protected_rows: list[dict[str, Any]] = []
     for r in rows:
         exp = r.get("expires_at") or ""
         if exp and exp < now_iso:
-            expired_ids.append(r["id"])
+            if r.get("status") == "completed" and r["id"] in catalog_ids:
+                protected_rows.append(r)
+                fresh_rows.append(r)
+            else:
+                expired_ids.append(r["id"])
         else:
             fresh_rows.append(r)
     if expired_ids:
@@ -360,9 +417,14 @@ async def _ensure_active_catalog(quests_repo: Any, user_id: str) -> list[dict[st
             await quests_repo.delete_user_quests(user_id, [t])
         # And re-fetch since we just mutated.
         fresh_rows = await quests_repo.list_quests(user_id)
+        # Restore any protected row the type-bulk delete collaterally wiped.
+        restore = [r for r in protected_rows if r.get("type") in expired_types]
+        if restore:
+            for r in restore:
+                await quests_repo.put_quest(r)
+            fresh_rows = await quests_repo.list_quests(user_id)
 
     have_types = {r.get("type") for r in fresh_rows}
-    catalog = _default_catalog(user_id)
     missing = [q for q in catalog if q.get("type") not in have_types]
 
     if missing:
@@ -374,16 +436,35 @@ async def _ensure_active_catalog(quests_repo: Any, user_id: str) -> list[dict[st
     return fresh_rows
 
 
+async def _acting_user_zoneinfo(users_repo: UserRepository, user_id: str) -> tzinfo:
+    """The acting (possibly-impersonated) user's own stored device zone.
+
+    Deliberately a fresh read of the ACTING user's row, not whatever the
+    physical caller's ``X-Lingo-Timezone`` header said on this request —
+    those can differ under admin impersonation (the admin's device
+    timezone is not the target user's), and quest bucketing must always
+    use the quest-owning user's own zone. ``app/auth/dependencies.py``'s
+    ``sync_request_timezone`` is what keeps THIS row's ``timezone``
+    field up to date for a normal (non-impersonated) request.
+    """
+    from app.shared.timezone import resolve_zoneinfo
+
+    record = await users_repo.get_user_by_id(user_id)
+    return resolve_zoneinfo((record or {}).get("timezone"))
+
+
 @router.get("", response_model=QuestListResponse)
 async def list_quests(
     user: CurrentUser,
     repo: QuestRepo,
+    users: UserRepo,
 ) -> Any:
     """List the caller's quests; seed the default catalogue if missing/expired."""
     quests_repo = require_repo(repo, "quests")
     user_id = user.id or ""
     with api_error("listing quests"):
-        rows = await _ensure_active_catalog(quests_repo, user_id)
+        tz = await _acting_user_zoneinfo(users, user_id)
+        rows = await _ensure_active_catalog(quests_repo, user_id, tz=tz)
         items = [_row_to_quest(r) for r in rows]
         return QuestListResponse(items=items)
 
@@ -476,13 +557,15 @@ async def claim_quest(
 async def refresh_quests(
     user: CurrentUser,
     repo: QuestRepo,
+    users: UserRepo,
 ) -> Any:
     """Dev convenience: wipe + re-seed the default daily/weekly catalog."""
     quests_repo = require_repo(repo, "quests")
     user_id = user.id or ""
     with api_error("refreshing quests"):
+        tz = await _acting_user_zoneinfo(users, user_id)
         removed = await quests_repo.delete_user_quests(user_id)
-        rows = _default_catalog(user_id)
+        rows = _default_catalog(user_id, tz=tz)
         for row in rows:
             row.setdefault("created_at", _now_iso())
             await quests_repo.put_quest(row)

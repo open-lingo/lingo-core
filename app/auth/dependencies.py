@@ -15,7 +15,7 @@ import hashlib
 import logging
 import secrets
 import time
-from typing import Annotated
+from typing import Annotated, Any
 
 import httpx
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -65,6 +65,61 @@ def log_safe_user_hash(sub: str) -> str:
     it, not a concern for an internal access log's threat model).
     """
     return hashlib.sha256(sub.encode("utf-8")).hexdigest()[:8]
+
+
+# Header the client stamps on every authenticated request with the
+# device's IANA zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`,
+# `src/shared/api/client.ts`). See `sync_request_timezone` below and
+# `app/shared/timezone.py` for validation.
+_LINGO_TZ_HEADER = "X-Lingo-Timezone"
+
+
+async def sync_request_timezone(
+    request: Request,
+    repo: Any,
+    user_id: str,
+    record: dict[str, Any] | None,
+) -> None:
+    """Best-effort: keep the user row's ``timezone`` attribute in sync with
+    the caller's device zone.
+
+    Last-write-wins: whichever device's request lands last is the zone
+    ``app/quests/router.py`` uses to bucket that user's daily/weekly quest
+    resets by LOCAL calendar day — see the quest-timezone memory's design.
+
+    Called from ``GET /boot`` (``app/boot/router.py::get_boot``), not from
+    every authenticated dependency resolution — the client sends
+    ``X-Lingo-Timezone`` on every request (see ``src/shared/api/
+    client.ts``), but boot already fires once per session/app-open and
+    every other per-session sync-ish thing (progress touch, srs state)
+    already batches there. Hooking this into ``get_registered_user``
+    instead was tried first and reverted: it added a conditional
+    ``update_user`` call to EVERY authenticated route, including
+    write-heavy hot paths like the lesson batch submit, which broke
+    ``tests/test_progress.py::test_batch_collapses_to_one_user_update``'s
+    "exactly one update_user call" cost guarantee for no real freshness
+    benefit (a device's zone doesn't change mid-batch).
+
+    ``record`` is a read the caller already performed for another reason
+    (in ``get_boot``, the same read ``get_me`` needs), so comparing
+    against it costs nothing extra; this function only ever adds a
+    WRITE, and only when the header disagrees with what's already stored
+    (a garbage/missing header validates down to "UTC", so a user who's
+    never sent a real zone converges to UTC once and then never writes
+    again until it changes). Never raises — a timezone header must never
+    be the reason an otherwise-valid request fails.
+    """
+    if repo is None or record is None:
+        return
+    from app.shared.timezone import validate_timezone_name
+
+    tz_name = validate_timezone_name(request.headers.get(_LINGO_TZ_HEADER))
+    if record.get("timezone") == tz_name:
+        return
+    try:
+        await repo.update_user(user_id, {"timezone": tz_name}, current=record)
+    except Exception:  # noqa: BLE001 — best-effort, never blocks the request
+        logger.warning("timezone_sync_failed user_id=%s", user_id)
 
 
 def _stash_auth_sub_hash(request: Request, sub: str) -> None:

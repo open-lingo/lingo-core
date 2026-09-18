@@ -25,9 +25,9 @@ Contract notes:
 import asyncio
 from typing import Annotated, Any, TypeVar
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-from app.auth.dependencies import get_acting_user
+from app.auth.dependencies import get_acting_user, sync_request_timezone
 from app.auth.schemas import TokenPayload
 from app.boot.schemas import BootResponse
 from app.db.protocols import (
@@ -71,6 +71,7 @@ async def _best_effort(coro: Any) -> Any:
 
 @router.get("", response_model=BootResponse)
 async def get_boot(
+    request: Request,
     user: CurrentUser,
     users: UserRepo,
     progress: ProgressRepo,
@@ -78,6 +79,23 @@ async def get_boot(
     quests: QuestRepo,
     subscriptions: SubscriptionRepo,
 ) -> Any:
+    # Keep the caller's device timezone in sync (best-effort, LWW) before
+    # the reads below — `list_quests` (in the gather) reads this same
+    # user's STORED timezone to bucket daily/weekly resets by local
+    # calendar day, so this write must land first, not race it. One
+    # authenticated GET here per session/app-open is the sync point (see
+    # `sync_request_timezone`'s docstring for why this isn't hooked into
+    # every authenticated route instead).
+    #
+    # Syncs to the REAL caller's own row (`actor_id` when an admin is
+    # impersonating via X-Impersonate-User-Id) — the header describes the
+    # physical device making THIS request, which is the admin's, not the
+    # impersonation target's.
+    sync_user_id = user.actor_id or user.id
+    if sync_user_id:
+        sync_record = await users.get_user_by_id(sync_user_id)
+        await sync_request_timezone(request, users, sync_user_id, sync_record)
+
     (
         me,
         settings,
@@ -94,7 +112,7 @@ async def get_boot(
         get_unlock_map(user, users),
         touch_session(user, progress, users),
         get_state(user, srs),
-        _best_effort(list_quests(user, quests)),
+        _best_effort(list_quests(user, quests, users)),
         _best_effort(list_subscriptions(user, subscriptions, None)),
     )
     return {

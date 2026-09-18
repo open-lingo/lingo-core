@@ -15,6 +15,7 @@ Pure unit tests against the generator functions (no HTTP, no DB) — see
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from app.quests.router import (
     _DAILY_PICK_COUNT,
@@ -28,6 +29,8 @@ from app.quests.router import (
 
 _UID_A = "auth0|catalog-a"
 _UID_B = "auth0|catalog-b"
+_DENVER = ZoneInfo("America/Denver")
+_TOKYO = ZoneInfo("Asia/Tokyo")
 
 
 def test_daily_catalog_picks_a_fixed_count() -> None:
@@ -123,6 +126,90 @@ def test_default_catalog_combines_both_buckets() -> None:
     assert len(rows) == _DAILY_PICK_COUNT + _WEEKLY_PICK_COUNT
     assert sum(1 for r in rows if r["type"] == "daily") == _DAILY_PICK_COUNT
     assert sum(1 for r in rows if r["type"] == "weekly") == _WEEKLY_PICK_COUNT
+
+
+def test_tz_defaults_to_utc_when_omitted() -> None:
+    """Backward compatibility: no tz arg behaves exactly like UTC (existing
+    callers/tests above don't pass one)."""
+    now = datetime(2026, 9, 18, 15, 30, tzinfo=UTC)
+    assert [r["id"] for r in _daily_catalog(_UID_A, now)] == [r["id"] for r in _daily_catalog(_UID_A, now, UTC)]
+
+
+def test_denver_and_tokyo_diverge_on_the_same_utc_instant() -> None:
+    """01:00 UTC is still "yesterday" in Denver (UTC-6/-7) but already
+    "today" in Tokyo (UTC+9) — the two zones must pick different (or at
+    least independently-correct) day keys, proving bucketing uses the
+    LOCAL day, not the UTC day, for both."""
+    now = datetime(2026, 9, 18, 1, 0, tzinfo=UTC)
+    denver_rows = _daily_catalog(_UID_A, now, _DENVER)
+    tokyo_rows = _daily_catalog(_UID_A, now, _TOKYO)
+    denver_day = now.astimezone(_DENVER).date().isoformat()
+    tokyo_day = now.astimezone(_TOKYO).date().isoformat()
+    assert denver_day != tokyo_day  # 2026-09-17 vs 2026-09-18
+    for r in denver_rows:
+        assert denver_day in r["id"]
+    for r in tokyo_rows:
+        assert tokyo_day in r["id"]
+    # Different local days -> different id namespace, even for the same
+    # user at the exact same real-world instant.
+    assert {r["id"] for r in denver_rows}.isdisjoint({r["id"] for r in tokyo_rows})
+
+
+def test_same_local_day_agrees_regardless_of_zone_used_to_compute_it() -> None:
+    """A user's local day is what it is — two calls that resolve to the
+    SAME local calendar day (even via different UTC instants) must agree,
+    same as the existing UTC-only determinism tests above."""
+    # 2026-09-18 07:00 Denver and 2026-09-18 23:00 Denver are the same
+    # Denver calendar day, expressed as two different UTC instants.
+    morning = datetime(2026, 9, 18, 13, 0, tzinfo=UTC)  # 07:00 MDT
+    night = datetime(2026, 9, 19, 5, 0, tzinfo=UTC)  # 23:00 MDT same day
+    a = _daily_catalog(_UID_A, morning, _DENVER)
+    b = _daily_catalog(_UID_A, night, _DENVER)
+    assert [r["id"] for r in a] == [r["id"] for r in b]
+
+
+def test_daily_expires_at_local_midnight_denver() -> None:
+    now = datetime(2026, 9, 18, 15, 30, tzinfo=UTC)  # 09:30 MDT
+    rows = _daily_catalog(_UID_A, now, _DENVER)
+    for r in rows:
+        expires = datetime.fromisoformat(r["expires_at"])
+        # Local midnight 2026-09-19 in Denver (MDT, UTC-6) == 06:00 UTC.
+        assert expires == datetime(2026, 9, 19, 6, 0, tzinfo=UTC)
+
+
+def test_daily_expires_at_local_midnight_tokyo() -> None:
+    now = datetime(2026, 9, 18, 15, 30, tzinfo=UTC)  # already 2026-09-19 in Tokyo
+    rows = _daily_catalog(_UID_A, now, _TOKYO)
+    for r in rows:
+        expires = datetime.fromisoformat(r["expires_at"])
+        # Local midnight 2026-09-20 in Tokyo (UTC+9) == 2026-09-19T15:00 UTC.
+        assert expires == datetime(2026, 9, 19, 15, 0, tzinfo=UTC)
+
+
+def test_weekly_expires_at_local_monday_denver() -> None:
+    wednesday = datetime(2026, 9, 16, 10, 0, tzinfo=UTC)  # 04:00 MDT Wed
+    rows = _weekly_catalog(_UID_A, wednesday, _DENVER)
+    for r in rows:
+        expires = datetime.fromisoformat(r["expires_at"])
+        assert expires == datetime(2026, 9, 21, 6, 0, tzinfo=UTC)
+
+
+def test_dst_fallback_boundary_america_denver_2026_11_01() -> None:
+    """America/Denver falls back (MDT -> MST) at 02:00 local on
+    2026-11-01 — that calendar day is 25 real hours long. A daily quest
+    minted during it must still expire at the FOLLOWING local midnight
+    (2026-11-02 00:00 MST == 07:00 UTC), not 24h later by the wall
+    clock (which would be 06:00 UTC on 2026-11-02, still MST time
+    05:00 PM the 1st... i.e. wrong)."""
+    now = datetime(2026, 11, 1, 10, 0, tzinfo=UTC)  # 04:00 MDT, before the 2am->1am fallback... actually after; see assertion below for the real check
+    rows = _daily_catalog(_UID_A, now, _DENVER)
+    local_now = now.astimezone(_DENVER)
+    assert local_now.date().isoformat() == "2026-11-01"
+    for r in rows:
+        expires = datetime.fromisoformat(r["expires_at"])
+        assert expires == datetime(2026, 11, 2, 7, 0, tzinfo=UTC)
+        # Sanity: that instant really is local midnight Nov 2 in Denver.
+        assert expires.astimezone(_DENVER).isoformat().startswith("2026-11-02T00:00:00")
 
 
 def test_pool_entries_have_positive_rewards() -> None:
