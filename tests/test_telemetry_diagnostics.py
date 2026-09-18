@@ -15,7 +15,11 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.telemetry.guard import BUCKET_CAPACITY, MAX_BODY_BYTES, reset_telemetry_guard_state
-from app.telemetry.router import DIAGNOSTICS_CODE_ALPHABET, DIAGNOSTICS_CODE_LENGTH
+from app.telemetry.router import (
+    DIAGNOSTICS_CODE_ALPHABET,
+    DIAGNOSTICS_CODE_LENGTH,
+    MAX_DIAGNOSTICS_NOTE_CHARS,
+)
 
 PATH = "/api/core/v1/telemetry/diagnostics"
 
@@ -192,6 +196,76 @@ def test_diagnostics_never_logs_on_the_client_error_logger(caplog: pytest.LogCap
     caplog.set_level(logging.WARNING)
     _client().post(PATH, json=_doc())
     assert not [r for r in caplog.records if r.name == "lingo.client_error"]
+
+
+# ── "Report a problem" fields (lane REPORTBTN, 2026-09-18) ─────────────────
+
+
+def test_accepts_note_and_lesson_step_screen_fields() -> None:
+    resp = _client().post(
+        PATH,
+        json=_doc(
+            note="The tile bank had two identical words and only one worked.",
+            lessonId="ja-m12-03",
+            stepIndex=4,
+            stepType="build_sentence",
+            screen="lesson",
+        ),
+    )
+    assert resp.status_code == 202
+
+
+def test_new_fields_are_all_optional() -> None:
+    """The original happy-path document (no note/lesson/step/screen) must
+    still be accepted — a plain "Send diagnostics" tap (LayoutTracePanel)
+    never sends these."""
+    resp = _client().post(PATH, json=_doc())
+    assert resp.status_code == 202
+
+
+def test_note_at_exactly_the_cap_is_accepted() -> None:
+    resp = _client().post(PATH, json=_doc(note="x" * MAX_DIAGNOSTICS_NOTE_CHARS))
+    assert resp.status_code == 202
+
+
+def test_note_over_the_cap_is_rejected_with_413() -> None:
+    resp = _client().post(PATH, json=_doc(note="x" * (MAX_DIAGNOSTICS_NOTE_CHARS + 1)))
+    assert resp.status_code == 413
+
+
+def test_logged_line_carries_the_report_fields(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.WARNING, logger="lingo.client_diag")
+    resp = _client().post(
+        PATH,
+        json=_doc(
+            note="Tile bank looked wrong",
+            lessonId="ja-m12-03",
+            stepIndex=4,
+            stepType="build_sentence",
+            screen="lesson",
+        ),
+    )
+    assert resp.status_code == 202
+    record = next(r for r in caplog.records if r.name == "lingo.client_diag")
+    payload = json.loads(record.getMessage())
+    assert payload["note"] == "Tile bank looked wrong"
+    assert payload["lessonId"] == "ja-m12-03"
+    assert payload["stepIndex"] == 4
+    assert payload["stepType"] == "build_sentence"
+    assert payload["screen"] == "lesson"
+
+
+def test_logged_line_carries_null_report_fields_when_omitted(caplog: pytest.LogCaptureFixture) -> None:
+    """A plain diagnostics dump (no report fields) still logs `note`/
+    `lessonId`/etc. as explicit nulls, not missing keys — a Logs Insights
+    query for `note` should never have to guess whether the key exists."""
+    caplog.set_level(logging.WARNING, logger="lingo.client_diag")
+    _client().post(PATH, json=_doc())
+    record = next(r for r in caplog.records if r.name == "lingo.client_diag")
+    payload = json.loads(record.getMessage())
+    assert payload["note"] is None
+    assert payload["lessonId"] is None
+    assert payload["screen"] is None
 
 
 # ── Surface mode ──────────────────────────────────────────────────────────
