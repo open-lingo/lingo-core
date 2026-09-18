@@ -39,6 +39,25 @@ class SRSCardState(BaseModel):
             "look equal and silently rejected the client's newer state."
         ),
     )
+    known: bool = Field(
+        default=False,
+        description=(
+            "Set by the FE's test-out/placement seed writer "
+            "(`testOutSeed.ts`) when the seeded interval is >= "
+            "KNOWN_THRESHOLD_DAYS (90 days) — the learner tested out far "
+            "enough past this atom's module that it's suppressed from the "
+            "flashcard reviewer + review-lesson intake. Added lane SRSGAPS "
+            "2026-09-18 (GAP A): this schema previously had no field for it "
+            "at all, so pydantic's default extra='ignore' silently dropped "
+            "it on every /srs/sync push — a device that had never seen the "
+            "card locally (a fresh pull via /srs/state) always got `known` "
+            "missing, i.e. NOT suppressed, which is the root cause of the "
+            "phone-vs-second-device due-count mismatch on record. Additive: "
+            "both storage backends persist the whole state blob opaquely "
+            "(no column-level change needed in sqlite or Dynamo), so this "
+            "field alone is the fix."
+        ),
+    )
 
 
 #: Maximum cards accepted in a single sync (or delete) request.
