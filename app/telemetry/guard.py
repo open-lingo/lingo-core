@@ -9,10 +9,14 @@ runs too late to avoid the parse. Middleware `dispatch()` sees the
 ever touching the body, which is the only way to reject on `Content-Length`
 alone.
 
-Scoped to exactly one path (`TELEMETRY_ERRORS_PATH`) so it changes nothing
-for any other route — this repo has no general-purpose body-size or
-rate-limit middleware today, and adding one for every endpoint is a
-bigger, separate decision.
+Scoped to exactly the telemetry POST paths (`_GUARDED_PATHS`: errors +
+diagnostics) so it changes nothing for any other route — this repo has no
+general-purpose body-size or rate-limit middleware today, and adding one
+for every endpoint is a bigger, separate decision. Both guarded paths
+share ONE per-IP token bucket (keyed by IP alone, not by path) — the
+one-tap diagnostics button (task A3b #2) is a rare, explicit action, not
+worth a second bucket; sharing keeps the "20 burst / ~4 req/min/IP"
+budget honest as a single number instead of two to reason about.
 
 What this buys, quantified (see `../lingo/docs/observability-2026-09-17.md`
 "Guard math" for the full writeup):
@@ -36,9 +40,17 @@ from starlette.responses import JSONResponse
 from app.shared.request_id import get_request_id
 
 TELEMETRY_ERRORS_PATH = "/api/core/v1/telemetry/errors"
+TELEMETRY_DIAGNOSTICS_PATH = "/api/core/v1/telemetry/diagnostics"
+
+# Every path this middleware guards. A path not in this set is untouched —
+# `dispatch()` calls `call_next` immediately for it.
+_GUARDED_PATHS = frozenset({TELEMETRY_ERRORS_PATH, TELEMETRY_DIAGNOSTICS_PATH})
 
 # ~20 items * (1024 B message + 4096 B stack + ~300 B other fields), rounded
-# up with headroom for JSON punctuation/escaping.
+# up with headroom for JSON punctuation/escaping. Reused as-is for
+# /diagnostics (task spec: "body cap 150 KB") — that endpoint's own client
+# builder already trims its (much bigger, up-to-200-event) session log to
+# fit this same budget before POSTing, so one constant serves both.
 MAX_BODY_BYTES = 150_000
 
 # Burst of a full batch flush (one device, one bad stretch) is never itself
@@ -106,10 +118,10 @@ def reset_telemetry_guard_state() -> None:
 
 
 class TelemetryGuardMiddleware(BaseHTTPMiddleware):
-    """Body-size cap + per-IP token bucket, scoped to the telemetry POST."""
+    """Body-size cap + per-IP token bucket, scoped to the telemetry POSTs (_GUARDED_PATHS)."""
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
-        if request.method != "POST" or request.url.path != TELEMETRY_ERRORS_PATH:
+        if request.method != "POST" or request.url.path not in _GUARDED_PATHS:
             return await call_next(request)
 
         request_id = get_request_id(request)

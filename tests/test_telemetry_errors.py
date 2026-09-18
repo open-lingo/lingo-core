@@ -237,6 +237,77 @@ def test_404_response_carries_x_request_id() -> None:
 # ── Surface mode ──────────────────────────────────────────────────────────
 
 
+# ── Breadcrumbs (A3b, 2026-09-17) ────────────────────────────────────────
+#
+# Guards: `ClientErrorBreadcrumb` on `ClientErrorItem.breadcrumbs` — the
+# last <=20 sessionLog.ts events, carried on every error report so a human
+# reading a CloudWatch line sees "what did the learner do right before
+# this broke", not just the stack trace. Caps mirrored client-side in
+# `errorReporter.ts` (`MAX_BREADCRUMBS` / `MAX_BREADCRUMBS_BYTES`).
+
+
+def _breadcrumb(**overrides: object) -> dict:
+    base = {"t": -120, "type": "step_view", "payload": {"stepType": "build_sentence"}}
+    base.update(overrides)
+    return base
+
+
+def test_breadcrumbs_round_trip_into_the_log_line(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.WARNING, logger="lingo.client_error")
+    crumbs = [_breadcrumb(t=-300, type="lesson_start"), _breadcrumb(t=-50, type="step_view")]
+    resp = _client().post(PATH, json={"items": [_item(breadcrumbs=crumbs)]})
+    assert resp.status_code == 202
+
+    records = [r for r in caplog.records if r.name == "lingo.client_error"]
+    payload = json.loads(records[0].getMessage())
+    assert payload["breadcrumbs"] == crumbs
+
+
+def test_item_with_no_breadcrumbs_still_accepted() -> None:
+    """`breadcrumbs` is optional — an item built before this lane's client
+    change ships (or a non-browser caller) must not be rejected."""
+    resp = _client().post(PATH, json={"items": [_item()]})
+    assert resp.status_code == 202
+
+
+def test_breadcrumbs_over_20_items_rejected() -> None:
+    crumbs = [_breadcrumb(t=-i) for i in range(21)]
+    resp = _client().post(PATH, json={"items": [_item(breadcrumbs=crumbs)]})
+    assert resp.status_code == 422
+
+
+def test_breadcrumbs_of_exactly_20_items_accepted() -> None:
+    crumbs = [_breadcrumb(t=-i) for i in range(20)]
+    resp = _client().post(PATH, json={"items": [_item(breadcrumbs=crumbs)]})
+    assert resp.status_code == 202
+
+
+def test_breadcrumbs_over_4kb_total_rejected() -> None:
+    # 20 crumbs * ~300B/each (one 250-char payload value + type/t overhead)
+    # comfortably clears the 4 KB cap even though each crumb individually
+    # respects the (server-side, defense-in-depth) 120-char value truncation
+    # — the byte cap is on the WHOLE breadcrumbs array, not per-crumb.
+    crumbs = [_breadcrumb(t=-i, payload={"label": "x" * 120, "note": "y" * 120}) for i in range(20)]
+    resp = _client().post(PATH, json={"items": [_item(breadcrumbs=crumbs)]})
+    assert resp.status_code == 422
+
+
+def test_breadcrumb_payload_value_over_120_chars_is_truncated_not_rejected(caplog: pytest.LogCaptureFixture) -> None:
+    """Defense in depth, not a hard reject: a client a little over its own
+    120-char trim (unicode width skew, client version drift) should not
+    422 an otherwise-valid error report — the value is truncated server-side
+    instead (see `ClientErrorBreadcrumb._cap_payload_values`)."""
+    caplog.set_level(logging.WARNING, logger="lingo.client_error")
+    resp = _client().post(
+        PATH,
+        json={"items": [_item(breadcrumbs=[_breadcrumb(payload={"label": "z" * 200})])]},
+    )
+    assert resp.status_code == 202
+    records = [r for r in caplog.records if r.name == "lingo.client_error"]
+    logged_label = json.loads(records[0].getMessage())["breadcrumbs"][0]["payload"]["label"]
+    assert len(logged_label) == 120
+
+
 def test_telemetry_mounted_in_both_full_and_beta_surface_modes() -> None:
     from fastapi import FastAPI
 
