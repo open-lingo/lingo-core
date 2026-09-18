@@ -87,6 +87,17 @@ CREATE TABLE IF NOT EXISTS progress_concept_rollups (
     stale_at           TEXT,
     PRIMARY KEY (user_id, concept_id)
 );
+
+-- 2026-09-18 — bulk-complete op idempotency cache. Only written once an op
+-- FULLY succeeds (accepted + alreadyComplete == total); see save_bulk_op.
+CREATE TABLE IF NOT EXISTS progress_bulk_ops (
+    user_id            TEXT NOT NULL,
+    client_op_id       TEXT NOT NULL,
+    accepted           INTEGER NOT NULL,
+    already_complete   INTEGER NOT NULL,
+    total              INTEGER NOT NULL,
+    PRIMARY KEY (user_id, client_op_id)
+);
 """
 
 
@@ -427,6 +438,54 @@ class SqliteProgressRepository:
             "progress_lesson_rollups",
             "progress_day_rollups",
             "progress_concept_rollups",
+            "progress_bulk_ops",
         ):
             await conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
         await conn.commit()
+
+    # ── Bulk-complete (2026-09-18) ───────────────────────────────────────────
+
+    async def get_bulk_op(self, user_id: str, client_op_id: str) -> dict[str, Any] | None:
+        cur = await self._conn().execute(
+            "SELECT accepted, already_complete, total FROM progress_bulk_ops WHERE user_id = ? AND client_op_id = ?",
+            (user_id, client_op_id),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        return {"accepted": row["accepted"], "alreadyComplete": row["already_complete"], "total": row["total"]}
+
+    async def save_bulk_op(self, user_id: str, client_op_id: str, result: dict[str, Any]) -> None:
+        await self._conn().execute(
+            """
+            INSERT INTO progress_bulk_ops (user_id, client_op_id, accepted, already_complete, total)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, client_op_id) DO UPDATE SET
+                accepted = excluded.accepted,
+                already_complete = excluded.already_complete,
+                total = excluded.total
+            """,
+            (user_id, client_op_id, result["accepted"], result["alreadyComplete"], result["total"]),
+        )
+        await self._conn().commit()
+
+    async def bulk_complete_lessons(self, user_id: str, lesson_ids: list[str], completed_at: str) -> tuple[int, int, list[str]]:
+        # No fan-out needed — one aiosqlite connection is inherently
+        # sequential. Same per-id isolation contract as the Dynamo
+        # implementation: a single lesson's write exception doesn't abort
+        # the rest of the batch.
+        accepted = 0
+        already = 0
+        failed: list[str] = []
+        attempt = {"score": 1.0, "attemptedAt": completed_at, "passed": True}
+        for lesson_id in lesson_ids:
+            try:
+                rollup = await self.update_lesson_rollup(user_id, lesson_id, attempt)
+            except Exception:
+                failed.append(lesson_id)
+                continue
+            if rollup.get("firstPassedAt") == completed_at:
+                accepted += 1
+            else:
+                already += 1
+        return accepted, already, failed

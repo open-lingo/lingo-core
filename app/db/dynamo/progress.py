@@ -24,6 +24,7 @@ from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
 
 from app.db.dynamo._session import get_shared_resource
+from app.db.dynamo.telemetry import log_dynamo_op
 
 logger: Final = logging.getLogger("lingo.dynamo")
 
@@ -59,7 +60,14 @@ _CLIENT_PREFIX = "CLIENT#"
 _LESSON_PREFIX = "LESSON#"
 _DAY_PREFIX = "DAY#"
 _CONCEPT_PREFIX = "CONCEPT#"
+_OP_PREFIX = "OP#"
 _GSI_ATTEMPTS = "UserAttempts-Index"
+
+# Fan-out width for `bulk_complete_lessons` — same value and same rationale
+# as `srs.py`'s `upsert_cards`: bounds concurrency against a whole batch's
+# worth of per-item conditional writes without serializing them one at a
+# time against the 30s Lambda timeout.
+_WRITE_CONCURRENCY: Final = 25
 
 
 def _pk(user_id: str) -> str:
@@ -548,3 +556,63 @@ class DynamoProgressRepository:
         async with self._table.batch_writer() as batch:
             for item in items:
                 await batch.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
+
+    # ── Bulk-complete (2026-09-18) ───────────────────────────────────────────
+
+    async def get_bulk_op(self, user_id: str, client_op_id: str) -> dict[str, Any] | None:
+        resp = await self._table.get_item(Key={"PK": _pk(user_id), "SK": f"{_OP_PREFIX}{client_op_id}"})
+        item = resp.get("Item")
+        if not item:
+            return None
+        return {
+            "accepted": _decimal_to_int(item["accepted"]),
+            "alreadyComplete": _decimal_to_int(item["alreadyComplete"]),
+            "total": _decimal_to_int(item["total"]),
+        }
+
+    async def save_bulk_op(self, user_id: str, client_op_id: str, result: dict[str, Any]) -> None:
+        log_dynamo_op(table="lingo_progress", operation="PutItem", callsite="progress.bulk_complete.save_op")
+        await self._table.put_item(
+            Item={
+                "PK": _pk(user_id),
+                "SK": f"{_OP_PREFIX}{client_op_id}",
+                "accepted": result["accepted"],
+                "alreadyComplete": result["alreadyComplete"],
+                "total": result["total"],
+            }
+        )
+
+    async def bulk_complete_lessons(self, user_id: str, lesson_ids: list[str], completed_at: str) -> tuple[int, int, list[str]]:
+        # Same fan-out-under-a-semaphore + return_exceptions=True shape as
+        # `srs.py`'s `upsert_cards` — see that function's comment for why
+        # `return_exceptions=True` is load-bearing (a bare `gather()` doesn't
+        # cancel already-scheduled sibling tasks on the first exception, so
+        # on Lambda an unawaited task can vanish mid-write if the execution
+        # environment freezes right after a 500 goes out).
+        sem = asyncio.Semaphore(_WRITE_CONCURRENCY)
+        attempt = {"score": 1.0, "attemptedAt": completed_at, "passed": True}
+
+        async def one(lesson_id: str) -> tuple[str, dict[str, Any]]:
+            async with sem:
+                log_dynamo_op(
+                    table="lingo_progress",
+                    operation="UpdateItem",
+                    callsite="progress.bulk_complete.update_lesson_rollup",
+                )
+                return lesson_id, await self.update_lesson_rollup(user_id, lesson_id, attempt)
+
+        pairs = await asyncio.gather(*(one(lid) for lid in lesson_ids), return_exceptions=True)
+        accepted = 0
+        already = 0
+        failed: list[str] = []
+        for lesson_id, outcome in zip(lesson_ids, pairs, strict=True):
+            if isinstance(outcome, BaseException):
+                logger.exception("bulk_complete_lessons failed lessonId=%s", lesson_id, exc_info=outcome)
+                failed.append(lesson_id)
+                continue
+            _, rollup = outcome
+            if rollup.get("firstPassedAt") == completed_at:
+                accepted += 1
+            else:
+                already += 1
+        return accepted, already, failed

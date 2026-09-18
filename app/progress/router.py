@@ -31,6 +31,8 @@ from app.progress.schemas import (
     BatchAttemptResponse,
     BatchAttemptResult,
     BatchAttemptSubmission,
+    BulkCompleteRequest,
+    BulkCompleteResponse,
     ConceptRollup,
     DayActivity,
     LessonRollup,
@@ -270,7 +272,95 @@ async def submit_attempt_batch(
                 }
             )
 
+    # 2026-09-18 — explicit per-route line with the row count, on the
+    # `lingo.progress` logger (not `lingo.access`): the generic access-log
+    # middleware logs every request by path/status/timing already, but a
+    # real incident (iPad, 2026-09-18) showed a batch POST that plainly
+    # succeeded — DynamoDB LESSON#/CLIENT# counts moved — with NO matching
+    # line in `lingo.access` for that route in the capture window. Whether
+    # that was a log-shipping gap, a different logger, or a request that
+    # genuinely took a path this repo doesn't model, this line is a second,
+    # independent, cheap signal that can't go missing the same way: it's
+    # emitted from inside the handler itself, after the write, not from
+    # middleware wrapping the request/response cycle.
+    logger.info(
+        "lessons/batch rows=%d accepted=%d user=%s",
+        len(body.attempts),
+        sum(1 for r in results if r.accepted),
+        user.id,
+    )
     return BatchAttemptResponse(results=results)
+
+
+@router.post(
+    "/lessons/bulk-complete",
+    response_model=BulkCompleteResponse,
+)
+async def submit_bulk_complete(
+    body: BulkCompleteRequest,
+    user: CurrentUser,
+    progress: ProgressRepo,
+) -> Any:
+    """Bulk lesson-completion sync for a seeded test-out/placement pass.
+
+    Ids only — no per-lesson attempt shape (`lessons/batch` stays the path
+    for real attempts, which carry durations/scores/stepResults). Every
+    lesson lands as XP-neutral and day-rollup-exempt (this handler never
+    touches the user row or a `DAY#` rollup, so that's true by construction
+    rather than a per-row flag like `isTestOut` on the batch path) and
+    idempotent two ways: the whole op on `clientOpId` (a retry of a FULLY
+    successful op returns the identical cached counts, no re-write), and
+    per lesson id via `update_lesson_rollup`'s existing first-wins rule (an
+    id that's already complete — from ANY path, including a plain
+    `lessons/batch` attempt — is counted `alreadyComplete`, never
+    double-applied).
+
+    2026-09-18 — added after a 491-row `lessons/batch` payload for one
+    test-out sat queued on a client for weeks, never reaching the server: a
+    seeded completion never needed per-attempt shape in the first place, so
+    the N-rows-in-one-POST design that made that payload as fragile as a
+    stack of 491 individually-failable writes was the wrong shape for this
+    case from the start, not just under-retried.
+    """
+    # 413 (not pydantic's own `max_length`, which is a 422) — a genuinely
+    # oversized request is a client bug worth a distinct status from "the
+    # body doesn't parse". 1000 caps the same way `SRS_SYNC_CHUNK_SIZE`
+    # caps `srs/sync`: bounds this handler's own fan-out width against a
+    # Lambda's timeout budget, not the ~6 MB Function URL payload cap.
+    if len(body.lessonIds) > 1000:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, detail="lessonIds exceeds 1000")
+
+    cached = await progress.get_bulk_op(user.id, body.clientOpId)
+    if cached is not None:
+        logger.info(
+            "lessons/bulk-complete lang=%s source=%s rows=%d accepted=%d alreadyComplete=%d user=%s cached=true",
+            body.lang,
+            body.source,
+            len(body.lessonIds),
+            cached["accepted"],
+            cached["alreadyComplete"],
+            user.id,
+        )
+        return BulkCompleteResponse(**cached)
+
+    accepted, already, failed = await progress.bulk_complete_lessons(user.id, body.lessonIds, body.completedAt)
+    result = {"accepted": accepted, "alreadyComplete": already, "total": len(body.lessonIds)}
+    # Only cache a FULLY successful op — see the protocol docstring on
+    # save_bulk_op for why a partial failure must stay uncached (so a retry
+    # with the same clientOpId re-attempts exactly the ids that didn't land).
+    if not failed:
+        await progress.save_bulk_op(user.id, body.clientOpId, result)
+    logger.info(
+        "lessons/bulk-complete lang=%s source=%s rows=%d accepted=%d alreadyComplete=%d failed=%d user=%s",
+        body.lang,
+        body.source,
+        len(body.lessonIds),
+        accepted,
+        already,
+        len(failed),
+        user.id,
+    )
+    return BulkCompleteResponse(**result)
 
 
 async def _load_xp_config() -> XpEconomyConfig:

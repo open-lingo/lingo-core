@@ -133,6 +133,44 @@ class BatchAttemptResponse(BaseModel):
     results: list[BatchAttemptResult]
 
 
+# ── Bulk-complete (2026-09-18) ───────────────────────────────────────────────
+#
+# `lessons/batch` sends one BatchAttempt PER lesson — fine for real attempts
+# (each carries its own duration/score/stepResults), wasteful and fragile for
+# a seeded test-out/placement pass, which has none of that: 491 near-identical
+# rows for one event. `bulk-complete` is the ids-only sibling: one request,
+# `lessonIds` only, no per-lesson attempt shape at all.
+
+
+class BulkCompleteRequest(BaseModel):
+    """Body of POST /progress/lessons/bulk-complete."""
+
+    lang: str
+    source: Literal["test_out", "placement"]
+    # Cap enforced explicitly in the router as a 413 (not pydantic's own
+    # max_length, which would 422) — see submit_bulk_complete's docstring.
+    lessonIds: list[str] = Field(min_length=1)
+    completedAt: str = Field(description="ISO timestamp from the client")
+    clientOpId: str = Field(description="Client-generated id for idempotent retries of this WHOLE op")
+
+
+class BulkCompleteResponse(BaseModel):
+    """Response from POST /progress/lessons/bulk-complete.
+
+    ``accepted + alreadyComplete`` may be LESS than ``total`` if any
+    individual lesson id's write failed server-side (isolated per-id, see
+    ``bulk_complete_lessons``) — the client should treat that as "retry the
+    same request" (or a fresh one covering only what's still missing);
+    `clientOpId` idempotency only caches a FULLY-successful op, so a retry
+    after a partial failure re-attempts everything and idempotently no-ops
+    the ids that already landed.
+    """
+
+    accepted: int = Field(ge=0)
+    alreadyComplete: int = Field(ge=0)
+    total: int = Field(ge=0)
+
+
 # ── Per-step result returned to client ──────────────────────────────────────
 
 

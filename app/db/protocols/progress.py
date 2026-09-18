@@ -168,3 +168,47 @@ class ProgressRepository(Protocol):
     async def delete_all_for_user(self, user_id: str) -> None:
         """Remove all progress rows for the user (Start over / account reset)."""
         ...
+
+    # ── Bulk-complete (2026-09-18, test-out/placement seed) ─────────────────
+    # `POST /progress/lessons/bulk-complete` — a seeded completion (test-out,
+    # placement) carries no attempt data (no durations, no step results), so
+    # it never belonged in `ATTEMPT#`/`CLIENT#`/the per-attempt `lessons/batch`
+    # path at all. This is a lighter write: one row per lesson via
+    # `update_lesson_rollup`'s existing first-wins semantics (XP-neutral and
+    # day-rollup-exempt by construction — this path never touches the user
+    # row or `DAY#`), plus a whole-OP idempotency cache so a retried
+    # `clientOpId` returns the exact prior response instead of re-deriving it.
+
+    async def get_bulk_op(self, user_id: str, client_op_id: str) -> dict[str, Any] | None:
+        """Return the cached result of a prior FULLY-SUCCEEDED bulk-complete
+        call with this ``clientOpId``, or None if it hasn't run (or the prior
+        run didn't fully succeed — see ``save_bulk_op``, only a complete
+        success is cached)."""
+        ...
+
+    async def save_bulk_op(self, user_id: str, client_op_id: str, result: dict[str, Any]) -> None:
+        """Cache a bulk-complete op's result, keyed by ``clientOpId``.
+
+        ``result`` shape: ``{"accepted": int, "alreadyComplete": int, "total": int}``.
+        Caller only calls this when every lesson id in the op resolved
+        (``accepted + alreadyComplete == total``) — a partial failure is
+        deliberately left uncached so a retry with the SAME `clientOpId`
+        re-attempts the ids that didn't land, rather than replaying a stale
+        partial result forever.
+        """
+        ...
+
+    async def bulk_complete_lessons(self, user_id: str, lesson_ids: list[str], completed_at: str) -> tuple[int, int, list[str]]:
+        """Mark each lesson id complete via `update_lesson_rollup` (score=1.0,
+        passed=True), fanned out with per-item isolation — one id's write
+        failure doesn't block the rest.
+
+        Returns ``(accepted, already_complete, failed_ids)`` where
+        ``accepted`` is the count whose `firstPassedAt` this call just set
+        (a genuinely new completion) and ``already_complete`` is the count
+        that already had one (this call's write was a no-op, per the
+        first-wins rule `update_lesson_rollup` already enforces). Ids in
+        ``failed_ids`` counted toward neither — the caller must not cache
+        the op's result when this list is non-empty.
+        """
+        ...
