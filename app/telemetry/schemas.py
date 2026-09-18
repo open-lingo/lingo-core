@@ -157,13 +157,27 @@ class DiagnosticsDeviceInfo(BaseModel):
     viewport: str | None = Field(default=None, max_length=32, description="'WxH' CSS px")
 
 
+# "Report a problem" (lane REPORTBTN, 2026-09-18): optional free-text note
+# from the in-lesson / Home-menu report sheet. Real cap is 280 chars,
+# enforced as a clean 413 in router.py (see MAX_DIAGNOSTICS_NOTE_CHARS
+# there) — this Field's max_length is only a generous technical ceiling,
+# same "413 not 422" reasoning as AtomOutcomeBatch's own schema-vs-router
+# split above.
+_DIAGNOSTICS_NOTE_SCHEMA_MAX_LENGTH = 2000
+
+
 class ClientDiagnosticsDocument(BaseModel):
     """Body of POST /api/core/v1/telemetry/diagnostics — the one-tap "Send
     diagnostics" button next to the Layout-trace tools in the mobile Sync
-    panel (`lingo/src/features/sync/LayoutTracePanel.tsx`). Unauthenticated
-    for the same reason `/telemetry/errors` is (see that router's
-    docstring) — a tester hits this from wherever the app is failing,
-    which may be before login.
+    panel (`lingo/src/features/sync/LayoutTracePanel.tsx`), AND (added
+    lane REPORTBTN, 2026-09-18) the "Report a problem" sheet reachable from
+    the lesson header, a wrong-answer step footer, and the Home account
+    menu's Sync & diagnostics row (`lingo/src/shared/components/
+    ReportProblemSheet.tsx`) — same endpoint, same document shape, plus
+    five optional fields a report adds on top. Unauthenticated for the
+    same reason `/telemetry/errors` is (see that router's docstring) — a
+    tester hits this from wherever the app is failing, which may be
+    before login.
 
     `layoutTrace` / `tapReplay` are opaque dicts, not typed against
     `lingo/src/shared/dev/layoutTrace.ts` / `sessionLog.ts::TapReplayDoc` —
@@ -178,6 +192,19 @@ class ClientDiagnosticsDocument(BaseModel):
     tapReplay: dict[str, object] | None = None
     device: DiagnosticsDeviceInfo
     lastRequestId: str | None = Field(default=None, max_length=64)
+    note: str | None = Field(
+        default=None,
+        max_length=_DIAGNOSTICS_NOTE_SCHEMA_MAX_LENGTH,
+        description="Optional free text from 'Report a problem' — 'What went wrong?'. Never the learner's answer text.",
+    )
+    lessonId: str | None = Field(default=None, max_length=128, description="Set when reported from inside a lesson.")
+    stepIndex: int | None = Field(default=None, ge=0, le=10_000)
+    stepType: str | None = Field(default=None, max_length=64)
+    screen: str | None = Field(
+        default=None,
+        max_length=32,
+        description="Where the report was opened from — 'lesson' | 'home' (free text, not a Literal — same client/server-skew rationale as ClientErrorItem.source above).",
+    )
 
 
 class ClientDiagnosticsAcceptedResponse(BaseModel):

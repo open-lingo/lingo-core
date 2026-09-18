@@ -72,6 +72,14 @@ MAX_OUTCOME_EVENTS_PER_REQUEST = 200
 DIAGNOSTICS_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 DIAGNOSTICS_CODE_LENGTH = 6
 
+# "Report a problem" (lane REPORTBTN, 2026-09-18): optional note cap.
+# Enforced here as a clean 413, NOT via pydantic `Field(max_length=...)` on
+# `ClientDiagnosticsDocument.note` (which would 422) — same rationale as
+# `MAX_OUTCOME_EVENTS_PER_REQUEST` below: a client that overshoots a small,
+# well-known app-level cap should get an unambiguous signal distinct from a
+# malformed-payload 422.
+MAX_DIAGNOSTICS_NOTE_CHARS = 280
+
 
 def _generate_diagnostics_code() -> str:
     return "".join(secrets.choice(DIAGNOSTICS_CODE_ALPHABET) for _ in range(DIAGNOSTICS_CODE_LENGTH))
@@ -140,7 +148,20 @@ async def report_client_diagnostics(
     `scripts/ops/pull-diagnostics.mjs K7P4QX` (in the `lingo` repo) greps
     it straight back out of CloudWatch — no request-id hunting, no log
     stream browsing.
+
+    Also the transport for "Report a problem" (lane REPORTBTN, 2026-09-18):
+    the same document, plus an optional `note` (capped at
+    `MAX_DIAGNOSTICS_NOTE_CHARS`, 413 beyond) and `lessonId`/`stepIndex`/
+    `stepType`/`screen` — all optional, all logged verbatim onto the same
+    `lingo.client_diag` line so a report is just a diagnostics dump with a
+    human's own words attached.
     """
+    if doc.note is not None and len(doc.note) > MAX_DIAGNOSTICS_NOTE_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"note over {MAX_DIAGNOSTICS_NOTE_CHARS} chars",
+        )
+
     request_id = get_request_id(request)
     response.headers["X-Request-Id"] = request_id
     code = _generate_diagnostics_code()
@@ -154,6 +175,11 @@ async def report_client_diagnostics(
         "tapReplay": doc.tapReplay,
         "device": doc.device.model_dump(),
         "lastRequestId": doc.lastRequestId,
+        "note": doc.note,
+        "lessonId": doc.lessonId,
+        "stepIndex": doc.stepIndex,
+        "stepType": doc.stepType,
+        "screen": doc.screen,
     }
     # WARNING, matching /errors' own level choice above — a diagnostics dump
     # is diagnostic signal, not a service failure, but WARNING keeps it out
