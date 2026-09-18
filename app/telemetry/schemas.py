@@ -182,3 +182,89 @@ class ClientDiagnosticsDocument(BaseModel):
 
 class ClientDiagnosticsAcceptedResponse(BaseModel):
     code: str = Field(min_length=6, max_length=6, description="Unambiguous 6-char code (no 0/O/1/I) — read back via scripts/ops/pull-diagnostics.mjs")
+
+
+# ── Atom outcomes (per-word difficulty stats, T7, lane STATS 2026-09-18) ────
+#
+# Answers Spencer's "how often do people fail X word, how easy are
+# others" with a real number instead of a guess. One `AtomOutcomeItem` =
+# one graded step. No free text, no answer strings (privacy + size) — see
+# `../lingo/docs/observability-2026-09-17.md` for the sibling
+# client_error/client_diag contract this mirrors, and
+# `../lingo/docs/atom-outcome-telemetry-2026-09-18.md` for this event's
+# own full writeup (emitter, seams covered, report tool, cost).
+#
+# UNLIKE `/errors` and `/diagnostics` (unauthenticated by construction —
+# see those schemas' docstrings), this endpoint IS authenticated: the
+# server hashes the caller's `sub` into the log line the same way
+# `lingo.access` does (`log_safe_user_hash`, `app/auth/dependencies.py`),
+# and that requires a resolved identity. Guarded by ordinary JWT/dev-bypass
+# auth (`get_acting_user`, this repo's default for a user-facing route per
+# CLAUDE.md) rather than `TelemetryGuardMiddleware`'s IP-keyed token
+# bucket — an authenticated caller doesn't need IP-based throttling, and
+# the per-request item cap below (`MAX_OUTCOME_EVENTS_PER_REQUEST` in
+# `router.py`) is the real backstop.
+
+MAX_ATOM_OUTCOME_ATOM_IDS = 32
+
+# Technical ceiling on the pydantic list itself — generous headroom above
+# the app-level 200-event/request cap (`router.py`) so a client that's
+# merely a little out of spec still gets a clean 413 from OUR check rather
+# than a 422 from pydantic's own `max_length` rejecting the batch first.
+# Not itself the enforced limit.
+_ATOM_OUTCOME_SCHEMA_MAX_ITEMS = 1000
+
+
+class AtomOutcomeItem(BaseModel):
+    """One graded step, wire-shape-identical to what the report tool
+    (`../lingo/scripts/ops/atom-difficulty-report.mjs`) expects to find in
+    the `lingo.atom_outcome` CloudWatch stream.
+
+    `srcSurface` is deliberately free text (not a `Literal`), matching
+    `ClientErrorItem.source`'s own rationale one class up: client and
+    server ship independently, so a client ahead of the server's known
+    surface values must not have its batch rejected outright.
+    """
+
+    lang: str = Field(min_length=1, max_length=8, description="Course language code, e.g. 'ja' | 'ko' | 'es' | 'fr'")
+    lessonId: str = Field(min_length=1, max_length=128)
+    stepIndex: int = Field(ge=0, le=10_000)
+    stepType: str = Field(min_length=1, max_length=64)
+    atomIds: list[str] = Field(
+        default_factory=list,
+        max_length=MAX_ATOM_OUTCOME_ATOM_IDS,
+        description="Vocab/grammar/kana atom ids this step exercised — never the answer text itself",
+    )
+    correct: bool
+    msToAnswer: int = Field(
+        ge=0,
+        le=600_000,
+        description="Wall-clock ms from step shown to graded; clamped client-side, re-clamped here (10 min ceiling)",
+    )
+    attempt: int = Field(default=1, ge=1, le=20, description="1 = first try, 2+ = retry on the same step")
+    srcSurface: str = Field(min_length=1, max_length=32, description="lesson | review | flashcards | test_out (free text — see class docstring)")
+    buildNumber: str | None = Field(default=None, max_length=32)
+
+    @field_validator("atomIds")
+    @classmethod
+    def _cap_atom_id_length(cls, v: list[str]) -> list[str]:
+        # Defense in depth, mirrors `ClientErrorBreadcrumb`'s payload-value
+        # re-trim: a client a little out of sync with this cap shouldn't
+        # 422 an otherwise-valid batch over one long atom id.
+        return [(s if len(s) <= 128 else s[:128]) for s in v]
+
+
+class AtomOutcomeBatch(BaseModel):
+    """Body of POST /api/core/v1/telemetry/outcomes.
+
+    `max_length` here is a technical safety ceiling, not the enforced
+    app-level cap — see `_ATOM_OUTCOME_SCHEMA_MAX_ITEMS`'s docstring above.
+    The real "200 events/request, 413 beyond" rule is enforced in
+    `router.py` so a client that overshoots gets 413, not a pydantic 422.
+    """
+
+    items: list[AtomOutcomeItem] = Field(min_length=1, max_length=_ATOM_OUTCOME_SCHEMA_MAX_ITEMS)
+
+
+class AtomOutcomeAcceptedResponse(BaseModel):
+    accepted: int

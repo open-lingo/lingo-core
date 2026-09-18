@@ -13,11 +13,16 @@ caps in `app/telemetry/schemas.py`.
 import json
 import logging
 import secrets
+from typing import Annotated
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
+from app.auth.dependencies import get_acting_user, log_safe_user_hash
+from app.auth.schemas import TokenPayload
 from app.shared.request_id import get_request_id
 from app.telemetry.schemas import (
+    AtomOutcomeAcceptedResponse,
+    AtomOutcomeBatch,
     ClientDiagnosticsAcceptedResponse,
     ClientDiagnosticsDocument,
     ClientErrorAcceptedResponse,
@@ -25,6 +30,8 @@ from app.telemetry.schemas import (
 )
 
 router = APIRouter(tags=["telemetry"])
+
+CurrentUser = Annotated[TokenPayload, Depends(get_acting_user)]
 
 # Dedicated logger/name so a CloudWatch Logs Insights query can filter to
 # exactly this stream (`filter @logStream like /lingo-core/` +
@@ -37,6 +44,23 @@ logger = logging.getLogger("lingo.client_error")
 # but a distinct stream so a Logs Insights query for one never has to
 # exclude the other by field-shape guesswork.
 diag_logger = logging.getLogger("lingo.client_diag")
+
+# Third stream for T7's per-word difficulty stats (lane STATS, 2026-09-18).
+# Distinct name so `atom-difficulty-report.mjs`'s Logs Insights query never
+# has to exclude the other two streams by field-shape guesswork — same
+# reasoning as `client_error` vs `client_diag` above. Logged at INFO, not
+# WARNING: this is routine data collection (one line per graded step), not
+# a client-side failure worth surfacing in an error-rate alarm — matches
+# `app/db/dynamo/telemetry.py::log_dynamo_op`'s INFO convention for
+# "cost/analytics logging," not `client_error`'s "something broke" one.
+outcome_logger = logging.getLogger("lingo.atom_outcome")
+
+# App-level cap: "200 events/request, 413 beyond" (task spec). Enforced
+# here, not via pydantic `Field(max_length=...)` on `AtomOutcomeBatch`,
+# specifically so a client that overshoots gets a clean 413 — the schema's
+# own `max_length` is a much higher technical safety ceiling (see its
+# docstring) that would otherwise turn this into an indistinguishable 422.
+MAX_OUTCOME_EVENTS_PER_REQUEST = 200
 
 # Excludes 0/O/1/I on purpose (task spec: "unambiguous alphabet") — this
 # code gets read aloud/typed by hand off a phone screen ("Tell Spencer:
@@ -137,3 +161,50 @@ async def report_client_diagnostics(
     diag_logger.warning(json.dumps(payload, ensure_ascii=False))
 
     return ClientDiagnosticsAcceptedResponse(code=code)
+
+
+@router.post("/outcomes", response_model=AtomOutcomeAcceptedResponse, status_code=202)
+async def report_atom_outcomes(
+    batch: AtomOutcomeBatch,
+    user: CurrentUser,
+    request: Request,
+    response: Response,
+) -> AtomOutcomeAcceptedResponse:
+    """Per-word difficulty stats (T7): one `lingo.atom_outcome` INFO line per
+    graded step. Authenticated (unlike `/errors`/`/diagnostics` above) — see
+    `AtomOutcomeItem`'s docstring for why. Storage is CloudWatch log lines,
+    not DynamoDB (Spencer's call, 2026-09-18): a weekly aggregate over ~15
+    events/lesson at current volume is a Logs Insights query, and ingestion
+    is far cheaper than a write-heavy DynamoDB table for data nobody reads
+    per-row. See `../lingo/docs/atom-outcome-telemetry-2026-09-18.md` for
+    the query + the cost-per-1000-lessons/day number.
+    """
+    if len(batch.items) > MAX_OUTCOME_EVENTS_PER_REQUEST:
+        raise HTTPException(
+            status_code=413,
+            detail=f"at most {MAX_OUTCOME_EVENTS_PER_REQUEST} events per request",
+        )
+
+    request_id = get_request_id(request)
+    response.headers["X-Request-Id"] = request_id
+    user_hash = log_safe_user_hash(user.sub)
+
+    for item in batch.items:
+        payload = {
+            "type": "atom_outcome",
+            "requestId": request_id,
+            "userHash": user_hash,
+            "lang": item.lang,
+            "lessonId": item.lessonId,
+            "stepIndex": item.stepIndex,
+            "stepType": item.stepType,
+            "atomIds": item.atomIds,
+            "correct": item.correct,
+            "msToAnswer": item.msToAnswer,
+            "attempt": item.attempt,
+            "srcSurface": item.srcSurface,
+            "buildNumber": item.buildNumber,
+        }
+        outcome_logger.info(json.dumps(payload, ensure_ascii=False))
+
+    return AtomOutcomeAcceptedResponse(accepted=len(batch.items))
