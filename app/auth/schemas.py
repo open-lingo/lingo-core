@@ -7,7 +7,11 @@ class TokenPayload(BaseModel):
     ``sub`` is the raw Auth0 subject — only used for auth operations.
     ``id`` is our internal user UUID resolved from the DB after validation;
     all domain logic should use ``id``, never ``sub``.
-    ``id`` is None until the user completes first-time registration.
+    ``id`` is None until a DB row exists for this identity — either full
+    registration (``POST /users/me``) or the auto-provisioned placeholder
+    row a not-yet-registered caller gets on first touch of any route behind
+    ``get_registered_user`` (``display_name == ""``; see
+    ``app/auth/dependencies.py::_provision_user``).
     """
 
     sub: str

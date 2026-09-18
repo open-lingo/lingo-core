@@ -17,7 +17,10 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 from app.db.dynamo._session import get_shared_resource
+from app.db.protocols.user import UserAlreadyExistsError
 
 _RECORD_SK = "RECORD"
 _SETTINGS_SK = "SETTINGS"
@@ -71,7 +74,12 @@ class DynamoUserRepository:
     async def create_user(self, user: dict[str, Any]) -> dict[str, Any]:
         now = datetime.now(UTC).isoformat()
         auth0_id = user["auth0_id"]
-        user_id = str(uuid.uuid4())
+        # Auto-provisioning passes a deterministic id (derived from
+        # auth0_id) so two concurrent first-touch requests converge on the
+        # same PK instead of each minting their own uuid4 and both winning
+        # `attribute_not_exists(PK)` — see `app/auth/dependencies.py`'s
+        # `_provision_user`.
+        user_id = user.get("id") or str(uuid.uuid4())
         row = {
             "id": user_id,
             "auth0_id": auth0_id,
@@ -98,10 +106,15 @@ class DynamoUserRepository:
             "GSI2SK": _RECORD_SK,
             **row,
         }
-        await self._table.put_item(
-            Item=item,
-            ConditionExpression="attribute_not_exists(PK)",
-        )
+        try:
+            await self._table.put_item(
+                Item=item,
+                ConditionExpression="attribute_not_exists(PK)",
+            )
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                raise UserAlreadyExistsError(str(e)) from e
+            raise
         return row
 
     async def get_user_by_auth0_id(self, auth0_id: str) -> dict[str, Any] | None:

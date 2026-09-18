@@ -65,23 +65,41 @@ UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 
 @router.post("/me", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(body: UserCreate, user: UnregisteredUser, repo: UserRepo) -> Any:
-    """First-time registration: creates the user record linked to their Auth0 identity."""
+    """First-time registration: creates the user record linked to their Auth0
+    identity — OR claims an auto-provisioned placeholder row left by
+    `get_registered_user`'s first-touch provisioning (`app/auth/
+    dependencies.py::_provision_user`, FIRSTRUN lane 2026-09-18).
+
+    A placeholder is recognized by ``display_name == ""``, which no real
+    registration can ever produce (``UserCreate.display_name`` requires
+    ``min_length=1``). Claiming updates the SAME row in place — same
+    ``id`` — rather than 409ing "already registered", so any state that
+    already accrued under the placeholder (XP from lessons played before
+    the user picked a username, if any) survives the claim.
+    """
     with api_error("registering user"):
         existing = await repo.get_user_by_auth0_id(user.sub)
-        if existing is not None:
+        if existing is not None and existing.get("display_name"):
             raise HTTPException(status.HTTP_409_CONFLICT, "User already registered")
 
         taken = await repo.get_user_by_username(body.username)
-        if taken is not None:
+        if taken is not None and (existing is None or taken["id"] != existing["id"]):
             raise HTTPException(status.HTTP_409_CONFLICT, "Username already taken")
 
-        record = await repo.create_user(
-            {
-                "auth0_id": user.sub,
-                "username": body.username,
-                "display_name": body.display_name,
-            }
-        )
+        if existing is not None:
+            record = await repo.update_user(
+                existing["id"],
+                {"username": body.username, "display_name": body.display_name},
+                current=existing,
+            )
+        else:
+            record = await repo.create_user(
+                {
+                    "auth0_id": user.sub,
+                    "username": body.username,
+                    "display_name": body.display_name,
+                }
+            )
     return record
 
 

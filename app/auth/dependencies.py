@@ -15,6 +15,7 @@ import hashlib
 import logging
 import secrets
 import time
+import uuid
 from typing import Annotated, Any
 
 import httpx
@@ -24,6 +25,7 @@ from jose import JWTError, jwt
 
 from app.auth.schemas import TokenPayload
 from app.config import settings
+from app.db.protocols.user import UserAlreadyExistsError
 
 logger = logging.getLogger("lingo.auth")
 
@@ -360,25 +362,99 @@ async def get_current_user_optional(
     return resolved
 
 
+def _provisional_user_id(auth0_id: str) -> str:
+    """Deterministic id for a not-yet-registered identity's placeholder row.
+
+    Derived (uuid5, not random) so two requests racing to provision the
+    SAME auth0_id — e.g. `GET /boot` and `GET /users/me` firing within a
+    few ms of each other on first login, exactly the FIRSTRUN storm —
+    compute the identical id and collapse to one row via
+    `UserAlreadyExistsError` instead of each minting a distinct uuid4 and
+    both winning their own create.
+    """
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"lingo-provisional-user:{auth0_id}"))
+
+
+def _provisional_username(auth0_id: str) -> str:
+    return f"user_{hashlib.sha256(auth0_id.encode('utf-8')).hexdigest()[:12]}"
+
+
+async def _provision_user(repo: Any, auth0_id: str) -> dict[str, Any]:
+    """Idempotently create (or fetch) a placeholder row for a first-touch,
+    not-yet-registered Auth0 identity (FIRSTRUN lane, 2026-09-18).
+
+    Why: every route behind `get_registered_user` — `GET /boot`,
+    `GET /users/me`, `/users/me/settings`, `/progress/me*`, `/srs/state`,
+    `/quests`, `/decks/admin`, `/users/discover`, `/social/profiles/*` —
+    used to 404 for a brand-new signup until the client's separate
+    `POST /users/me` registration form was submitted. On first login the
+    client's boot wave fires 8+ of these concurrently, so a real user saw
+    ~26 s and 15+ 404s before the app worked (see the lane's evidence).
+    Provisioning here removes the 404 entirely; client-side ordering can
+    no longer produce the storm because there is no failure state left to
+    race.
+
+    The row is intentionally sparse: `display_name == ""` is the sentinel
+    `register_user` (`POST /users/me`) and the client both use to
+    recognize "provisioned but not yet registered" — `UserCreate` and
+    `MeUpdate` both require `min_length=1` on `display_name`, so no real
+    registration can ever produce that value, and it costs no schema
+    change (no new column) on either backend. `register_user` claims this
+    row in place (same id, real username + display_name) instead of
+    409ing "already registered".
+
+    No XP/quest side effects: this only inserts the user row itself —
+    `create_user` does not touch progress, SRS, or quest tables.
+    """
+    user_id = _provisional_user_id(auth0_id)
+    try:
+        return await repo.create_user(
+            {
+                "id": user_id,
+                "auth0_id": auth0_id,
+                "username": _provisional_username(auth0_id),
+                "display_name": "",
+            }
+        )
+    except UserAlreadyExistsError:
+        # Lost the race (or a retry after our own earlier success) —
+        # someone else's create for this same deterministic id landed
+        # first. Re-fetch rather than treat this as a real error.
+        existing = await repo.get_user_by_id(user_id)
+        if existing is not None:
+            return existing
+        raise
+
+
 async def get_registered_user(
     user: Annotated[TokenPayload, Depends(get_current_user)],
 ) -> TokenPayload:
-    """Like get_current_user but 404s if the user hasn't completed registration.
-    Also blocks banned users with 403 USER_BANNED.
+    """Like get_current_user but auto-provisions a placeholder row for a
+    not-yet-registered (but authenticated) identity instead of 404ing —
+    see `_provision_user`. Also blocks banned users with 403 USER_BANNED.
     """
-    if user.id is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND,
-            "User not registered — complete registration first",
-        )
     from app.auth.ban import raise_if_user_banned
     from app.db.provider import get_user_repo
 
     repo = get_user_repo()
-    if repo:
+    record: dict[str, Any] | None = None
+    if user.id is None:
+        if repo is None:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                "User not registered — complete registration first",
+            )
+        record = await _provision_user(repo, user.sub)
+        # Refresh the short-TTL sub->id cache immediately so the REST of
+        # this same boot wave (and any other warm container that already
+        # cached the miss) doesn't re-provision or re-404 before the TTL
+        # would naturally have picked up the new row.
+        _user_id_cache[user.sub] = (record["id"], time.time() + _USER_ID_CACHE_TTL_SEC)
+        user = user.model_copy(update={"id": record["id"]})
+    elif repo:
         record = await repo.get_user_by_id(user.id)
-        if record:
-            raise_if_user_banned(record)
+    if record:
+        raise_if_user_banned(record)
     return user
 
 
