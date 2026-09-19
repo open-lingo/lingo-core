@@ -87,6 +87,45 @@ def test_sync_last_write_wins(api_client) -> None:
     assert merged["recognition"]["lastReviewDate"] == "2026-05-25"
 
 
+def test_known_flag_round_trips(api_client) -> None:
+    """A test-out-seeded card's `known` flag must survive /sync -> /state
+    (lane SRSGAPS GAP A, 2026-09-18): the FE's `SRSCardState.known`
+    (`data/types.ts`) was accepted-and-dropped by this schema before this
+    fix — a device that never had the card locally (a fresh pull) always
+    got `known` missing, which `isDue` treats as due, even though the
+    originating device suppressed it as already-known. See
+    `lingo/src/features/flashcards/engine/testOutSeed.ts`."""
+    client, _, _ = api_client
+    known_state = _modal_state()
+    known_state["known"] = True
+
+    resp = client.post("/api/core/v1/srs/sync", json={"cards": {"c-known": known_state}})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["cards"]["c-known"]["known"] is True
+
+    resp = client.get("/api/core/v1/srs/state")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["cards"]["c-known"]["known"] is True
+
+
+def test_known_flag_defaults_false_when_omitted(api_client) -> None:
+    """A card synced with no `known` key (every non-test-out card, and every
+    pre-fix client build) must default False, not be rejected or come back
+    null — `isKnown`-gated UI (Card Manager badge, reviewer suppression)
+    treats only `true` as known."""
+    client, _, _ = api_client
+    state = _modal_state()
+    assert "known" not in state
+
+    resp = client.post("/api/core/v1/srs/sync", json={"cards": {"c-plain": state}})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["cards"]["c-plain"]["known"] is False
+
+    resp = client.get("/api/core/v1/srs/state")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["cards"]["c-plain"]["known"] is False
+
+
 def test_sync_rejects_payload_missing_modalities(api_client) -> None:
     """recognition and production are required; missing them must 422."""
     client, _, _ = api_client
